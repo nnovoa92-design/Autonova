@@ -792,15 +792,22 @@ function abrirOrden(id){
     <div class="card card-s" style="margin-bottom:10px">
       <div class="card-title">Cobro</div>
       <div class="dr"><span class="dr-name">MO neta</span><span class="dr-val">${fmt(v.mo)}</span></div>
+      <div class="dr" id="m-iva-row" style="${v.boleta?'':'display:none'}">
+        <span class="dr-name" style="color:var(--amber)">IVA 19% (sobre MO)</span>
+        <span class="dr-val" id="m-iva-lbl" style="color:var(--amber)">${fmt((v.mo||0)*.19)}</span>
+      </div>
+      <div class="dr" id="m-mo-total-row" style="${v.boleta?'':'display:none'}">
+        <span class="dr-name">MO con IVA</span>
+        <span class="dr-val" id="m-mo-total-lbl">${fmt((v.mo||0)*1.19)}</span>
+      </div>
       ${v.prep?`<div class="dr"><span class="dr-name">Repuesto cliente</span><span class="dr-val">${fmt(v.prep)}</span></div>`:''}
       <div class="dr">
         <span class="dr-name" style="display:flex;align-items:center;gap:8px">
-          Boleta / Factura (+19% IVA)
-          <input type="checkbox" id="m-boleta" ${v.boleta?'checked':''} onchange="updBoleta(this.checked)" style="width:auto;padding:0;cursor:pointer">
+          <label for="m-boleta" style="text-transform:none;letter-spacing:0;font-size:13px;color:var(--text2);cursor:pointer">Emitir Boleta / Factura (+19% IVA)</label>
+          <input type="checkbox" id="m-boleta" ${v.boleta?'checked':''} onchange="updBoleta(this.checked)" style="width:18px;height:18px;padding:0;cursor:pointer;flex-shrink:0">
         </span>
-        <span class="dr-val" id="m-iva-lbl" style="font-size:11px;color:var(--text3)">${v.boleta?fmt((v.mo||0)*.19):''}</span>
       </div>
-      <div class="dr" style="font-size:16px;font-weight:600"><span>TOTAL</span><span class="dr-val" id="m-total">${fmt(total)}</span></div>
+      <div class="dr" style="font-size:16px;font-weight:600;border-top:1px solid var(--border2);margin-top:4px"><span>TOTAL A PAGAR</span><span class="dr-val" id="m-total" style="color:var(--gold)">${fmt(total)}</span></div>
       <div class="div"></div>
       <div class="card-title">Forma de pago</div>
       <div class="pago-g">${pagoOpts.map(p=>`<div class="pago-o ${v.formaPago===p?'sel':''}" onclick="selPago(this,'${p}')">${p.charAt(0)+p.slice(1).toLowerCase()}</div>`).join('')}</div>
@@ -853,8 +860,16 @@ function updEstado(val){
 function updBoleta(checked){
   if(!curId)return;const d=load();const v=d.v.find(x=>x.id===curId);if(!v)return;
   v.boleta=checked;save(d);
+  // Update total
   const el=document.getElementById('m-total');if(el)el.textContent=fmt(calcTot(v));
-  const iv=document.getElementById('m-iva-lbl');if(iv)iv.textContent=checked?fmt((v.mo||0)*.19):'';
+  // Show/hide IVA rows
+  const ivaRow=document.getElementById('m-iva-row');
+  const moTotalRow=document.getElementById('m-mo-total-row');
+  if(ivaRow)ivaRow.style.display=checked?'flex':'none';
+  if(moTotalRow)moTotalRow.style.display=checked?'flex':'none';
+  // Update IVA amount
+  const iv=document.getElementById('m-iva-lbl');if(iv)iv.textContent=fmt((v.mo||0)*.19);
+  const mt=document.getElementById('m-mo-total-lbl');if(mt)mt.textContent=fmt((v.mo||0)*1.19);
 }
 function selPago(el,val){
   document.querySelectorAll('.pago-o').forEach(e=>e.classList.remove('sel'));el.classList.add('sel');
