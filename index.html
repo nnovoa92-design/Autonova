@@ -1523,30 +1523,10 @@ function enviarWACot(cot){
   const n=cot.nombre.split(' ')[0];
   const links=generarLinkRespuestaCot(cot.id);
   const totalFinal=cot.total-(cot.descuento||0);
-  const msg=`Hola ${n}! 👋
-
-Te enviamos la cotización de *${c.nombre||'Autonova Taller'}* 📄
-
-📋 ${cot.desc}
-
-${cot.items.map(i=>`• ${i.desc}${i.cant>1?' (×'+i.cant+')':''}: *${fmt(i.precio*i.cant)}*`).join('
-')}
-
-💰 Neto: ${fmt(cot.neto)}
-📊 IVA (19%): ${fmt(cot.iva)}${cot.descuento?'
-🏷 Descuento: -'+fmt(cot.descuento):''}
-💵 *TOTAL: ${fmt(totalFinal)}*
-
-Válida por ${cot.validez} días.${cot.obs?'
-
-📝 '+cot.obs:''}
-
-━━━━━━━━━━━━━━
-¿Qué decides?
-✅ Acepto → ${links.acepta}
-❌ No acepto → ${links.rechaza}
-
-Cualquier consulta, aquí estamos. 🔧`;
+  const itemsList=cot.items.map(i=>'• '+i.desc+(i.cant>1?' (×'+i.cant+')':'')+': *'+fmt(i.precio*i.cant)+'*').join('\n');
+  const descLine=cot.descuento?'\n🏷 Descuento: -'+fmt(cot.descuento):'';
+  const obsLine=cot.obs?'\n\n📝 '+cot.obs:'';
+  const msg='Hola '+n+'! 👋\n\nTe enviamos la cotización de *'+(c.nombre||'Autonova Taller')+'* 📄\n\n📋 '+cot.desc+'\n\n'+itemsList+'\n\n💰 Neto: '+fmt(cot.neto)+'\n📊 IVA (19%): '+fmt(cot.iva)+descLine+'\n💵 *TOTAL: '+fmt(totalFinal)+'*\n\nVálida por '+cot.validez+' días.'+obsLine+'\n\n━━━━━━━━━━━━━━\n¿Qué decides?\n✅ Acepto → '+links.acepta+'\n❌ No acepto → '+links.rechaza+'\n\nCualquier consulta, aquí estamos. 🔧';
   window.open('https://wa.me/'+cot.wa.replace(/\D/g,'')+'?text='+encodeURIComponent(msg),'_blank');
 }
 function enviarWACot_id(id){const d=load();const c=d.cot.find(x=>x.id===id);if(c)enviarWACot(c);}
@@ -1919,28 +1899,15 @@ function imprimirCot(id){
 }
 
 function compartirCotWA(id){
-  // Generate PDF then share via iOS share sheet
   const d=load();const cot=d.cot.find(x=>x.id===id);if(!cot)return;
-  // First open PDF
   imprimirCot(id);
-  // Then after brief delay open WA with message
   setTimeout(()=>{
-    if(!cot.wa){toast('Primero guarda el PDF, luego compártelo manualmente');return;}
+    if(!cot.wa){toast('Primero guarda el PDF, luego compartelo manualmente');return;}
     const c=cfg();const n=cot.nombre.split(' ')[0];
-    const msg=`Hola ${n}! 👋
-
-Te envío la cotización de *${c.nombre||'Autonova Taller'}* 📄
-
-📋 ${cot.desc}
-
-💵 *Total: ${fmt(cot.total-(cot.descuento||0))}*${cot.abono?'
-💳 Abono: -'+fmt(cot.abono)+'
-⚡ Saldo: '+fmt(Math.max(0,cot.total-(cot.descuento||0)-(cot.abono||0))):''}
-
-Válida por ${cot.validez} días. Adjunto el documento PDF con el detalle completo.
-
-¿Lo pudiste revisar? Cualquier consulta, aquí estamos. 🔧`;
-    window.open('https://wa.me/'+cot.wa.replace(/\D/g,'')+'?text='+encodeURIComponent(msg),'_blank');
+    const totalFinal=cot.total-(cot.descuento||0);
+    const abonoLine=cot.abono?('\nAbono: -'+fmt(cot.abono)+'\nSaldo: '+fmt(Math.max(0,totalFinal-(cot.abono||0)))):'';
+    const msg='Hola '+n+'! \u{1F44B}\n\nTe envio la cotizacion de *'+(c.nombre||'Autonova Taller')+'*\n\n'+cot.desc+'\n\n Total: '+fmt(totalFinal)+abonoLine+'\n\nValida por '+cot.validez+' dias. Adjunto el PDF.\n\nCualquier consulta, aqui estamos.';
+    window.open('https://wa.me/'+cot.wa.replace(/[^0-9]/g,'')+'?text='+encodeURIComponent(msg),'_blank');
   },800);
 }
 
