@@ -890,18 +890,69 @@ function iniciarCL(){
   clVid={pat,marca:document.getElementById('i-marca').value.trim(),modelo:document.getElementById('i-modelo').value.trim(),km:document.getElementById('i-km').value.trim(),precio:parseFloat(document.getElementById('i-precio').value)||0};
   renderCL();
 }
+function clItemHtml(si,ii,label,mode){
+  const k=si+'_'+ii;
+  const val=clData[k]||'';
+  const obs=clData[k+'_obs']||'';
+  const fotos=clData[k+'_fotos']||[];
+
+  if(mode==='km'){
+    const kmVal=clData[k+'_km']||'';
+    return '<div class="cl-item" style="flex-direction:column;align-items:flex-start;gap:6px;padding:10px 0;"><div style="font-size:12px;font-weight:500;color:var(--text);margin-bottom:4px;">'+label+'</div><div style="display:flex;align-items:center;gap:8px;width:100%;"><input type="number" placeholder="0" value="'+kmVal+'" style="width:130px;font-size:15px;font-family:var(--fm);" oninput="clData[\''+k+'_km\']=this.value+\' km\'"><span style="font-size:12px;color:var(--text3);">km</span><button onclick="addFotoCL('+si+','+ii+')" style="margin-left:auto;background:none;border:1px dashed var(--border2);border-radius:5px;padding:5px 10px;font-size:11px;color:var(--text3);cursor:pointer;white-space:nowrap;">📷 foto</button></div>'+(fotos.length?'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">'+fotos.map((f,fi)=>'<div style="position:relative;"><img src="'+f+'" style="width:44px;height:44px;object-fit:cover;border-radius:4px;"><button onclick="delFotoCL('+si+','+ii+','+fi+')" style="position:absolute;top:-4px;right:-4px;background:var(--red);border:none;border-radius:50%;width:14px;height:14px;color:#fff;font-size:8px;cursor:pointer;">✕</button></div>').join('')+'</div>':'')+'</div>';
+  }
+
+  if(mode==='dtc'){
+    const dtcVal=clData[k+'_dtc']||'';
+    return '<div class="cl-item" style="flex-direction:column;align-items:flex-start;gap:6px;padding:10px 0;"><div style="font-size:12px;font-weight:500;color:var(--text);margin-bottom:4px;">'+label+'</div><div style="display:flex;align-items:center;gap:8px;width:100%;"><input type="text" placeholder="Ej: P0300 — o 0 si ninguno" value="'+dtcVal+'" style="flex:1;font-size:13px;font-family:var(--fm);" oninput="clData[\''+k+'_dtc\']=this.value"><button onclick="addFotoCL('+si+','+ii+')" style="background:none;border:1px dashed var(--border2);border-radius:5px;padding:5px 10px;font-size:11px;color:var(--text3);cursor:pointer;white-space:nowrap;">📷 foto</button></div>'+(fotos.length?'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">'+fotos.map((f,fi)=>'<div style="position:relative;"><img src="'+f+'" style="width:44px;height:44px;object-fit:cover;border-radius:4px;"><button onclick="delFotoCL('+si+','+ii+','+fi+')" style="position:absolute;top:-4px;right:-4px;background:var(--red);border:none;border-radius:50%;width:14px;height:14px;color:#fff;font-size:8px;cursor:pointer;">✕</button></div>').join('')+'</div>':'')+'</div>';
+  }
+
+  // std
+  const soK=val==='ok'?' sel-ok':'',soW=val==='warn'?' sel-warn':'',soB=val==='bad'?' sel-bad':'',soN=val==='na'?' sel-na':'';
+  let h='<div class="cl-item"><div class="cl-label" style="text-transform:none;font-size:12px;color:var(--text2);">'+label+'</div><div class="cl-opts"><div class="cl-opt'+soK+'" onclick="setCL('+si+','+ii+',\'ok\')">✓</div><div class="cl-opt'+soW+'" onclick="setCL('+si+','+ii+',\'warn\')">⚠</div><div class="cl-opt'+soB+'" onclick="setCL('+si+','+ii+',\'bad\')">✗</div><div class="cl-opt'+soN+'" onclick="setCL('+si+','+ii+',\'na\')">N/A</div></div></div>';
+  if(val){
+    h+='<div style="padding:0 6px 8px;display:flex;flex-direction:column;gap:5px;"><input type="text" placeholder="Observación..." value="'+obs+'" style="font-size:12px;" onchange="setCLObs('+si+','+ii+',this.value)"><div style="display:flex;align-items:center;gap:6px;"><button onclick="addFotoCL('+si+','+ii+')" style="background:none;border:1px dashed var(--border2);border-radius:5px;padding:4px 10px;font-size:10px;color:var(--text3);cursor:pointer;white-space:nowrap;">📷 + foto</button>'+(fotos.length?'<div style="display:flex;gap:4px;flex-wrap:wrap;">'+fotos.map((f,fi)=>'<div style="position:relative;"><img src="'+f+'" style="width:44px;height:44px;object-fit:cover;border-radius:4px;"><button onclick="delFotoCL('+si+','+ii+','+fi+')" style="position:absolute;top:-4px;right:-4px;background:var(--red);border:none;border-radius:50%;width:14px;height:14px;color:#fff;font-size:8px;cursor:pointer;">✕</button></div>').join('')+'</div>':'')+'</div></div>';
+  }
+  return h;
+}
+
 function renderCL(){
-  let html='<div style="font-size:17px;font-weight:600;margin-bottom:4px;">'+clVid.pat+' — '+clNombre+'</div><div style="font-size:12px;color:var(--text2);margin-bottom:12px;">'+(clVid.marca||'')+' '+(clVid.modelo||'')+' · '+clVid.km+'</div><div style="font-size:11px;color:var(--text3);margin-bottom:12px;"><span style="color:var(--green);">✓ OK</span> · <span style="color:var(--amber);">⚠ Atención</span> · <span style="color:var(--red);">✗ Defecto</span> · N/A</div>';
+  if(!clData._custom)clData._custom={};
+  let html='';
+  html+='<div style="font-size:17px;font-weight:600;margin-bottom:4px;">'+clVid.pat+' \u2014 '+clNombre+'</div>';
+  html+='<div style="font-size:12px;color:var(--text2);margin-bottom:10px;">'+(clVid.marca||'')+' '+(clVid.modelo||'')+' \u00b7 '+clVid.km+'</div>';
+  html+='<div style="font-size:11px;color:var(--text3);background:var(--bg3);border-radius:var(--rs);padding:8px 12px;margin-bottom:12px;">\u2705 OK \u00b7 \u26a0\ufe0f Atenci\u00f3n \u00b7 \u274c Defecto \u00b7 N/A = No aplica</div>';
+
   CHECKLIST.forEach((sec,si)=>{
-    html+='<div style="font-size:12px;font-weight:600;background:var(--bg4);padding:8px 12px;border-radius:var(--rs);margin-bottom:8px;">'+sec.sec+'</div>';
+    html+='<div style="font-size:12px;font-weight:700;background:var(--bg4);padding:9px 12px;border-radius:var(--rs);margin-bottom:6px;border-left:3px solid var(--gold);">'+sec.sec+'</div>';
+
+    // Standard items
     sec.items.forEach((item,ii)=>{
-      const k=si+'_'+ii,val=clData[k]||'',obs=clData[k+'_obs']||'';
-      const soK=val==='ok'?' sel-ok':'',soW=val==='warn'?' sel-warn':'',soB=val==='bad'?' sel-bad':'',soN=val==='na'?' sel-na':'';
-      html+='<div class="cl-item"><div class="cl-label">'+item+'</div><div class="cl-opts"><div class="cl-opt'+soK+'" onclick="setCL('+si+','+ii+',\'ok\')">✓</div><div class="cl-opt'+soW+'" onclick="setCL('+si+','+ii+',\'warn\')">⚠</div><div class="cl-opt'+soB+'" onclick="setCL('+si+','+ii+',\'bad\')">✗</div><div class="cl-opt'+soN+'" onclick="setCL('+si+','+ii+',\'na\')">N/A</div></div></div>'+(val==='warn'||val==='bad'?'<div style="padding:0 4px 8px;"><input type="text" placeholder="Observación del ítem..." value="'+obs+'" style="font-size:12px;" onchange="setCLObs('+si+','+ii+',this.value)"><label style="margin-top:5px;margin-bottom:0;"><button onclick="addFotoCL('+si+','+ii+')" style="background:none;border:1px dashed var(--border2);border-radius:5px;padding:3px 8px;font-size:10px;color:var(--text3);cursor:pointer;">+ foto</button></label>'+(clData[k+'_fotos']&&clData[k+'_fotos'].length?'<div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap;">'+clData[k+'_fotos'].map(f=>'<img src="'+f+'" style="width:48px;height:48px;object-fit:cover;border-radius:4px;">').join('')+'</div>':'')+'</div>':'');
+      const label=typeof item==='string'?item:item.t;
+      const mode=typeof item==='string'?'std':(item.mode||'std');
+      html+=clItemHtml(si,ii,label,mode);
     });
+
+    // Custom items for this section
+    const customs=clData._custom[si]||[];
+    customs.forEach((citem,ci)=>{
+      const k='c_'+si+'_'+ci;
+      const val=clData[k]||'';
+      const obs=clData[k+'_obs']||'';
+      const fotos=clData[k+'_fotos']||[];
+      const soK=val==='ok'?' sel-ok':'',soW=val==='warn'?' sel-warn':'',soB=val==='bad'?' sel-bad':'',soN=val==='na'?' sel-na':'';
+      html+='<div class="cl-item" style="border-left:2px solid var(--gold-border);padding-left:8px;"><div class="cl-label" style="text-transform:none;font-size:12px;color:var(--gold);">'+citem+' <span style="color:var(--text3);font-size:9px;">personalizado</span></div><div class="cl-opts"><div class="cl-opt'+soK+'" onclick="setCLc('+si+','+ci+',\'ok\')">✓</div><div class="cl-opt'+soW+'" onclick="setCLc('+si+','+ci+',\'warn\')">⚠</div><div class="cl-opt'+soB+'" onclick="setCLc('+si+','+ci+',\'bad\')">✗</div><div class="cl-opt'+soN+'" onclick="setCLc('+si+','+ci+',\'na\')">N/A</div></div><button onclick="delCustomItem('+si+','+ci+')" style="margin-left:4px;background:var(--red-bg);border:1px solid var(--red-border);border-radius:4px;color:var(--red);font-size:9px;padding:2px 6px;cursor:pointer;">✕</button></div>';
+      if(val){
+        html+='<div style="padding:0 6px 8px;"><input type="text" placeholder="Observaci\u00f3n..." value="'+obs+'" style="font-size:12px;" onchange="setCLcObs('+si+','+ci+',this.value)"><div style="margin-top:4px;"><button onclick="addFotoCLc('+si+','+ci+')" style="background:none;border:1px dashed var(--border2);border-radius:5px;padding:4px 10px;font-size:10px;color:var(--text3);cursor:pointer;white-space:nowrap;">📷 + foto</button>'+(fotos.length?'<span style="display:inline-flex;gap:4px;margin-left:6px;">'+fotos.map(f=>'<img src="'+f+'" style="width:40px;height:40px;object-fit:cover;border-radius:4px;">').join('')+'</span>':'')+'</div></div>';
+      }
+    });
+
+    // Add custom item row
+    html+='<div style="margin:4px 0 14px;"><div style="display:flex;gap:7px;"><input type="text" id="new-ci-'+si+'" placeholder="Agregar \u00edtem personalizado..." style="flex:1;font-size:12px;padding:7px 10px;"><button onclick="addCustomItem('+si+')" style="background:var(--gold-bg);border:1px solid var(--gold-border);border-radius:var(--rs);color:var(--gold);font-size:12px;padding:7px 12px;cursor:pointer;white-space:nowrap;">+ Agregar</button></div></div>';
   });
-  html+='<div class="fr" style="margin-top:10px;"><label>Observaciones generales del mecánico</label><textarea id="i-obs" placeholder="Observaciones generales..." style="min-height:70px;">'+(clData._obs||'')+'</textarea></div>';
-  html+='<button class="btn btn-gold btn-full" onclick="finalizarInsp()">Generar informe →</button>';
+
+  html+='<div class="div"></div>';
+  html+='<div class="fr"><label>Observaciones generales del mec\u00e1nico</label><textarea id="i-obs" placeholder="Observaciones generales..." style="min-height:70px;">'+(clData._obs||'')+'</textarea></div>';
+  html+='<button class="btn btn-gold btn-full" onclick="finalizarInsp()">Generar informe \u2192</button>';
   document.getElementById('modal-body').innerHTML=html;
 }
 function setCL(si,ii,val){
