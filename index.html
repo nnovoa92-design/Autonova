@@ -784,13 +784,96 @@ function checkRespCot(){
 
 // ── INSPECCIONES ──
 const CHECKLIST=[
-  {sec:'🔧 Motor',items:['Aceite motor (nivel/color)','Aceite transmisión','Líquido frenos','Líquido refrigerante','Líquido dirección','Correa distribución','Correa alternador','Mangueras/juntas','Filtro aire','Batería','Sistema escape']},
-  {sec:'🛑 Frenos',items:['Pastillas delanteras','Pastillas traseras','Discos delanteros','Discos traseros','Líquido frenos','Mangueras freno','Freno mano','ABS']},
-  {sec:'🏎️ Suspensión',items:['Amortiguadores del.','Amortiguadores tras.','Rótulas y terminales','Bujes/Silent block','Cremallera dirección','Alineación','Convergencia']},
-  {sec:'⚡ Eléctrico',items:['Luces delanteras','Luces traseras','Stop','Intermitentes','Reversa','Tablero','Bocina','Limpiaparabrisas','Elevavidrios','Aire acondicionado','Calefacción']},
-  {sec:'🚘 Carrocería',items:['Capot','Puertas/bisagras','Techo','Parachoques del.','Parachoques tras.','Parabrisas','Vidrios laterales','Pintura','Corrosión/óxido','Sellos puertas']},
-  {sec:'🛞 Neumáticos',items:['Neumático del. der.','Neumático del. izq.','Neumático tras. der.','Neumático tras. izq.','Repuesto','Estado rines']},
-  {sec:'🪑 Interior',items:['Tapiz/asientos','Cinturones','Airbag','Radio/pantalla','Instrumentos','Pedales','Alfombras']},
+  {sec:'💻 Electrónica y diagnóstico',items:[
+    {t:'DTC Activos (códigos de falla)',mode:'dtc'},
+    {t:'Km Panel',mode:'km'},
+    {t:'Km Real (verificado)',mode:'km'},
+    {t:'Batería — voltaje y estado',mode:'std'},
+    {t:'Alternador — carga correcta',mode:'std'},
+    {t:'Luces delanteras (cortas/largas)',mode:'std'},
+    {t:'Luces traseras y stop',mode:'std'},
+    {t:'Intermitentes y luces de emergencia',mode:'std'},
+    {t:'Luz reversa',mode:'std'},
+    {t:'Luz interior / tablero',mode:'std'},
+    {t:'Bocina',mode:'std'},
+    {t:'Sensor de estacionamiento / cámara',mode:'std'},
+    {t:'Sistema de alarma',mode:'std'},
+    {t:'Radio / pantalla / conectividad',mode:'std'},
+  ]},
+  {sec:'🔧 Motor y mecánica',items:[
+    {t:'Aceite motor — nivel y color',mode:'std'},
+    {t:'Aceite transmisión',mode:'std'},
+    {t:'Líquido de frenos',mode:'std'},
+    {t:'Líquido refrigerante — nivel y color',mode:'std'},
+    {t:'Líquido dirección hidráulica',mode:'std'},
+    {t:'Correa de distribución — estado y km',mode:'std'},
+    {t:'Correa alternador / accesorios',mode:'std'},
+    {t:'Mangueras y juntas — sin fugas',mode:'std'},
+    {t:'Filtro de aire',mode:'std'},
+    {t:'Filtro de combustible',mode:'std'},
+    {t:'Sistema de escape — sin fugas ni ruidos',mode:'std'},
+    {t:'Radiador — sin fugas',mode:'std'},
+    {t:'Arranque — sin ruidos anómalos',mode:'std'},
+    {t:'Ralentí — estable',mode:'std'},
+    {t:'Humo de escape — color y cantidad',mode:'std'},
+  ]},
+  {sec:'🛑 Frenos',items:[
+    {t:'Pastillas delanteras — espesor',mode:'std'},
+    {t:'Pastillas traseras — espesor',mode:'std'},
+    {t:'Discos delanteros — sin rayaduras ni deformación',mode:'std'},
+    {t:'Discos traseros — sin rayaduras ni deformación',mode:'std'},
+    {t:'Freno de mano — efectivo',mode:'std'},
+    {t:'Mangueras de freno — sin fisuras',mode:'std'},
+    {t:'Bomba de freno',mode:'std'},
+    {t:'ABS — sin luz en tablero',mode:'std'},
+  ]},
+  {sec:'🏎 Suspensión y dirección',items:[
+    {t:'Amortiguadores delanteros — sin fugas',mode:'std'},
+    {t:'Amortiguadores traseros — sin fugas',mode:'std'},
+    {t:'Rótulas y terminales — holgura',mode:'std'},
+    {t:'Bujes y Silent block',mode:'std'},
+    {t:'Cremallera de dirección',mode:'std'},
+    {t:'Dirección — sin vibraciones ni tirones',mode:'std'},
+    {t:'Alineación — verificación visual',mode:'std'},
+    {t:'Convergencia — desgaste uniforme',mode:'std'},
+  ]},
+  {sec:'🛞 Neumáticos y ruedas',items:[
+    {t:'Neumático delantero derecho — banda rodadura',mode:'std'},
+    {t:'Neumático delantero izquierdo — banda rodadura',mode:'std'},
+    {t:'Neumático trasero derecho — banda rodadura',mode:'std'},
+    {t:'Neumático trasero izquierdo — banda rodadura',mode:'std'},
+    {t:'Neumático de repuesto — estado',mode:'std'},
+    {t:'Rines — sin daños ni fisuras',mode:'std'},
+    {t:'Tapas de ruedas',mode:'std'},
+  ]},
+  {sec:'🚘 Carrocería y estructura',items:[
+    {t:'Capot — sin golpes ni óxido',mode:'std'},
+    {t:'Guardafangos delanteros',mode:'std'},
+    {t:'Puertas — apertura, cierre y bisagras',mode:'std'},
+    {t:'Techo — sin abolladuras',mode:'std'},
+    {t:'Parachoques delantero',mode:'std'},
+    {t:'Parachoques trasero',mode:'std'},
+    {t:'Parabrisas — sin fisuras',mode:'std'},
+    {t:'Vidrios laterales — sin fisuras',mode:'std'},
+    {t:'Luneta trasera',mode:'std'},
+    {t:'Pintura — color uniforme sin retoques',mode:'std'},
+    {t:'Corrosión u óxido en estructura',mode:'std'},
+    {t:'Sellos de puertas y techo',mode:'std'},
+    {t:'Maletero — cierre y estado interior',mode:'std'},
+  ]},
+  {sec:'🪑 Interior',items:[
+    {t:'Tapiz y asientos — estado general',mode:'std'},
+    {t:'Cinturones de seguridad — funcionamiento',mode:'std'},
+    {t:'Airbag — sin luz en tablero',mode:'std'},
+    {t:'Pedales — estado y respuesta',mode:'std'},
+    {t:'Alfombras y tapizado suelo',mode:'std'},
+    {t:'Elevavidrios — todos funcionan',mode:'std'},
+    {t:'Espejos — eléctricos y manuales',mode:'std'},
+    {t:'Aire acondicionado — enfría correctamente',mode:'std'},
+    {t:'Calefacción — funciona',mode:'std'},
+    {t:'Limpiaparabrisas — velocidades y agua',mode:'std'},
+    {t:'Sunroof / techo corredizo (si aplica)',mode:'std'},
+  ]},
 ];
 let clData={},clVid=null,clNombre=null,clWA=null;
 
@@ -826,6 +909,40 @@ function setCL(si,ii,val){
   const k=si+'_'+ii;clData[k]=clData[k]===val?'':val;renderCL();
 }
 function setCLObs(si,ii,val){clData[si+'_'+ii+'_obs']=val;}
+function setCLc(si,ci,val){
+  if(document.getElementById('i-obs'))clData._obs=document.getElementById('i-obs').value;
+  const k='c_'+si+'_'+ci;clData[k]=clData[k]===val?'':val;renderCL();
+}
+function setCLcObs(si,ci,val){clData['c_'+si+'_'+ci+'_obs']=val;}
+function addCustomItem(si){
+  const inp=document.getElementById('new-ci-'+si);
+  const txt=inp&&inp.value.trim();
+  if(!txt){toast('Escribe el nombre del ítem');return;}
+  if(document.getElementById('i-obs'))clData._obs=document.getElementById('i-obs').value;
+  if(!clData._custom)clData._custom={};
+  if(!clData._custom[si])clData._custom[si]=[];
+  clData._custom[si].push(txt);
+  renderCL();toast('✓ Ítem agregado');
+}
+function delCustomItem(si,ci){
+  if(document.getElementById('i-obs'))clData._obs=document.getElementById('i-obs').value;
+  if(clData._custom&&clData._custom[si])clData._custom[si].splice(ci,1);
+  // Clean up data for this item
+  const k='c_'+si+'_'+ci;
+  delete clData[k];delete clData[k+'_obs'];delete clData[k+'_fotos'];
+  renderCL();
+}
+function addFotoCLc(si,ci){
+  if(document.getElementById('i-obs'))clData._obs=document.getElementById('i-obs').value;
+  const input=document.createElement('input');input.type='file';input.accept='image/*';
+  input.onchange=e=>{
+    const file=e.target.files[0];if(!file)return;
+    const r=new FileReader();r.onload=ev=>{
+      const k='c_'+si+'_'+ci+'_fotos';if(!clData[k])clData[k]=[];
+      clData[k].push(ev.target.result);renderCL();
+    };r.readAsDataURL(file);
+  };input.click();
+}
 function addFotoCL(si,ii){
   if(document.getElementById('i-obs'))clData._obs=document.getElementById('i-obs').value;
   const input=document.createElement('input');input.type='file';input.accept='image/*';
@@ -846,7 +963,16 @@ function delFotoCL(si,ii,fi){
 function finalizarInsp(){
   if(document.getElementById('i-obs'))clData._obs=document.getElementById('i-obs').value;
   let ok=0,warn=0,bad=0,na=0,total=0;
-  CHECKLIST.forEach((sec,si)=>sec.items.forEach((item,ii)=>{total++;const v=clData[si+'_'+ii]||'';if(v==='ok')ok++;else if(v==='warn')warn++;else if(v==='bad')bad++;else if(v==='na')na++;}));
+  CHECKLIST.forEach((sec,si)=>{
+    sec.items.forEach((item,ii)=>{
+      if(item.mode==='km'||item.mode==='dtc')return; // no score for these
+      total++;const v=clData[si+'_'+ii]||'';
+      if(v==='ok')ok++;else if(v==='warn')warn++;else if(v==='bad')bad++;else if(v==='na')na++;
+    });
+    // Count custom items
+    const customs=clData._custom&&clData._custom[si]?clData._custom[si]:[];
+    customs.forEach((c,ci)=>{total++;const v=clData['c_'+si+'_'+ci]||'';if(v==='ok')ok++;else if(v==='warn')warn++;else if(v==='bad')bad++;else if(v==='na')na++;});
+  });
   const eval2=ok+warn+bad;
   const score=eval2>0?Math.round((ok*100+warn*50+bad*0)/eval2):0;
   let rec='',recC='',recEmoji='';
@@ -1182,13 +1308,35 @@ function impInsp(id){
   const scoreC=i.score>=90?'#16a34a':i.score>=75?'#d97706':'#dc2626';
   let clHtml='';
   CHECKLIST.forEach((sec,si)=>{
-    clHtml+='<h4 style="margin:12px 0 4px;color:#333;">'+sec.sec+'</h4><table>';
+    clHtml+='<h4 style="margin:12px 0 4px;color:#333;border-left:3px solid #c8a84b;padding-left:8px;">'+sec.sec+'</h4><table>';
     sec.items.forEach((item,ii)=>{
-      const val=i.datos[si+'_'+ii]||'';const obs=i.datos[si+'_'+ii+'_obs']||'';const fotos=i.datos[si+'_'+ii+'_fotos']||[];
+      const mode=item.mode||'std';
+      if(mode==='km'){
+        const kmVal=i.datos[si+'_'+ii+'_km']||'—';
+        const fotos=i.datos[si+'_'+ii+'_fotos']||[];
+        clHtml+='<tr><td style="padding:5px 8px;">'+item.t+'</td><td style="font-weight:600;text-align:right;padding:5px 8px;font-family:monospace;">'+kmVal+'</td></tr>';
+        if(fotos.length)clHtml+='<tr><td colspan="2" style="padding:4px 8px;"><div style="display:flex;gap:4px;">'+fotos.map(f=>'<img src="'+f+'" style="width:60px;height:60px;object-fit:cover;border-radius:4px;">').join('')+'</div></td></tr>';
+      } else if(mode==='dtc'){
+        const dtcVal=i.datos[si+'_'+ii+'_dtc']||'—';
+        const fotos=i.datos[si+'_'+ii+'_fotos']||[];
+        const hasError=dtcVal&&dtcVal!=='0'&&dtcVal!=='—'&&dtcVal.toLowerCase()!=='ninguno';
+        clHtml+='<tr><td style="padding:5px 8px;">'+item.t+'</td><td style="font-weight:600;text-align:right;padding:5px 8px;color:'+(hasError?'#dc2626':'#16a34a')+';">'+dtcVal+'</td></tr>';
+        if(fotos.length)clHtml+='<tr><td colspan="2" style="padding:4px 8px;"><div style="display:flex;gap:4px;">'+fotos.map(f=>'<img src="'+f+'" style="width:60px;height:60px;object-fit:cover;border-radius:4px;">').join('')+'</div></td></tr>';
+      } else {
+        const val=i.datos[si+'_'+ii]||'';const obs=i.datos[si+'_'+ii+'_obs']||'';const fotos=i.datos[si+'_'+ii+'_fotos']||[];
+        const vc=val==='ok'?'#16a34a':val==='warn'?'#d97706':val==='bad'?'#dc2626':'#999';
+        const vl=val==='ok'?'✓ OK':val==='warn'?'⚠ Atención':val==='bad'?'✗ Defecto':val==='na'?'N/A':'—';
+        clHtml+='<tr><td style="padding:5px 8px;">'+item.t+(obs?'<br><small style="color:#888;">'+obs+'</small>':'')+'</td><td style="color:'+vc+';font-weight:600;text-align:right;padding:5px 8px;">'+vl+'</td></tr>';
+        if(fotos.length)clHtml+='<tr><td colspan="2" style="padding:4px 8px;"><div style="display:flex;gap:4px;">'+fotos.map(f=>'<img src="'+f+'" style="width:60px;height:60px;object-fit:cover;border-radius:4px;">').join('')+'</div></td></tr>';
+      }
+    });
+    // Custom items in report
+    const customs=i.datos._custom&&i.datos._custom[si]?i.datos._custom[si]:[];
+    customs.forEach((citem,ci)=>{
+      const val=i.datos['c_'+si+'_'+ci]||'';const obs=i.datos['c_'+si+'_'+ci+'_obs']||'';
       const vc=val==='ok'?'#16a34a':val==='warn'?'#d97706':val==='bad'?'#dc2626':'#999';
       const vl=val==='ok'?'✓ OK':val==='warn'?'⚠ Atención':val==='bad'?'✗ Defecto':val==='na'?'N/A':'—';
-      clHtml+='<tr><td style="padding:5px 8px;">'+item+(obs?'<br><small style="color:#888;">'+obs+'</small>':'')+'</td><td style="color:'+vc+';font-weight:600;text-align:right;padding:5px 8px;">'+vl+'</td></tr>';
-      if(fotos.length)clHtml+='<tr><td colspan="2" style="padding:4px 8px;"><div style="display:flex;gap:4px;">'+fotos.map(f=>'<img src="'+f+'" style="width:60px;height:60px;object-fit:cover;border-radius:4px;">').join('')+'</div></td></tr>';
+      clHtml+='<tr style="background:#fffbf0;"><td style="padding:5px 8px;color:#92400e;">'+citem+' ★'+(obs?'<br><small style="color:#888;">'+obs+'</small>':'')+'</td><td style="color:'+vc+';font-weight:600;text-align:right;padding:5px 8px;">'+vl+'</td></tr>';
     });
     clHtml+='</table>';
   });
