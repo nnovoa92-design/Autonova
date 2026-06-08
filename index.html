@@ -103,11 +103,12 @@ label{font-size:11px;color:var(--text2);display:block;margin-bottom:5px;font-wei
 .cl-item:last-child{border-bottom:none;}
 .cl-label{flex:1;font-size:13px;color:var(--text2);}
 .cl-opts{display:flex;gap:5px;}
-.cl-opt{padding:4px 9px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid var(--border2);background:var(--bg4);color:var(--text3);transition:all .12s;-webkit-tap-highlight-color:transparent;}
-.cl-opt.ok{background:var(--green-bg);color:var(--green);border-color:var(--green-border);}
-.cl-opt.warn{background:var(--amber-bg);color:var(--amber);border-color:var(--amber-border);}
-.cl-opt.bad{background:var(--red-bg);color:var(--red);border-color:var(--red-border);}
-.cl-opt.na{background:var(--bg4);color:var(--text3);}
+.cl-opt{padding:4px 9px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid var(--border2);background:var(--bg4);color:var(--text3);transition:all .12s;-webkit-tap-highlight-color:transparent;opacity:.45;}
+.cl-opt.sel-ok{background:var(--green-bg);color:var(--green);border-color:var(--green-border);opacity:1;transform:scale(1.08);}
+.cl-opt.sel-warn{background:var(--amber-bg);color:var(--amber);border-color:var(--amber-border);opacity:1;transform:scale(1.08);}
+.cl-opt.sel-bad{background:var(--red-bg);color:var(--red);border-color:var(--red-border);opacity:1;transform:scale(1.08);}
+.cl-opt.sel-na{background:var(--bg5);color:var(--text2);border-color:var(--border3);opacity:1;}
+.cl-opt:not([class*="sel-"]){opacity:.5;}
 .score-wrap{display:flex;flex-direction:column;align-items:center;padding:16px;}
 .score-circle{width:110px;height:110px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;margin-bottom:10px;border:4px solid;}
 .score-num{font-size:30px;font-weight:600;font-family:var(--fm);}
@@ -200,10 +201,20 @@ label{font-size:11px;color:var(--text2);display:block;margin-bottom:5px;font-wei
   <div class="div"></div>
   <div class="card-title">Trabajo</div>
   <div class="fr"><label>Descripción</label><textarea id="r-trabajo" placeholder="Ej: Cambio pastillas, revisión frenos..."></textarea></div>
-  <div class="fg fg2 fr"><div><label>¿Quién trabaja?</label><select id="r-quien"><option value="YO">YO (solo)</option><option value="AMBOS">AMBOS</option><option value="2DO MEC">2DO MEC</option></select></div><div><label>MO Neta ($)</label><input id="r-mo" type="number" placeholder="65000" min="0"></div></div>
+  <div class="fg fg2 fr"><div><label>¿Quién trabaja?</label><select id="r-quien"><option value="NICOLAS">Nicolás Novoa</option><option value="FRANK">Frank Barriga</option><option value="AMBOS">Nicolás y Frank</option></select></div><div><label>MO Neta ($)</label><input id="r-mo" type="number" placeholder="65000" min="0"></div></div>
   <div class="fg fg2 fr"><div><label>Costo repuesto ($)</label><input id="r-crep" type="number" placeholder="0" min="0"></div><div><label>Precio cliente rep. ($)</label><input id="r-prep" type="number" placeholder="0" min="0"></div></div>
   <div class="div"></div>
-  <div class="card-title">Fotos de recepción</div>
+  <div class="card-title">Inspección de recepción</div>
+  <div style="font-size:11px;color:var(--text3);margin-bottom:10px;background:var(--amber-bg);border:1px solid var(--amber-border);border-radius:var(--rs);padding:8px 12px;">⚠️ Recordatorio: registrar con vehículo funcionando y todas las luces encendidas.</div>
+  <div id="obs-rec-list"></div>
+  <div class="card card-s" style="margin-bottom:10px;background:var(--bg3);">
+    <div class="card-title" style="margin-bottom:8px;">+ Agregar observación</div>
+    <div class="fg fg2 fr"><div><label>Descripción / lugar</label><input id="obs-rec-desc" placeholder="Ej: Rayón puerta delantera der."></div><div><label>Foto (opcional)</label><label style="cursor:pointer;display:flex;align-items:center;gap:6px;margin-top:0;font-size:12px;color:var(--gold);text-transform:none;letter-spacing:0;background:var(--gold-bg);border:1px solid var(--gold-border);border-radius:var(--rs);padding:9px 12px;"><span>📷 Seleccionar</span><input type="file" accept="image/*" id="obs-rec-foto" style="display:none;"></label></div></div>
+    <button class="btn btn-ghost btn-s btn-full" onclick="addObsRec()">+ Agregar observación</button>
+  </div>
+  <div class="div"></div>
+  <div class="card-title">Fotos del vehículo</div>
+  <div style="font-size:11px;color:var(--text3);margin-bottom:8px;">Toca cada ángulo para fotografiar</div>
   <div class="photo-grid" id="photo-g"></div>
   <div id="photo-cnt" style="font-size:11px;color:var(--green);margin-top:8px;display:none;">✓ <span id="photo-n">0</span> fotos</div>
   <div class="div"></div>
@@ -444,7 +455,7 @@ function guardarVehiculo(){
     duenio_legal:document.getElementById('r-duenio').value.trim(),
     nombre:nom,wa:document.getElementById('r-wa').value.trim(),
     rut:document.getElementById('r-rut').value.trim(),email:document.getElementById('r-email').value.trim(),
-    trabajo:trab,quien:document.getElementById('r-quien').value,
+    trabajo:trab,quien:document.getElementById('r-quien').value,obsRec:[...recObs],
     mo,crep:parseFloat(document.getElementById('r-crep').value)||0,
     prep:parseFloat(document.getElementById('r-prep').value)||0,
     fotos_data:[...recFotos],
@@ -475,7 +486,7 @@ function renderTorre(){
   const cobs=ords.filter(v=>v.cobrado);
   const p=pcts();
   let tMec=0,tYo=0,tTal=0,tRep=0;
-  cobs.forEach(v=>{const mo=v.mo||0;tRep+=Math.max(0,(v.prep||0)-(v.crep||0));if(v.quien==='YO'){tYo+=mo*(p.due+p.tal);}else{tMec+=mo*p.mec;tYo+=mo*p.due;tTal+=mo*p.tal;}});
+  cobs.forEach(v=>{const mo=v.mo||0;tRep+=Math.max(0,(v.prep||0)-(v.crep||0));if(v.quien==='NICOLAS'){tYo+=mo;}else if(v.quien==='FRANK'){tMec+=mo*p.mec;tYo+=mo*p.due;tTal+=mo*p.tal;}else{tMec+=mo*p.mec;tYo+=mo*p.due;tTal+=mo*p.tal;}});
   const fact=cobs.reduce((s,v)=>s+calcTot(v),0);
   setEl('tc-fact',fmt(fact));setEl('tc-ords',ords.length);
   setEl('tc-pend',d.v.filter(v=>!v.esDir&&!v.cobrado&&v.estado==='listo').length);
@@ -515,11 +526,11 @@ function abrirOrden(id){
   curId=id;
   const d=load();const v=d.v.find(x=>x.id===id);if(!v)return;
   const p=pcts();const total=calcTot(v);
-  const mec=v.quien==='YO'?0:Math.round((v.mo||0)*p.mec);
-  const yo=v.quien==='YO'?Math.round((v.mo||0)*(p.due+p.tal)):Math.round((v.mo||0)*p.due);
-  const tal=Math.round((v.mo||0)*p.tal);
+  const mec=v.quien==='NICOLAS'?0:Math.round((v.mo||0)*p.mec);
+  const yo=v.quien==='NICOLAS'?Math.round((v.mo||0)*(p.due+p.tal)):Math.round((v.mo||0)*p.due);
+  const tal=v.quien==='NICOLAS'?0:Math.round((v.mo||0)*p.tal);
   const ganRep=Math.max(0,(v.prep||0)-(v.crep||0));
-  const mecNom=v.quien==='YO'?'Nicolás Novoa':v.quien==='2DO MEC'?'Frank Barriga':'Nicolás Novoa y Frank Barriga';
+  const mecNom=v.quien==='NICOLAS'?'Nicolás Novoa':v.quien==='FRANK'?'Frank Barriga (C.Calidad: Nicolás Novoa)':'Nicolás Novoa y Frank Barriga';
   const ESTADOS=[{v:'ingresado',l:'Ingresado'},{v:'proceso',l:'En proceso'},{v:'espera',l:'Esperando repuesto'},{v:'listo',l:'Listo para entregar'},{v:'entregado',l:'Entregado al cliente'},{v:'garantia',l:'Reingreso por garantía'},{v:'postventa',l:'Postventa'}];
   const PAGOS=['EFECTIVO','TRANSFERENCIA','DEBITO','CREDITO','MIXTO'];
   const fotosGrid=v.fotos_data&&v.fotos_data.length?v.fotos_data.map((f,i)=>'<div style="position:relative;aspect-ratio:1;border-radius:var(--rs);overflow:hidden;"><img src="'+f.dataUrl+'" style="width:100%;height:100%;object-fit:cover;"><div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.65);color:#fff;font-size:9px;text-align:center;padding:2px;">'+f.label+'</div><button onclick="elimFoto(\''+v.id+'\','+i+')" style="position:absolute;top:3px;right:3px;background:rgba(0,0,0,.7);border:none;border-radius:50%;width:20px;height:20px;color:#fff;font-size:10px;cursor:pointer;">✕</button></div>').join(''):'<div style="font-size:12px;color:var(--text3);text-align:center;padding:8px;">Sin fotos — usa los botones para agregar</div>';
@@ -621,9 +632,10 @@ function qWA(tipo,vid){
 
 // ── COTIZACIONES ──
 let cotItems=[];
-function nuevaCot(){
+function nuevaCot(prefill){
   cotItems=[];
-  document.getElementById('modal-body').innerHTML='<div style="font-size:17px;font-weight:600;margin-bottom:14px;">Nueva Cotización</div><div class="fr"><label>Nombre cliente</label><input id="c-nombre" placeholder="Juan Pérez"></div><div class="fg fg2 fr"><div><label>Patente / Vehículo</label><input id="c-pat" placeholder="CRZC88"></div><div><label>WhatsApp</label><input id="c-wa" type="tel" placeholder="+56 9 ..."></div></div><div class="fr"><label>RUT cliente</label><input id="c-rut" placeholder="12.345.678-9"></div><div class="fr"><label>Descripción general</label><textarea id="c-desc" placeholder="Descripción del trabajo..." style="min-height:60px;"></textarea></div><div class="div"></div><div style="font-size:13px;font-weight:600;margin-bottom:10px;">Ítems</div><div id="cot-items-list"></div><div class="card card-s" style="margin-bottom:12px;"><div class="card-title">Agregar ítem</div><div class="fr"><label>Descripción</label><input id="ci-desc" placeholder="Ej: Cambio pastillas"></div><div class="fg fg2 fr"><div><label>Precio neto ($)</label><input id="ci-precio" type="number" placeholder="30000" min="0"></div><div><label>Cant.</label><input id="ci-cant" type="number" value="1" min="1"></div></div><button class="btn btn-ghost btn-s btn-full" onclick="addCotItem()">+ Agregar ítem</button></div><div id="cot-totales"></div><div class="div"></div><div class="fg fg2 fr"><div><label>Válida (días)</label><input id="c-validez" type="number" value="7" min="1"></div><div><label>Descuento ($)</label><input id="c-desc2" type="number" value="0" min="0"></div></div><div class="fr"><label>Observaciones</label><textarea id="c-obs" placeholder="Observaciones técnicas..." style="min-height:50px;"></textarea></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><button class="btn btn-wa btn-full" onclick="guardarCot(true)">Guardar y WA</button><button class="btn btn-gold btn-full" onclick="guardarCot(false)">Guardar</button></div>';
+  const pn=prefill?prefill.nombre:'';const pw=prefill?prefill.wa||'':'';const pr=prefill?prefill.rut||'':'';const pp=prefill?prefill.pat||'':'';
+  document.getElementById('modal-body').innerHTML='<div style="font-size:17px;font-weight:600;margin-bottom:14px;">Nueva Cotización</div><div class="fr"><label>Nombre cliente</label><input id="c-nombre" placeholder="Juan Pérez" value="'+pn+'"></div><div class="fg fg2 fr"><div><label>Patente / Vehículo</label><input id="c-pat" placeholder="CRZC88" value="'+pp+'"></div><div><label>WhatsApp</label><input id="c-wa" type="tel" placeholder="+56 9 ..." value="'+pw+'"></div></div><div class="fr"><label>RUT cliente</label><input id="c-rut" placeholder="12.345.678-9" value="'+pr+'"></div><div class="fr"><label>Descripción general</label><textarea id="c-desc" placeholder="Descripción del trabajo..." style="min-height:60px;"></textarea></div><div class="div"></div><div style="font-size:13px;font-weight:600;margin-bottom:10px;">Ítems</div><div id="cot-items-list"></div><div class="card card-s" style="margin-bottom:12px;"><div class="card-title">Agregar ítem</div><div class="fr"><label>Descripción</label><input id="ci-desc" placeholder="Ej: Cambio pastillas"></div><div class="fg fg2 fr"><div><label>Precio neto ($)</label><input id="ci-precio" type="number" placeholder="30000" min="0"></div><div><label>Cant.</label><input id="ci-cant" type="number" value="1" min="1"></div></div><button class="btn btn-ghost btn-s btn-full" onclick="addCotItem()">+ Agregar ítem</button></div><div id="cot-totales"></div><div class="div"></div><div class="fg fg2 fr"><div><label>Válida (días)</label><input id="c-validez" type="number" value="7" min="1"></div><div><label>Descuento ($)</label><input id="c-desc2" type="number" value="0" min="0"></div></div><div class="fr"><label>Observaciones</label><textarea id="c-obs" placeholder="Observaciones técnicas..." style="min-height:50px;"></textarea></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><button class="btn btn-wa btn-full" onclick="guardarCot(true)">Guardar y WA</button><button class="btn btn-gold btn-full" onclick="guardarCot(false)">Guardar</button></div>';
   renderCotItems();
   openOverlay();
 }
@@ -689,6 +701,26 @@ function abrirCot(id){
   const saldo=Math.max(0,totalFinal-(c.abono||0));
   document.getElementById('modal-body').innerHTML='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:14px;"><div><div style="font-size:17px;font-weight:600;">Cotización #'+c.id.slice(-5)+'</div><div style="font-size:13px;color:var(--text2);margin-top:2px;">'+c.nombre+(c.pat?' · '+c.pat:'')+'</div><div style="font-size:11px;color:var(--text3);">'+fmtD(c.fecha)+' · válida '+c.validez+' días</div></div><div style="display:flex;gap:5px;"><button class="btn btn-blue btn-xs" onclick="impCot(\''+c.id+'\')">🖨</button><button class="btn btn-wa btn-xs" onclick="compartirCotWA(\''+c.id+'\')">📱 WA+PDF</button><button class="btn btn-danger btn-xs" onclick="elimCot(\''+c.id+'\')">✕</button></div></div><div class="card card-s" style="margin-bottom:10px;"><div class="card-title">Ítems</div>'+c.items.map(i=>'<div class="dr"><span class="dr-name">'+i.desc+(i.cant>1?' ×'+i.cant:'')+'</span><span class="dr-val">'+fmt(i.precio*i.cant)+'</span></div>').join('')+'<div class="div"></div><div class="dr"><span class="dr-name">Subtotal neto</span><span class="dr-val">'+fmt(c.neto)+'</span></div>'+(c.descuento?'<div class="dr"><span class="dr-name" style="color:var(--red);">Descuento</span><span class="dr-val" style="color:var(--red);">-'+fmt(c.descuento)+'</span></div>':'')+'<div class="dr"><span class="dr-name" style="color:var(--amber);">IVA (19%)</span><span class="dr-val" style="color:var(--amber);">'+fmt(c.iva)+'</span></div><div class="dr" style="font-size:16px;font-weight:600;"><span>TOTAL</span><span class="dr-val" style="color:var(--gold);">'+fmt(totalFinal)+'</span></div>'+(c.abono?'<div class="dr"><span class="dr-name" style="color:var(--blue);">Abono</span><span class="dr-val" style="color:var(--blue);">-'+fmt(c.abono)+'</span></div><div class="dr" style="font-weight:600;"><span>Saldo</span><span class="dr-val" style="color:var(--red);">'+fmt(saldo)+'</span></div>':'')+'</div>'+(c.obs?'<div class="card card-s" style="margin-bottom:10px;"><div class="card-title">Observaciones</div><div style="font-size:13px;color:var(--text2);line-height:1.5;">'+c.obs+'</div></div>':'')+'<div class="card card-s" style="margin-bottom:10px;"><div class="card-title">Editar</div><div class="fg fg2 fr"><div><label>Abono recibido ($)</label><input id="cot-abono" type="number" value="'+(c.abono||0)+'" min="0"></div><div><label>Descuento ($)</label><input id="cot-desc2" type="number" value="'+(c.descuento||0)+'" min="0"></div></div><div class="fr"><label>Observaciones</label><textarea id="cot-obs2" style="min-height:50px;">'+( c.obs||'')+'</textarea></div><button class="btn btn-gold btn-full" onclick="guardarEditCot(\''+c.id+'\')">Guardar cambios</button></div><div class="card card-s" style="margin-bottom:10px;"><div class="card-title">Respuesta del cliente</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin-bottom:8px;"><div class="pago-o'+(c.respuesta==='aceptada'?' sel':'')+'" onclick="setCotResp(this,\'aceptada\')" style="'+(c.respuesta==='aceptada'?'background:var(--green-bg);color:var(--green);':'')+'">✓ Acepta</div><div class="pago-o'+(c.respuesta==='rechazada'?' sel':'')+'" onclick="setCotResp(this,\'rechazada\')" style="'+(c.respuesta==='rechazada'?'background:var(--red-bg);color:var(--red);':'')+'">✗ Rechaza</div><div class="pago-o'+(c.respuesta==='pendiente'?' sel':'')+'" onclick="setCotResp(this,\'pendiente\')">⏳ Pendiente</div></div><div style="font-size:11px;color:var(--text3);">'+(c.respuesta?'Respondida: '+fmtD(c.fechaRespuesta):'Sin respuesta aún')+'</div></div><div class="card card-s" style="margin-bottom:10px;background:var(--gold-bg);border-color:var(--gold-border);"><div class="card-title" style="color:var(--gold);">⚡ Convertir en orden de trabajo</div><div style="font-size:12px;color:var(--text2);margin-bottom:10px;">Genera automáticamente una orden con los datos de esta cotización.</div><button class="btn btn-gold btn-full" onclick="cotAOrden(\''+c.id+'\')">Convertir en orden →</button></div>';
   openOverlay();
+}
+function delCotItemEdit(cotId,idx){
+  const d=load();const c=d.cot.find(x=>x.id===cotId);if(!c)return;
+  c.items.splice(idx,1);
+  c.neto=c.items.reduce((s,i)=>s+i.precio*i.cant,0);
+  c.iva=Math.round((c.neto-(c.descuento||0))*.19);
+  c.total=c.neto+c.iva;
+  save(d);abrirCot(cotId);toast('Ítem eliminado');
+}
+function addCotItemEdit(cotId){
+  const desc=document.getElementById('cot-new-desc').value.trim();
+  const precio=parseFloat(document.getElementById('cot-new-precio').value)||0;
+  const cant=parseInt(document.getElementById('cot-new-cant').value)||1;
+  if(!desc||!precio){toast('Completa descripción y precio');return;}
+  const d=load();const c=d.cot.find(x=>x.id===cotId);if(!c)return;
+  c.items.push({id:Date.now().toString(),desc,precio,cant});
+  c.neto=c.items.reduce((s,i)=>s+i.precio*i.cant,0);
+  c.iva=Math.round((c.neto-(c.descuento||0))*.19);
+  c.total=c.neto+c.iva;
+  save(d);abrirCot(cotId);toast('✓ Ítem agregado');
 }
 function guardarEditCot(id){
   const d=load();const c=d.cot.find(x=>x.id===id);if(!c)return;
@@ -804,6 +836,12 @@ function addFotoCL(si,ii){
     };r.readAsDataURL(file);
   };input.click();
 }
+function delFotoCL(si,ii,fi){
+  if(document.getElementById('i-obs'))clData._obs=document.getElementById('i-obs').value;
+  const k=si+'_'+ii+'_fotos';
+  if(clData[k])clData[k].splice(fi,1);
+  renderCL();
+}
 function finalizarInsp(){
   if(document.getElementById('i-obs'))clData._obs=document.getElementById('i-obs').value;
   let ok=0,warn=0,bad=0,na=0,total=0;
@@ -914,6 +952,19 @@ function guardarCliente(encNom){
   (d.cot||[]).forEach(c=>{if(c.nombre===oldNom){c.nombre=newNom;c.wa=newWa;n++;}});
   save(d);toast('✓ '+n+' registros actualizados');closeOverlay();renderDir();
 }
+function eliminarCliente(encNom){
+  const nom=decodeURIComponent(encNom);
+  if(!confirm('¿Eliminar cliente "'+nom+'" y TODOS sus registros? Esta acción no se puede deshacer.'))return;
+  const d=load();
+  d.v=d.v.filter(v=>v.nombre!==nom);
+  d.cot=(d.cot||[]).filter(c=>c.nombre!==nom);
+  save(d);toast('Cliente eliminado');closeOverlay();renderDir();
+}
+function cargarClienteCot(enc){
+  const c=JSON.parse(decodeURIComponent(enc));
+  closeOverlay();goPage('cotizaciones');
+  setTimeout(()=>{nuevaCot(c);},300);
+}
 function cargarCliente(enc){
   const c=JSON.parse(decodeURIComponent(enc));
   closeOverlay();goPage('recepcion');
@@ -937,6 +988,19 @@ function guardarVehiculo2(pat){
   const upd={marca:document.getElementById('ev-marca').value.trim(),modelo:document.getElementById('ev-modelo').value.trim(),anio:document.getElementById('ev-anio').value.trim(),km:document.getElementById('ev-km').value.trim(),color:document.getElementById('ev-color').value.trim(),vin:document.getElementById('ev-vin').value.trim(),nmotor:document.getElementById('ev-nmotor').value.trim(),duenio_legal:document.getElementById('ev-duenio').value.trim(),nombre:document.getElementById('ev-cliente').value.trim()};
   let n=0;d.v.forEach(v=>{if(v.pat===pat){Object.assign(v,upd);n++;}});
   save(d);toast('✓ '+n+' registros actualizados');closeOverlay();renderDir();
+}
+function eliminarVehiculo(encPat){
+  const pat=decodeURIComponent(encPat);
+  if(!confirm('¿Eliminar el vehículo '+pat+' y todas sus órdenes? Esta acción no se puede deshacer.'))return;
+  const d=load();
+  d.v=d.v.filter(v=>v.pat!==pat);
+  d.cot=(d.cot||[]).filter(c=>c.pat!==pat);
+  save(d);toast('Vehículo eliminado');closeOverlay();renderDir();
+}
+function cargarVehiculoCot(enc){
+  const v=JSON.parse(decodeURIComponent(enc));
+  closeOverlay();goPage('cotizaciones');
+  setTimeout(()=>{nuevaCot({nombre:v.nombre,wa:v.wa||'',pat:v.pat});},300);
 }
 function cargarVehiculo(enc){
   const v=JSON.parse(decodeURIComponent(enc));
@@ -1076,7 +1140,7 @@ function impOrden(id,tipo){
   const yo=v.quien==='YO'?Math.round((v.mo||0)*(p.due+p.tal)):Math.round((v.mo||0)*p.due);
   const tal=Math.round((v.mo||0)*p.tal);
   const ganRep=Math.max(0,(v.prep||0)-(v.crep||0));
-  const mecNom=v.quien==='YO'?'Nicolás Novoa':v.quien==='2DO MEC'?'Frank Barriga':'Nicolás Novoa y Frank Barriga';
+  const mecNom=v.quien==='NICOLAS'?'Nicolás Novoa':v.quien==='FRANK'?'Frank Barriga (C.Calidad: Nicolás Novoa)':'Nicolás Novoa y Frank Barriga';
   const fotosHTML=v.fotos_data&&v.fotos_data.length?'<h3>Fotografías</h3><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;">'+v.fotos_data.map(f=>'<div style="text-align:center;"><img src="'+f.dataUrl+'" style="width:100%;border-radius:6px;border:1px solid #ddd;"><div style="font-size:10px;color:#888;margin-top:3px;">'+f.label+'</div></div>').join('')+'</div>':'';
   const c=cfg();
   let body='';
