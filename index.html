@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-appatitle" content="Autonova">
+<meta name="apple-mobile-web-app-title" content="Autonova">
 <title>Autonova</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -885,6 +885,29 @@ function abrirCot(id){
     '</div>';
 
   openOverlay();
+}
+
+function addCotItemEdit(cotId){
+  const desc=document.getElementById('cot-new-desc').value.trim();
+  const precio=parseFloat(document.getElementById('cot-new-precio').value)||0;
+  const cant=parseInt(document.getElementById('cot-new-cant').value)||1;
+  if(!desc){toast('Escribe una descripción');return;}
+  if(!precio){toast('Ingresa el precio');return;}
+  const d=load();const c=d.cot.find(x=>x.id===cotId);if(!c)return;
+  c.items.push({id:Date.now().toString(),desc,precio,cant});
+  c.neto=c.items.reduce((s,i)=>s+i.precio*i.cant,0);
+  c.iva=Math.round((c.neto-(c.descuento||0))*.19);
+  c.total=c.neto+c.iva;
+  save(d);toast('✓ Ítem agregado');abrirCot(cotId);
+}
+
+function delCotItemEdit(cotId,idx){
+  const d=load();const c=d.cot.find(x=>x.id===cotId);if(!c)return;
+  c.items.splice(idx,1);
+  c.neto=c.items.reduce((s,i)=>s+i.precio*i.cant,0);
+  c.iva=Math.round((c.neto-(c.descuento||0))*.19);
+  c.total=c.neto+c.iva;
+  save(d);toast('Ítem eliminado');abrirCot(cotId);
 }
 
 function guardarEditCot(id){
