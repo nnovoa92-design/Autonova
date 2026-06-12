@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Estado de mi vehículo · Autonova</title>
+  <link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body class="portal-page">
+  <div class="portal-card" style="text-align:center;">
+    <h1 style="margin:0 0 0.25rem; font-size:1.4rem;">Autonova</h1>
+    <p style="color:var(--color-text-muted); margin:0;">Consulta el estado de tu vehículo en el taller</p>
+  </div>
+
+  <div class="portal-card">
+    <form id="consulta-form" class="form-row" style="align-items:end;">
+      <div class="form-group">
+        <label for="patente">Patente</label>
+        <input type="text" id="patente" required placeholder="ABCD12" style="text-transform:uppercase;" />
+      </div>
+      <div class="form-group">
+        <label for="numero">N° de orden (OT)</label>
+        <input type="number" id="numero" required min="1" placeholder="12" />
+      </div>
+      <div class="form-group" style="flex:0;">
+        <button type="submit">Consultar</button>
+      </div>
+    </form>
+    <p style="color:var(--color-text-muted); font-size:0.8rem; margin:0;">
+      El número de orden aparece en el comprobante que te entregó el taller (ej: OT-0012 → 12).
+    </p>
+    <p class="error-message" id="error"></p>
+  </div>
+
+  <div class="portal-card" id="resultado" style="display:none;"></div>
+
+  <script src="assets/vendor/supabase.min.js"></script>
+  <script src="assets/js/supabaseClient.js"></script>
+  <script src="assets/js/layout.js"></script>
+  <script>
+    const PASOS = ['recepcion', 'diagnostico', 'en_proceso', 'listo', 'entregado'];
+
+    async function consultar(patente, numero) {
+      const errorEl = document.getElementById('error');
+      const resultado = document.getElementById('resultado');
+      errorEl.textContent = '';
+      resultado.style.display = 'none';
+
+      const { data, error } = await supabaseClient.rpc('portal_consultar_orden', {
+        p_patente: patente,
+        p_numero: Number(numero),
+      });
+      if (error) {
+        errorEl.textContent = 'No pudimos realizar la consulta. Intenta de nuevo en unos minutos.';
+        return;
+      }
+      if (!data) {
+        errorEl.textContent = 'No encontramos una orden con esa patente y número. Revisa los datos.';
+        return;
+      }
+      await render(data);
+    }
+
+    async function render(d) {
+      const ivaPct = Number((d.taller && d.taller.iva_pct) ?? 19);
+      const neto = (d.items || []).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
+      const total = neto * (1 + ivaPct / 100);
+
+      const idx = PASOS.indexOf(d.estado);
+      const pasos = d.estado === 'cancelado'
+        ? badgeEstado('cancelado', ESTADOS_ORDEN)
+        : PASOS.map((p, i) =>
+            `<span class="badge ${i < idx ? 'badge-green' : (i === idx ? 'badge-blue' : 'badge-gray')}">${ESTADOS_ORDEN[p].label}</span>`
+          ).join(' <span style="color:var(--color-text-muted);">→</span> ');
+
+      // Fotos del vehículo (bucket público)
+      let fotosHtml = '';
+      const { data: fotos } = await supabaseClient.storage.from('fotos-ot').list(d.orden_id, { limit: 50 });
+      if (fotos && fotos.length) {
+        fotosHtml = '<h3>Fotos</h3><div class="fotos-grid">' + fotos.map(f => {
+          const url = supabaseClient.storage.from('fotos-ot').getPublicUrl(`${d.orden_id}/${f.name}`).data.publicUrl;
+          return `<div class="foto-item"><a href="${url}" target="_blank"><img src="${url}" loading="lazy" /></a></div>`;
+        }).join('') + '</div>';
+      }
+
+      const resultado = document.getElementById('resultado');
+      resultado.innerHTML = `
+        <div class="toolbar">
+          <h2 style="margin:0;">${fmtNumero('OT', d.numero)} · ${d.vehiculo.patente}</h2>
+          ${badgeEstado(d.estado, ESTADOS_ORDEN)}
+        </div>
+        <p style="color:var(--color-text-muted); margin:0.25rem 0;">
+          ${[d.vehiculo.marca, d.vehiculo.modelo].filter(Boolean).join(' ')}
+          · Ingreso: ${fmtFecha(d.fecha_ingreso)}
+          ${d.fecha_entrega ? ' · Entregado: ' + fmtFecha(d.fecha_entrega) : ''}
+        </p>
+        <div class="pasos">${pasos}</div>
+        ${d.diagnostico ? `<p><strong>Diagnóstico:</strong> ${d.diagnostico}</p>` : ''}
+        ${(d.items || []).length ? `
+        <h3>Trabajos y repuestos</h3>
+        <table>
+          <thead><tr><th>Descripción</th><th>Cant.</th><th>Total</th></tr></thead>
+          <tbody>
+            ${d.items.map(i => `<tr>
+              <td>${i.descripcion}</td>
+              <td>${Number(i.cantidad).toLocaleString('es-CL')}</td>
+              <td>${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        <div class="totales">
+          <div class="fila"><span>Neto</span><span>${fmtMoneda(neto)}</span></div>
+          <div class="fila"><span>IVA ${ivaPct}%</span><span>${fmtMoneda(neto * ivaPct / 100)}</span></div>
+          <div class="fila total"><span>Total</span><span>${fmtMoneda(total)}</span></div>
+        </div>` : ''}
+        ${fotosHtml}
+        ${d.taller ? `<p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:1rem;">
+          ${d.taller.nombre} · ${d.taller.direccion ?? ''} · ${d.taller.telefono ?? ''}
+        </p>` : ''}
+      `;
+      resultado.style.display = 'block';
+    }
+
+    document.getElementById('consulta-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      consultar(document.getElementById('patente').value.trim(), document.getElementById('numero').value);
+    });
+
+    // Si llega con ?patente=...&ot=... (desde el WhatsApp del taller), consulta directo
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('patente') && params.get('ot')) {
+      document.getElementById('patente').value = params.get('patente');
+      document.getElementById('numero').value = params.get('ot');
+      consultar(params.get('patente'), params.get('ot'));
+    }
+  </script>
+</body>
+</html>

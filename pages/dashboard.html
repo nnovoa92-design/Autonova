@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inicio · Autonova</title>
+  <link rel="stylesheet" href="../assets/css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar">
+        <h1>Inicio</h1>
+      </header>
+      <div class="content">
+        <div class="cards-grid">
+          <div class="card stat-card">
+            <div class="stat-value" id="stat-ots-activas">–</div>
+            <div class="stat-label">OTs en taller</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-value" id="stat-cotizaciones">–</div>
+            <div class="stat-label">Cotizaciones pendientes</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-value" id="stat-stock-bajo">–</div>
+            <div class="stat-label">Repuestos con stock bajo</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-value" id="stat-horas-mes">–</div>
+            <div class="stat-label">Horas de taller del mes</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-value" id="stat-ingresos-mes">–</div>
+            <div class="stat-label">Ingresos del mes</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="toolbar">
+            <h2 style="margin:0;">Vehículos en taller</h2>
+            <a href="ordenes.html" class="btn btn-secondary" style="text-decoration:none;">Ver todas las órdenes</a>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>OT</th>
+                <th>Vehículo</th>
+                <th>Cliente</th>
+                <th>Ingreso</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody id="ots-body">
+              <tr><td colspan="5">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <div class="toolbar">
+            <h2 style="margin:0;">Últimas cotizaciones</h2>
+            <a href="cotizaciones.html" class="btn btn-secondary" style="text-decoration:none;">Ver todas</a>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>N°</th>
+                <th>Cliente</th>
+                <th>Vehículo</th>
+                <th>Fecha</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody id="cotizaciones-body">
+              <tr><td colspan="5">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../assets/vendor/supabase.min.js"></script>
+  <script src="../assets/js/supabaseClient.js"></script>
+  <script src="../assets/js/layout.js"></script>
+  <script>
+    (async () => {
+      const session = await initLayout('dashboard');
+      if (!session) return;
+
+      const monthStart = new Date();
+      monthStart.setDate(1);
+      monthStart.setHours(0, 0, 0, 0);
+
+      // OTs activas (no entregadas ni canceladas)
+      const { count: otsActivas } = await supabaseClient
+        .from('ordenes')
+        .select('*', { count: 'exact', head: true })
+        .in('estado', ['recepcion', 'diagnostico', 'en_proceso', 'listo']);
+      document.getElementById('stat-ots-activas').textContent = otsActivas ?? 0;
+
+      // Cotizaciones pendientes de respuesta
+      const { count: cotPendientes } = await supabaseClient
+        .from('cotizaciones')
+        .select('*', { count: 'exact', head: true })
+        .in('estado', ['borrador', 'enviada']);
+      document.getElementById('stat-cotizaciones').textContent = cotPendientes ?? 0;
+
+      // Repuestos con stock bajo
+      const { data: repuestos } = await supabaseClient
+        .from('repuestos')
+        .select('stock_actual, stock_minimo')
+        .eq('activo', true);
+      const stockBajo = (repuestos || []).filter(r => Number(r.stock_actual) <= Number(r.stock_minimo)).length;
+      document.getElementById('stat-stock-bajo').textContent = stockBajo;
+
+      // Horas de taller registradas en el mes
+      const { data: horasMes } = await supabaseClient
+        .from('registro_horas')
+        .select('horas')
+        .gte('fecha', monthStart.toISOString().slice(0, 10));
+      const totalHoras = (horasMes || []).reduce((s, h) => s + Number(h.horas || 0), 0);
+      document.getElementById('stat-horas-mes').textContent = totalHoras.toLocaleString('es-CL') + ' h';
+
+      // Ingresos del mes
+      const { data: pagosMes } = await supabaseClient
+        .from('pagos')
+        .select('monto')
+        .gte('fecha', monthStart.toISOString());
+      const totalMes = (pagosMes || []).reduce((s, p) => s + Number(p.monto || 0), 0);
+      document.getElementById('stat-ingresos-mes').textContent = fmtMoneda(totalMes);
+
+      // Vehículos actualmente en taller
+      const { data: ots } = await supabaseClient
+        .from('ordenes')
+        .select('numero, estado, fecha_ingreso, clientes(nombre), vehiculos(patente, marca, modelo)')
+        .in('estado', ['recepcion', 'diagnostico', 'en_proceso', 'listo'])
+        .order('fecha_ingreso', { ascending: true })
+        .limit(10);
+
+      const otsBody = document.getElementById('ots-body');
+      if (!ots || !ots.length) {
+        otsBody.innerHTML = '<tr><td colspan="5">No hay vehículos en taller.</td></tr>';
+      } else {
+        otsBody.innerHTML = ots.map(o => `<tr>
+          <td>${fmtNumero('OT', o.numero)}</td>
+          <td>${o.vehiculos ? `${o.vehiculos.patente} · ${o.vehiculos.marca} ${o.vehiculos.modelo}` : '–'}</td>
+          <td>${o.clientes ? o.clientes.nombre : '–'}</td>
+          <td>${fmtFecha(o.fecha_ingreso)}</td>
+          <td>${badgeEstado(o.estado, ESTADOS_ORDEN)}</td>
+        </tr>`).join('');
+      }
+
+      // Últimas cotizaciones
+      const { data: cots } = await supabaseClient
+        .from('cotizaciones')
+        .select('numero, fecha, estado, clientes(nombre), vehiculos(patente, marca, modelo)')
+        .order('creado_en', { ascending: false })
+        .limit(8);
+
+      const cotBody = document.getElementById('cotizaciones-body');
+      if (!cots || !cots.length) {
+        cotBody.innerHTML = '<tr><td colspan="5">No hay cotizaciones.</td></tr>';
+      } else {
+        cotBody.innerHTML = cots.map(c => `<tr>
+          <td>${fmtNumero('COT', c.numero)}</td>
+          <td>${c.clientes ? c.clientes.nombre : '–'}</td>
+          <td>${c.vehiculos ? `${c.vehiculos.patente} · ${c.vehiculos.marca} ${c.vehiculos.modelo}` : '–'}</td>
+          <td>${fmtFecha(c.fecha)}</td>
+          <td>${badgeEstado(c.estado, ESTADOS_COTIZACION)}</td>
+        </tr>`).join('');
+      }
+    })();
+  </script>
+</body>
+</html>

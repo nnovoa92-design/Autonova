@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inventario · Autonova</title>
+  <link rel="stylesheet" href="../assets/css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar">
+        <h1>Inventario de repuestos</h1>
+      </header>
+      <div class="content">
+
+        <div class="card" id="form-card">
+          <h2 id="form-title" style="margin-top:0;">Nuevo repuesto</h2>
+          <form id="repuesto-form">
+            <input type="hidden" id="repuesto-id" />
+            <div class="form-row">
+              <div class="form-group">
+                <label for="sku">SKU / Código</label>
+                <input type="text" id="sku" />
+              </div>
+              <div class="form-group">
+                <label for="nombre">Nombre *</label>
+                <input type="text" id="nombre" required />
+              </div>
+              <div class="form-group">
+                <label for="marca">Marca</label>
+                <input type="text" id="marca" />
+              </div>
+              <div class="form-group">
+                <label for="ubicacion">Ubicación</label>
+                <input type="text" id="ubicacion" placeholder="Estante A1" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="stock_actual">Stock actual</label>
+                <input type="number" id="stock_actual" min="0" step="1" value="0" />
+              </div>
+              <div class="form-group">
+                <label for="stock_minimo">Stock mínimo</label>
+                <input type="number" id="stock_minimo" min="0" step="1" value="0" />
+              </div>
+              <div class="form-group">
+                <label for="costo">Costo</label>
+                <input type="number" id="costo" min="0" step="1" />
+              </div>
+              <div class="form-group">
+                <label for="precio_venta">Precio venta</label>
+                <input type="number" id="precio_venta" min="0" step="1" />
+              </div>
+            </div>
+            <button type="submit" id="submit-btn">Guardar repuesto</button>
+            <button type="button" id="cancel-btn" class="btn-secondary" style="display:none;">Cancelar edición</button>
+            <p class="error-message" id="form-error"></p>
+          </form>
+        </div>
+
+        <div class="card" style="margin-top:1rem;">
+          <h2 style="margin-top:0;">Movimiento de stock</h2>
+          <form id="movimiento-form" class="form-row" style="align-items:end;">
+            <div class="form-group">
+              <label for="mov-repuesto">Repuesto</label>
+              <select id="mov-repuesto" required></select>
+            </div>
+            <div class="form-group">
+              <label for="mov-tipo">Tipo</label>
+              <select id="mov-tipo">
+                <option value="entrada">Entrada (compra)</option>
+                <option value="salida">Salida</option>
+                <option value="ajuste">Ajuste (fijar stock)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="mov-cantidad">Cantidad</label>
+              <input type="number" id="mov-cantidad" min="0" step="1" required />
+            </div>
+            <div class="form-group">
+              <label for="mov-motivo">Motivo</label>
+              <input type="text" id="mov-motivo" placeholder="Compra proveedor, merma..." />
+            </div>
+            <div class="form-group" style="flex:0;">
+              <button type="submit">Registrar</button>
+            </div>
+          </form>
+          <p class="error-message" id="mov-error"></p>
+        </div>
+
+        <div class="card" style="margin-top:1rem;">
+          <div class="toolbar">
+            <h2 style="margin:0;">Repuestos</h2>
+            <div style="display:flex; gap:0.75rem; align-items:center;">
+              <label style="display:flex; align-items:center; gap:0.4rem; margin:0;">
+                <input type="checkbox" id="solo-stock-bajo" style="width:auto;" /> Solo stock bajo
+              </label>
+              <input type="search" id="buscar" placeholder="Buscar..." style="max-width:220px;" />
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>SKU</th>
+                <th>Repuesto</th>
+                <th>Ubicación</th>
+                <th>Stock</th>
+                <th>Costo</th>
+                <th>Precio venta</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="repuestos-body">
+              <tr><td colspan="7">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="../assets/vendor/supabase.min.js"></script>
+  <script src="../assets/js/supabaseClient.js"></script>
+  <script src="../assets/js/layout.js"></script>
+  <script>
+    let repuestosCache = [];
+
+    function clearForm() {
+      ['repuesto-id','sku','nombre','marca','ubicacion','costo','precio_venta'].forEach(id => {
+        document.getElementById(id).value = '';
+      });
+      document.getElementById('stock_actual').value = '0';
+      document.getElementById('stock_minimo').value = '0';
+      document.getElementById('form-title').textContent = 'Nuevo repuesto';
+      document.getElementById('submit-btn').textContent = 'Guardar repuesto';
+      document.getElementById('cancel-btn').style.display = 'none';
+      document.getElementById('form-error').textContent = '';
+    }
+
+    function fillForm(r) {
+      document.getElementById('repuesto-id').value = r.id;
+      document.getElementById('sku').value = r.sku ?? '';
+      document.getElementById('nombre').value = r.nombre ?? '';
+      document.getElementById('marca').value = r.marca ?? '';
+      document.getElementById('ubicacion').value = r.ubicacion ?? '';
+      document.getElementById('stock_actual').value = r.stock_actual ?? 0;
+      document.getElementById('stock_minimo').value = r.stock_minimo ?? 0;
+      document.getElementById('costo').value = r.costo ?? '';
+      document.getElementById('precio_venta').value = r.precio_venta ?? '';
+      document.getElementById('form-title').textContent = `Editar repuesto: ${r.nombre}`;
+      document.getElementById('submit-btn').textContent = 'Actualizar repuesto';
+      document.getElementById('cancel-btn').style.display = 'inline-block';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function renderRepuestos(repuestos) {
+      const tbody = document.getElementById('repuestos-body');
+      if (!repuestos.length) {
+        tbody.innerHTML = '<tr><td colspan="7">No se encontraron repuestos.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = repuestos.map(r => {
+        const bajo = Number(r.stock_actual) <= Number(r.stock_minimo);
+        const stockStr = `${Number(r.stock_actual).toLocaleString('es-CL')}${bajo ? ' <span class="badge badge-stock-bajo">bajo</span>' : ''}`;
+        return `
+        <tr>
+          <td>${r.sku ?? '–'}</td>
+          <td>${r.nombre}${r.marca ? ` <small style="color:var(--color-text-muted);">(${r.marca})</small>` : ''}</td>
+          <td>${r.ubicacion ?? '–'}</td>
+          <td>${stockStr}</td>
+          <td>${fmtMoneda(r.costo)}</td>
+          <td>${fmtMoneda(r.precio_venta)}</td>
+          <td class="table-actions">
+            <button type="button" class="btn-secondary edit-btn" data-id="${r.id}">Editar</button>
+            <button type="button" class="btn-danger delete-btn" data-id="${r.id}">Desactivar</button>
+          </td>
+        </tr>`;
+      }).join('');
+
+      tbody.querySelectorAll('.edit-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const r = repuestosCache.find(x => x.id === btn.dataset.id);
+          if (r) fillForm(r);
+        });
+      });
+
+      tbody.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('¿Desactivar este repuesto?')) return;
+          const { error } = await supabaseClient.from('repuestos').update({ activo: false }).eq('id', btn.dataset.id);
+          if (!error) await loadRepuestos();
+        });
+      });
+    }
+
+    function applyFilter() {
+      const q = document.getElementById('buscar').value.trim().toLowerCase();
+      const soloBajo = document.getElementById('solo-stock-bajo').checked;
+      let filtered = repuestosCache;
+      if (q) {
+        filtered = filtered.filter(r =>
+          (r.nombre || '').toLowerCase().includes(q) ||
+          (r.sku || '').toLowerCase().includes(q) ||
+          (r.marca || '').toLowerCase().includes(q));
+      }
+      if (soloBajo) {
+        filtered = filtered.filter(r => Number(r.stock_actual) <= Number(r.stock_minimo));
+      }
+      renderRepuestos(filtered);
+    }
+
+    async function loadRepuestos() {
+      const { data, error } = await supabaseClient.from('repuestos').select('*').eq('activo', true).order('nombre');
+      if (error) {
+        document.getElementById('repuestos-body').innerHTML = `<tr><td colspan="7">Error: ${error.message}</td></tr>`;
+        return;
+      }
+      repuestosCache = data;
+      document.getElementById('mov-repuesto').innerHTML =
+        '<option value="">Seleccionar...</option>' +
+        repuestosCache.map(r => `<option value="${r.id}">${r.sku ? r.sku + ' · ' : ''}${r.nombre} (stock: ${r.stock_actual})</option>`).join('');
+      applyFilter();
+    }
+
+    document.getElementById('buscar').addEventListener('input', applyFilter);
+    document.getElementById('solo-stock-bajo').addEventListener('change', applyFilter);
+    document.getElementById('cancel-btn').addEventListener('click', clearForm);
+
+    document.getElementById('repuesto-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorEl = document.getElementById('form-error');
+      errorEl.textContent = '';
+
+      const id = document.getElementById('repuesto-id').value;
+      const payload = {
+        sku: document.getElementById('sku').value || null,
+        nombre: document.getElementById('nombre').value,
+        marca: document.getElementById('marca').value || null,
+        ubicacion: document.getElementById('ubicacion').value || null,
+        stock_actual: document.getElementById('stock_actual').value || 0,
+        stock_minimo: document.getElementById('stock_minimo').value || 0,
+        costo: document.getElementById('costo').value || null,
+        precio_venta: document.getElementById('precio_venta').value || null,
+      };
+
+      let error;
+      if (id) {
+        ({ error } = await supabaseClient.from('repuestos').update(payload).eq('id', id));
+      } else {
+        ({ error } = await supabaseClient.from('repuestos').insert(payload));
+      }
+
+      if (error) {
+        errorEl.textContent = `Error: ${error.message}`;
+        return;
+      }
+      clearForm();
+      await loadRepuestos();
+    });
+
+    document.getElementById('movimiento-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorEl = document.getElementById('mov-error');
+      errorEl.textContent = '';
+
+      const repuestoId = document.getElementById('mov-repuesto').value;
+      const tipo = document.getElementById('mov-tipo').value;
+      const cantidad = Number(document.getElementById('mov-cantidad').value);
+      const motivo = document.getElementById('mov-motivo').value || null;
+      if (!repuestoId || !(cantidad >= 0)) return;
+
+      const repuesto = repuestosCache.find(r => r.id === repuestoId);
+      let nuevoStock = Number(repuesto.stock_actual);
+      if (tipo === 'entrada') nuevoStock += cantidad;
+      else if (tipo === 'salida') nuevoStock -= cantidad;
+      else nuevoStock = cantidad;
+
+      if (nuevoStock < 0) {
+        errorEl.textContent = 'El stock no puede quedar negativo.';
+        return;
+      }
+
+      const { error: movError } = await supabaseClient.from('movimientos_stock')
+        .insert({ repuesto_id: repuestoId, tipo, cantidad, motivo });
+      if (movError) {
+        errorEl.textContent = `Error: ${movError.message}`;
+        return;
+      }
+      await supabaseClient.from('repuestos').update({ stock_actual: nuevoStock }).eq('id', repuestoId);
+
+      document.getElementById('mov-cantidad').value = '';
+      document.getElementById('mov-motivo').value = '';
+      await loadRepuestos();
+    });
+
+    (async () => {
+      const session = await initLayout('inventario');
+      if (!session) return;
+      await loadRepuestos();
+    })();
+  </script>
+</body>
+</html>

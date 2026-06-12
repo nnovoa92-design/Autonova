@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cotización · Autonova</title>
+  <link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body class="portal-page">
+  <div class="portal-card" style="text-align:center;">
+    <h1 style="margin:0 0 0.25rem; font-size:1.4rem;" id="taller-nombre">Autonova</h1>
+    <p style="color:var(--color-text-muted); margin:0;">Revisión de cotización</p>
+  </div>
+
+  <div class="portal-card" id="contenido">
+    <p>Cargando cotización...</p>
+  </div>
+
+  <script src="assets/vendor/supabase.min.js"></script>
+  <script src="assets/js/supabaseClient.js"></script>
+  <script src="assets/js/layout.js"></script>
+  <script>
+    const cotId = new URLSearchParams(window.location.search).get('id');
+    let cotData = null;
+
+    function calcular(d) {
+      const ivaPct = Number((d.taller && d.taller.iva_pct) ?? 19);
+      const subtotal = (d.items || []).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
+      const descuento = subtotal * (Number(d.descuento_pct || 0) / 100);
+      const neto = subtotal - descuento;
+      const iva = neto * (ivaPct / 100);
+      return { ivaPct, subtotal, descuento, neto, iva, total: neto + iva };
+    }
+
+    function render(d, mensajeRespuesta) {
+      cotData = d;
+      if (d.taller && d.taller.nombre) document.getElementById('taller-nombre').textContent = d.taller.nombre;
+      const t = calcular(d);
+      const pendiente = d.estado === 'borrador' || d.estado === 'enviada';
+
+      document.getElementById('contenido').innerHTML = `
+        <div class="toolbar">
+          <h2 style="margin:0;">Cotización ${fmtNumero('COT', d.numero)}</h2>
+          ${badgeEstado(d.estado, ESTADOS_COTIZACION)}
+        </div>
+        <p style="color:var(--color-text-muted); margin:0.25rem 0 1rem;">
+          ${d.cliente ? d.cliente.nombre : ''}
+          ${d.vehiculo ? ` · ${d.vehiculo.patente} (${[d.vehiculo.marca, d.vehiculo.modelo].filter(Boolean).join(' ')})` : ''}
+          · Fecha: ${fmtFecha(d.fecha)} · Válida por ${d.validez_dias} días
+        </p>
+        <table>
+          <thead><tr><th>Descripción</th><th>Cant.</th><th>P. unitario</th><th>Total</th></tr></thead>
+          <tbody>
+            ${(d.items || []).map(i => `<tr>
+              <td>${i.descripcion}</td>
+              <td>${Number(i.cantidad).toLocaleString('es-CL')}</td>
+              <td>${fmtMoneda(i.precio_unitario)}</td>
+              <td>${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        <div class="totales">
+          <div class="fila"><span>Subtotal</span><span>${fmtMoneda(t.subtotal)}</span></div>
+          ${t.descuento > 0 ? `<div class="fila"><span>Descuento</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
+          <div class="fila"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
+          <div class="fila"><span>IVA ${t.ivaPct}%</span><span>${fmtMoneda(t.iva)}</span></div>
+          <div class="fila total"><span>Total</span><span>${fmtMoneda(t.total)}</span></div>
+        </div>
+        ${d.notas ? `<p style="margin-top:1rem;"><strong>Notas:</strong> ${d.notas}</p>` : ''}
+
+        ${mensajeRespuesta ? `<p style="margin-top:1rem; font-weight:700;">${mensajeRespuesta}</p>` : ''}
+
+        ${pendiente && !mensajeRespuesta ? `
+        <div style="margin-top:1.5rem; display:flex; gap:0.75rem; flex-wrap:wrap;">
+          <button type="button" id="aprobar-btn">✓ Aprobar cotización</button>
+          <button type="button" id="rechazar-btn" class="btn-danger">✕ Rechazar</button>
+        </div>
+        <p class="error-message" id="respuesta-error"></p>` : ''}
+
+        ${d.taller ? `<p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:1.5rem;">
+          ${d.taller.nombre} · ${d.taller.direccion ?? ''} · ${d.taller.telefono ?? ''}
+        </p>` : ''}
+      `;
+
+      const aprobarBtn = document.getElementById('aprobar-btn');
+      if (aprobarBtn) {
+        aprobarBtn.addEventListener('click', () => responder('aprobada'));
+        document.getElementById('rechazar-btn').addEventListener('click', () => responder('rechazada'));
+      }
+    }
+
+    async function responder(respuesta) {
+      const accion = respuesta === 'aprobada' ? 'aprobar' : 'rechazar';
+      if (!confirm(`¿Confirmas que deseas ${accion} esta cotización?`)) return;
+
+      const { data, error } = await supabaseClient.rpc('portal_responder_cotizacion', {
+        p_id: cotId,
+        p_respuesta: respuesta,
+      });
+      const errorEl = document.getElementById('respuesta-error');
+      if (error || data !== 'ok') {
+        if (errorEl) errorEl.textContent = 'No se pudo registrar tu respuesta. Contacta al taller.';
+        return;
+      }
+      cotData.estado = respuesta;
+      render(cotData, respuesta === 'aprobada'
+        ? '¡Gracias! Tu aprobación quedó registrada. El taller se pondrá en contacto para coordinar.'
+        : 'Tu respuesta quedó registrada. Si cambias de opinión, contacta al taller.');
+    }
+
+    (async () => {
+      const contenido = document.getElementById('contenido');
+      if (!cotId) {
+        contenido.innerHTML = '<p class="error-message">Link inválido: falta el identificador de la cotización.</p>';
+        return;
+      }
+      const { data, error } = await supabaseClient.rpc('portal_consultar_cotizacion', { p_id: cotId });
+      if (error || !data) {
+        contenido.innerHTML = '<p class="error-message">No encontramos esta cotización. Verifica el link o contacta al taller.</p>';
+        return;
+      }
+      render(data);
+    })();
+  </script>
+</body>
+</html>

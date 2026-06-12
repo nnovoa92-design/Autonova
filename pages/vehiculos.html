@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vehículos · Autonova</title>
+  <link rel="stylesheet" href="../assets/css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar">
+        <h1>Vehículos</h1>
+      </header>
+      <div class="content">
+
+        <div class="card" id="form-card">
+          <h2 id="form-title" style="margin-top:0;">Nuevo vehículo</h2>
+          <form id="vehiculo-form">
+            <input type="hidden" id="vehiculo-id" />
+            <div class="form-row">
+              <div class="form-group">
+                <label for="cliente_id">Cliente *</label>
+                <select id="cliente_id" required></select>
+              </div>
+              <div class="form-group">
+                <label for="patente">Patente *</label>
+                <input type="text" id="patente" required placeholder="ABCD12" style="text-transform:uppercase;" />
+              </div>
+              <div class="form-group">
+                <label for="marca">Marca</label>
+                <input type="text" id="marca" />
+              </div>
+              <div class="form-group">
+                <label for="modelo">Modelo</label>
+                <input type="text" id="modelo" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="anio">Año</label>
+                <input type="number" id="anio" min="1950" max="2100" />
+              </div>
+              <div class="form-group">
+                <label for="kilometraje">Kilometraje</label>
+                <input type="number" id="kilometraje" min="0" />
+              </div>
+              <div class="form-group">
+                <label for="motor">Motor</label>
+                <input type="text" id="motor" placeholder="1.6 16v" />
+              </div>
+              <div class="form-group">
+                <label for="vin">VIN / Chasis</label>
+                <input type="text" id="vin" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="notas">Notas</label>
+              <input type="text" id="notas" />
+            </div>
+            <button type="submit" id="submit-btn">Guardar vehículo</button>
+            <button type="button" id="cancel-btn" class="btn-secondary" style="display:none;">Cancelar edición</button>
+            <p class="error-message" id="form-error"></p>
+          </form>
+        </div>
+
+        <div class="card" id="historial-card" style="display:none; margin-top:1rem;">
+          <div class="toolbar">
+            <h2 style="margin:0;" id="historial-title">Historial</h2>
+            <button type="button" id="cerrar-historial-btn" class="btn-secondary">Cerrar</button>
+          </div>
+          <p id="historial-resumen" style="color:var(--color-text-muted); font-size:0.88rem;"></p>
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>OT</th>
+                <th>Km</th>
+                <th>Trabajos realizados</th>
+                <th>Total</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody id="historial-body"></tbody>
+          </table>
+        </div>
+
+        <div class="card" style="margin-top:1rem;">
+          <div class="toolbar">
+            <h2 style="margin:0;">Listado</h2>
+            <input type="search" id="buscar" placeholder="Buscar por patente, marca o cliente..." style="max-width:320px;" />
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Patente</th>
+                <th>Vehículo</th>
+                <th>Año</th>
+                <th>Km</th>
+                <th>Cliente</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="vehiculos-body">
+              <tr><td colspan="6">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="../assets/vendor/supabase.min.js"></script>
+  <script src="../assets/js/supabaseClient.js"></script>
+  <script src="../assets/js/layout.js"></script>
+  <script>
+    let vehiculosCache = [];
+    let clientesCache = [];
+    let config = null;
+
+    async function verHistorial(vehiculoId) {
+      const v = vehiculosCache.find(x => x.id === vehiculoId);
+      if (!v) return;
+      const cliente = clientesCache.find(c => c.id === v.cliente_id);
+
+      document.getElementById('historial-card').style.display = 'block';
+      document.getElementById('historial-title').textContent =
+        `Historial de ${v.patente} · ${[v.marca, v.modelo].filter(Boolean).join(' ')}`;
+      const tbody = document.getElementById('historial-body');
+      const resumen = document.getElementById('historial-resumen');
+      tbody.innerHTML = '<tr><td colspan="6">Cargando...</td></tr>';
+      resumen.textContent = '';
+
+      const { data: ots, error } = await supabaseClient
+        .from('ordenes')
+        .select('*, orden_items(*)')
+        .eq('vehiculo_id', vehiculoId)
+        .order('fecha_ingreso', { ascending: false });
+      if (error) {
+        tbody.innerHTML = `<tr><td colspan="6">Error: ${error.message}</td></tr>`;
+        return;
+      }
+      if (!ots.length) {
+        tbody.innerHTML = '<tr><td colspan="6">Este vehículo aún no tiene órdenes de trabajo.</td></tr>';
+        resumen.textContent = cliente ? `Cliente: ${cliente.nombre}` : '';
+        return;
+      }
+
+      const totalOT = o => (o.orden_items || [])
+        .reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0) * (1 + Number(config.iva_pct) / 100);
+
+      tbody.innerHTML = ots.map(o => `
+        <tr>
+          <td>${fmtFecha(o.fecha_ingreso)}</td>
+          <td>${fmtNumero('OT', o.numero)}</td>
+          <td>${o.km_ingreso != null ? Number(o.km_ingreso).toLocaleString('es-CL') : '–'}</td>
+          <td>${(o.orden_items || []).map(i => i.descripcion).join(', ') || '–'}</td>
+          <td>${fmtMoneda(totalOT(o))}</td>
+          <td>${badgeEstado(o.estado, ESTADOS_ORDEN)}</td>
+        </tr>`).join('');
+
+      const gastado = ots.filter(o => o.estado !== 'cancelado').reduce((s, o) => s + totalOT(o), 0);
+      resumen.innerHTML =
+        `${cliente ? `Cliente: <strong>${cliente.nombre}</strong> · ` : ''}` +
+        `${ots.length} visita(s) · Total histórico: ${fmtMoneda(gastado)} · Última visita: ${fmtFecha(ots[0].fecha_ingreso)}`;
+      document.getElementById('historial-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function clearForm() {
+      ['vehiculo-id','patente','marca','modelo','anio','kilometraje','motor','vin','notas'].forEach(id => {
+        document.getElementById(id).value = '';
+      });
+      document.getElementById('cliente_id').value = '';
+      document.getElementById('form-title').textContent = 'Nuevo vehículo';
+      document.getElementById('submit-btn').textContent = 'Guardar vehículo';
+      document.getElementById('cancel-btn').style.display = 'none';
+      document.getElementById('form-error').textContent = '';
+    }
+
+    function fillForm(v) {
+      document.getElementById('vehiculo-id').value = v.id;
+      document.getElementById('cliente_id').value = v.cliente_id ?? '';
+      document.getElementById('patente').value = v.patente ?? '';
+      document.getElementById('marca').value = v.marca ?? '';
+      document.getElementById('modelo').value = v.modelo ?? '';
+      document.getElementById('anio').value = v.anio ?? '';
+      document.getElementById('kilometraje').value = v.kilometraje ?? '';
+      document.getElementById('motor').value = v.motor ?? '';
+      document.getElementById('vin').value = v.vin ?? '';
+      document.getElementById('notas').value = v.notas ?? '';
+      document.getElementById('form-title').textContent = `Editar vehículo: ${v.patente}`;
+      document.getElementById('submit-btn').textContent = 'Actualizar vehículo';
+      document.getElementById('cancel-btn').style.display = 'inline-block';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function renderVehiculos(vehiculos) {
+      const tbody = document.getElementById('vehiculos-body');
+      if (!vehiculos.length) {
+        tbody.innerHTML = '<tr><td colspan="6">No se encontraron vehículos.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = vehiculos.map(v => {
+        const cliente = clientesCache.find(c => c.id === v.cliente_id);
+        return `
+        <tr>
+          <td><strong>${v.patente}</strong></td>
+          <td>${[v.marca, v.modelo].filter(Boolean).join(' ') || '–'}</td>
+          <td>${v.anio ?? '–'}</td>
+          <td>${v.kilometraje != null ? Number(v.kilometraje).toLocaleString('es-CL') : '–'}</td>
+          <td>${cliente ? cliente.nombre : '–'}</td>
+          <td class="table-actions">
+            <button type="button" class="btn-secondary historial-btn" data-id="${v.id}">Historial</button>
+            <button type="button" class="btn-secondary edit-btn" data-id="${v.id}">Editar</button>
+            <button type="button" class="btn-danger delete-btn" data-id="${v.id}">Desactivar</button>
+          </td>
+        </tr>`;
+      }).join('');
+
+      tbody.querySelectorAll('.historial-btn').forEach(btn => {
+        btn.addEventListener('click', () => verHistorial(btn.dataset.id));
+      });
+
+      tbody.querySelectorAll('.edit-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const v = vehiculosCache.find(x => x.id === btn.dataset.id);
+          if (v) fillForm(v);
+        });
+      });
+
+      tbody.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('¿Desactivar este vehículo?')) return;
+          const { error } = await supabaseClient.from('vehiculos').update({ activo: false }).eq('id', btn.dataset.id);
+          if (!error) await loadVehiculos();
+        });
+      });
+    }
+
+    function applyFilter() {
+      const q = document.getElementById('buscar').value.trim().toLowerCase();
+      if (!q) { renderVehiculos(vehiculosCache); return; }
+      const filtered = vehiculosCache.filter(v => {
+        const cliente = clientesCache.find(c => c.id === v.cliente_id);
+        return (v.patente || '').toLowerCase().includes(q) ||
+               (v.marca || '').toLowerCase().includes(q) ||
+               (v.modelo || '').toLowerCase().includes(q) ||
+               (cliente && cliente.nombre.toLowerCase().includes(q));
+      });
+      renderVehiculos(filtered);
+    }
+
+    async function loadClientes() {
+      const { data } = await supabaseClient.from('clientes').select('id, nombre').eq('activo', true).order('nombre');
+      clientesCache = data || [];
+      document.getElementById('cliente_id').innerHTML =
+        '<option value="">Seleccionar cliente...</option>' +
+        clientesCache.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
+    }
+
+    async function loadVehiculos() {
+      const { data, error } = await supabaseClient.from('vehiculos').select('*').eq('activo', true).order('patente');
+      if (error) {
+        document.getElementById('vehiculos-body').innerHTML = `<tr><td colspan="6">Error: ${error.message}</td></tr>`;
+        return;
+      }
+      vehiculosCache = data;
+      applyFilter();
+    }
+
+    document.getElementById('buscar').addEventListener('input', applyFilter);
+    document.getElementById('cancel-btn').addEventListener('click', clearForm);
+    document.getElementById('cerrar-historial-btn').addEventListener('click', () => {
+      document.getElementById('historial-card').style.display = 'none';
+    });
+
+    document.getElementById('vehiculo-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorEl = document.getElementById('form-error');
+      errorEl.textContent = '';
+
+      const id = document.getElementById('vehiculo-id').value;
+      const payload = {
+        cliente_id: document.getElementById('cliente_id').value,
+        patente: document.getElementById('patente').value.trim().toUpperCase(),
+        marca: document.getElementById('marca').value || null,
+        modelo: document.getElementById('modelo').value || null,
+        anio: document.getElementById('anio').value || null,
+        kilometraje: document.getElementById('kilometraje').value || null,
+        motor: document.getElementById('motor').value || null,
+        vin: document.getElementById('vin').value || null,
+        notas: document.getElementById('notas').value || null,
+      };
+
+      let error;
+      if (id) {
+        ({ error } = await supabaseClient.from('vehiculos').update(payload).eq('id', id));
+      } else {
+        ({ error } = await supabaseClient.from('vehiculos').insert(payload));
+      }
+
+      if (error) {
+        errorEl.textContent = `Error: ${error.message}`;
+        return;
+      }
+      clearForm();
+      await loadVehiculos();
+    });
+
+    (async () => {
+      const session = await initLayout('vehiculos');
+      if (!session) return;
+      config = await getTallerConfig();
+      await loadClientes();
+      await loadVehiculos();
+    })();
+  </script>
+</body>
+</html>

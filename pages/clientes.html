@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clientes · Autonova</title>
+  <link rel="stylesheet" href="../assets/css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar">
+        <h1>Clientes</h1>
+      </header>
+      <div class="content">
+
+        <div class="card" id="form-card">
+          <h2 id="form-title" style="margin-top:0;">Nuevo cliente</h2>
+          <form id="cliente-form">
+            <input type="hidden" id="cliente-id" />
+            <div class="form-row">
+              <div class="form-group">
+                <label for="nombre">Nombre o razón social *</label>
+                <input type="text" id="nombre" required />
+              </div>
+              <div class="form-group">
+                <label for="rut">RUT</label>
+                <input type="text" id="rut" placeholder="12.345.678-9" />
+              </div>
+              <div class="form-group">
+                <label for="telefono">Teléfono</label>
+                <input type="tel" id="telefono" placeholder="+56 9 ..." />
+              </div>
+              <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="direccion">Dirección</label>
+                <input type="text" id="direccion" />
+              </div>
+              <div class="form-group">
+                <label for="notas">Notas</label>
+                <input type="text" id="notas" />
+              </div>
+            </div>
+            <button type="submit" id="submit-btn">Guardar cliente</button>
+            <button type="button" id="cancel-btn" class="btn-secondary" style="display:none;">Cancelar edición</button>
+            <p class="error-message" id="form-error"></p>
+          </form>
+        </div>
+
+        <div class="card" style="margin-top:1rem;">
+          <div class="toolbar">
+            <h2 style="margin:0;">Listado</h2>
+            <input type="search" id="buscar" placeholder="Buscar por nombre, RUT o teléfono..." style="max-width:320px;" />
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>RUT</th>
+                <th>Teléfono</th>
+                <th>Email</th>
+                <th>Vehículos</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="clientes-body">
+              <tr><td colspan="6">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="../assets/vendor/supabase.min.js"></script>
+  <script src="../assets/js/supabaseClient.js"></script>
+  <script src="../assets/js/layout.js"></script>
+  <script>
+    let clientesCache = [];
+    let vehiculosPorCliente = {};
+
+    function clearForm() {
+      ['cliente-id','nombre','rut','telefono','email','direccion','notas'].forEach(id => {
+        document.getElementById(id).value = '';
+      });
+      document.getElementById('form-title').textContent = 'Nuevo cliente';
+      document.getElementById('submit-btn').textContent = 'Guardar cliente';
+      document.getElementById('cancel-btn').style.display = 'none';
+      document.getElementById('form-error').textContent = '';
+    }
+
+    function fillForm(c) {
+      document.getElementById('cliente-id').value = c.id;
+      document.getElementById('nombre').value = c.nombre ?? '';
+      document.getElementById('rut').value = c.rut ?? '';
+      document.getElementById('telefono').value = c.telefono ?? '';
+      document.getElementById('email').value = c.email ?? '';
+      document.getElementById('direccion').value = c.direccion ?? '';
+      document.getElementById('notas').value = c.notas ?? '';
+      document.getElementById('form-title').textContent = `Editar cliente: ${c.nombre}`;
+      document.getElementById('submit-btn').textContent = 'Actualizar cliente';
+      document.getElementById('cancel-btn').style.display = 'inline-block';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function renderClientes(clientes) {
+      const tbody = document.getElementById('clientes-body');
+      if (!clientes.length) {
+        tbody.innerHTML = '<tr><td colspan="6">No se encontraron clientes.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = clientes.map(c => {
+        const vehiculos = vehiculosPorCliente[c.id] || [];
+        const vehiculosStr = vehiculos.length
+          ? vehiculos.map(v => `<span class="badge">${v.patente}</span>`).join(' ')
+          : '–';
+        return `
+        <tr>
+          <td>${c.nombre}</td>
+          <td>${c.rut ?? '–'}</td>
+          <td>${c.telefono ?? '–'}</td>
+          <td>${c.email ?? '–'}</td>
+          <td>${vehiculosStr}</td>
+          <td class="table-actions">
+            <button type="button" class="btn-secondary edit-btn" data-id="${c.id}">Editar</button>
+            <button type="button" class="btn-danger delete-btn" data-id="${c.id}">Desactivar</button>
+          </td>
+        </tr>`;
+      }).join('');
+
+      tbody.querySelectorAll('.edit-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const c = clientesCache.find(x => x.id === btn.dataset.id);
+          if (c) fillForm(c);
+        });
+      });
+
+      tbody.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('¿Desactivar este cliente?')) return;
+          const { error } = await supabaseClient.from('clientes').update({ activo: false }).eq('id', btn.dataset.id);
+          if (!error) await loadClientes();
+        });
+      });
+    }
+
+    function applyFilter() {
+      const q = document.getElementById('buscar').value.trim().toLowerCase();
+      const filtered = q
+        ? clientesCache.filter(c =>
+            (c.nombre || '').toLowerCase().includes(q) ||
+            (c.rut || '').toLowerCase().includes(q) ||
+            (c.telefono || '').toLowerCase().includes(q))
+        : clientesCache;
+      renderClientes(filtered);
+    }
+
+    async function loadClientes() {
+      const [{ data: clientes, error }, { data: vehiculos }] = await Promise.all([
+        supabaseClient.from('clientes').select('*').eq('activo', true).order('nombre'),
+        supabaseClient.from('vehiculos').select('cliente_id, patente').eq('activo', true),
+      ]);
+      if (error) {
+        document.getElementById('clientes-body').innerHTML = `<tr><td colspan="6">Error: ${error.message}</td></tr>`;
+        return;
+      }
+      clientesCache = clientes;
+      vehiculosPorCliente = {};
+      (vehiculos || []).forEach(v => {
+        (vehiculosPorCliente[v.cliente_id] ??= []).push(v);
+      });
+      applyFilter();
+    }
+
+    document.getElementById('buscar').addEventListener('input', applyFilter);
+    document.getElementById('cancel-btn').addEventListener('click', clearForm);
+
+    document.getElementById('cliente-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorEl = document.getElementById('form-error');
+      errorEl.textContent = '';
+
+      const id = document.getElementById('cliente-id').value;
+      const payload = {
+        nombre: document.getElementById('nombre').value,
+        rut: document.getElementById('rut').value || null,
+        telefono: document.getElementById('telefono').value || null,
+        email: document.getElementById('email').value || null,
+        direccion: document.getElementById('direccion').value || null,
+        notas: document.getElementById('notas').value || null,
+      };
+
+      let error;
+      if (id) {
+        ({ error } = await supabaseClient.from('clientes').update(payload).eq('id', id));
+      } else {
+        ({ error } = await supabaseClient.from('clientes').insert(payload));
+      }
+
+      if (error) {
+        errorEl.textContent = `Error: ${error.message}`;
+        return;
+      }
+      clearForm();
+      await loadClientes();
+    });
+
+    (async () => {
+      const session = await initLayout('clientes');
+      if (!session) return;
+      await loadClientes();
+    })();
+  </script>
+</body>
+</html>

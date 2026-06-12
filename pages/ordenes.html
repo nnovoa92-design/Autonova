@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Órdenes de trabajo · Autonova</title>
+  <link rel="stylesheet" href="../assets/css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar">
+        <h1>Órdenes de trabajo</h1>
+        <button id="nueva-btn">+ Nueva orden</button>
+      </header>
+      <div class="content">
+
+        <!-- Formulario nueva OT -->
+        <div class="card" id="nueva-card" style="display:none;">
+          <h2 style="margin-top:0;">Nueva orden de trabajo</h2>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="nueva-cliente">Cliente *</label>
+              <select id="nueva-cliente"></select>
+            </div>
+            <div class="form-group">
+              <label for="nueva-vehiculo">Vehículo</label>
+              <select id="nueva-vehiculo"><option value="">Sin vehículo</option></select>
+            </div>
+            <div class="form-group">
+              <label for="nueva-km">Km de ingreso</label>
+              <input type="number" id="nueva-km" min="0" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="nueva-diagnostico">Motivo de ingreso / diagnóstico inicial</label>
+            <textarea id="nueva-diagnostico" rows="2"></textarea>
+          </div>
+          <button type="button" id="crear-ot-btn">Crear orden</button>
+          <button type="button" id="cancelar-nueva-btn" class="btn-secondary">Cancelar</button>
+          <p class="error-message" id="nueva-error"></p>
+        </div>
+
+        <!-- Detalle de OT -->
+        <div class="card" id="detalle-card" style="display:none;">
+          <div class="toolbar">
+            <h2 style="margin:0;" id="detalle-title">OT</h2>
+            <div style="display:flex; gap:0.5rem; align-items:center;">
+              <select id="detalle-estado" style="max-width:180px;"></select>
+              <button type="button" id="whatsapp-ot-btn" class="btn-secondary">Avisar por WhatsApp</button>
+              <button type="button" id="cerrar-detalle-btn" class="btn-secondary">Volver al listado</button>
+            </div>
+          </div>
+          <p id="detalle-info" style="color:var(--color-text-muted); font-size:0.88rem;"></p>
+          <div class="form-group">
+            <label for="detalle-diagnostico">Diagnóstico</label>
+            <textarea id="detalle-diagnostico" rows="2"></textarea>
+            <button type="button" id="guardar-diagnostico-btn" class="btn-secondary" style="margin-top:0.5rem;">Guardar diagnóstico</button>
+          </div>
+
+          <h3>Ítems de la orden</h3>
+          <div class="form-row" style="align-items:end;">
+            <div class="form-group">
+              <label for="item-tipo">Tipo de ítem</label>
+              <select id="item-tipo">
+                <option value="mano_obra">Trabajo del catálogo</option>
+                <option value="repuesto">Repuesto del inventario</option>
+                <option value="otro">Otro (libre)</option>
+              </select>
+            </div>
+            <div class="form-group" id="grupo-trabajo">
+              <label for="item-trabajo">Trabajo precargado</label>
+              <select id="item-trabajo"></select>
+            </div>
+            <div class="form-group" id="grupo-repuesto" style="display:none;">
+              <label for="item-repuesto">Repuesto</label>
+              <select id="item-repuesto"></select>
+            </div>
+            <div class="form-group" id="grupo-descripcion" style="display:none;">
+              <label for="item-descripcion">Descripción</label>
+              <input type="text" id="item-descripcion" />
+            </div>
+            <div class="form-group" style="max-width:110px;">
+              <label for="item-cantidad" id="item-cantidad-label">Horas</label>
+              <input type="number" id="item-cantidad" value="1" min="0" step="0.25" />
+            </div>
+            <div class="form-group" style="max-width:150px;">
+              <label for="item-precio">Precio unitario</label>
+              <input type="number" id="item-precio" min="0" step="1" />
+            </div>
+            <div class="form-group" style="flex:0;">
+              <button type="button" id="agregar-item-btn">Agregar</button>
+            </div>
+          </div>
+          <p class="error-message" id="item-error"></p>
+          <table>
+            <thead>
+              <tr><th>Tipo</th><th>Descripción</th><th>Cant. / Horas</th><th>Precio unit.</th><th>Total</th><th></th></tr>
+            </thead>
+            <tbody id="items-body"></tbody>
+          </table>
+          <div class="totales" id="totales"></div>
+
+          <h3 style="margin-top:1.5rem;">Fotos del vehículo</h3>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.5rem;">
+            Estado de recepción, daños previos y evidencia del trabajo realizado.
+          </p>
+          <input type="file" id="foto-input" accept="image/*" multiple style="max-width:340px;" />
+          <p class="error-message" id="foto-error"></p>
+          <div id="fotos-grid" class="fotos-grid"></div>
+
+          <h3 style="margin-top:1.5rem;">Horas de taller registradas</h3>
+          <div class="form-row" style="align-items:end;">
+            <div class="form-group">
+              <label for="hora-mecanico">Mecánico</label>
+              <select id="hora-mecanico"></select>
+            </div>
+            <div class="form-group" style="max-width:120px;">
+              <label for="hora-horas">Horas</label>
+              <input type="number" id="hora-horas" min="0" step="0.25" />
+            </div>
+            <div class="form-group">
+              <label for="hora-detalle">Detalle</label>
+              <input type="text" id="hora-detalle" placeholder="Qué se hizo..." />
+            </div>
+            <div class="form-group" style="flex:0;">
+              <button type="button" id="agregar-hora-btn">Registrar</button>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr><th>Fecha</th><th>Mecánico</th><th>Horas</th><th>Detalle</th><th></th></tr>
+            </thead>
+            <tbody id="horas-body"></tbody>
+          </table>
+          <p id="horas-resumen" style="color:var(--color-text-muted); font-size:0.88rem;"></p>
+        </div>
+
+        <!-- Listado -->
+        <div class="card" id="listado-card">
+          <div class="toolbar">
+            <h2 style="margin:0;">Listado</h2>
+            <select id="filter-estado" style="max-width:220px;">
+              <option value="activas">En taller (activas)</option>
+              <option value="">Todas</option>
+              <option value="recepcion">Recepción</option>
+              <option value="diagnostico">Diagnóstico</option>
+              <option value="en_proceso">En proceso</option>
+              <option value="listo">Listo</option>
+              <option value="entregado">Entregado</option>
+              <option value="cancelado">Cancelado</option>
+            </select>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>N°</th>
+                <th>Ingreso</th>
+                <th>Cliente</th>
+                <th>Vehículo</th>
+                <th>Total</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="ordenes-body">
+              <tr><td colspan="7">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="../assets/vendor/supabase.min.js"></script>
+  <script src="../assets/js/supabaseClient.js"></script>
+  <script src="../assets/js/layout.js"></script>
+  <script>
+    let clientesCache = [], vehiculosCache = [], trabajosCache = [], repuestosCache = [], personalCache = [];
+    let ordenesCache = [];
+    let ordenActual = null;
+    let config = null;
+
+    const TIPO_LABEL = { mano_obra: 'Mano de obra', repuesto: 'Repuesto', otro: 'Otro' };
+
+    function calcularTotal(items) {
+      const neto = (items || []).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
+      const iva = neto * (Number(config.iva_pct) / 100);
+      return { neto, iva, total: neto + iva };
+    }
+
+    // ---------- Nueva OT ----------
+    function actualizarVehiculosNueva() {
+      const clienteId = document.getElementById('nueva-cliente').value;
+      const propios = vehiculosCache.filter(v => v.cliente_id === clienteId);
+      document.getElementById('nueva-vehiculo').innerHTML =
+        '<option value="">Sin vehículo</option>' +
+        propios.map(v => `<option value="${v.id}">${v.patente} · ${[v.marca, v.modelo].filter(Boolean).join(' ')}</option>`).join('');
+    }
+
+    async function crearOrden() {
+      const errorEl = document.getElementById('nueva-error');
+      errorEl.textContent = '';
+      const clienteId = document.getElementById('nueva-cliente').value;
+      if (!clienteId) { errorEl.textContent = 'Selecciona un cliente.'; return; }
+
+      const { data, error } = await supabaseClient.from('ordenes').insert({
+        cliente_id: clienteId,
+        vehiculo_id: document.getElementById('nueva-vehiculo').value || null,
+        km_ingreso: document.getElementById('nueva-km').value || null,
+        diagnostico: document.getElementById('nueva-diagnostico').value || null,
+        estado: 'recepcion',
+      }).select('id').single();
+      if (error) { errorEl.textContent = `Error: ${error.message}`; return; }
+
+      document.getElementById('nueva-card').style.display = 'none';
+      await loadOrdenes();
+      abrirDetalle(data.id);
+    }
+
+    // ---------- Detalle ----------
+    async function abrirDetalle(ordenId) {
+      await loadOrdenes(); // refresca datos
+      ordenActual = ordenesCache.find(o => o.id === ordenId);
+      if (!ordenActual) return;
+
+      document.getElementById('listado-card').style.display = 'none';
+      document.getElementById('nueva-card').style.display = 'none';
+      document.getElementById('detalle-card').style.display = 'block';
+
+      const o = ordenActual;
+      document.getElementById('detalle-title').textContent = fmtNumero('OT', o.numero);
+      const vehiculo = o.vehiculos ? `${o.vehiculos.patente} · ${[o.vehiculos.marca, o.vehiculos.modelo].filter(Boolean).join(' ')}` : 'Sin vehículo';
+      document.getElementById('detalle-info').innerHTML =
+        `<strong>${o.clientes ? o.clientes.nombre : '–'}</strong> · ${vehiculo}` +
+        ` · Ingreso: ${fmtFechaHora(o.fecha_ingreso)}` +
+        (o.km_ingreso ? ` · ${Number(o.km_ingreso).toLocaleString('es-CL')} km` : '');
+      document.getElementById('detalle-diagnostico').value = o.diagnostico ?? '';
+
+      const estadoSel = document.getElementById('detalle-estado');
+      estadoSel.innerHTML = Object.entries(ESTADOS_ORDEN)
+        .map(([k, v]) => `<option value="${k}"${k === o.estado ? ' selected' : ''}>${v.label}</option>`).join('');
+
+      renderItemsDetalle();
+      renderHoras();
+      await cargarFotos();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // ---------- Fotos (Supabase Storage, bucket "fotos-ot") ----------
+    async function cargarFotos() {
+      if (!ordenActual) return;
+      const grid = document.getElementById('fotos-grid');
+      const { data, error } = await supabaseClient.storage.from('fotos-ot').list(ordenActual.id, { limit: 100 });
+      if (error) {
+        grid.innerHTML = `<p class="error-message">No se pudieron listar las fotos: ${error.message}</p>`;
+        return;
+      }
+      if (!data || !data.length) {
+        grid.innerHTML = '<p style="color:var(--color-text-muted); font-size:0.85rem;">Sin fotos todavía.</p>';
+        return;
+      }
+      grid.innerHTML = data.map(f => {
+        const url = supabaseClient.storage.from('fotos-ot').getPublicUrl(`${ordenActual.id}/${f.name}`).data.publicUrl;
+        return `
+        <div class="foto-item">
+          <a href="${url}" target="_blank"><img src="${url}" alt="${f.name}" loading="lazy" /></a>
+          <button type="button" class="btn-danger foto-del-btn" data-name="${f.name}">✕</button>
+        </div>`;
+      }).join('');
+
+      grid.querySelectorAll('.foto-del-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('¿Eliminar esta foto?')) return;
+          await supabaseClient.storage.from('fotos-ot').remove([`${ordenActual.id}/${btn.dataset.name}`]);
+          await cargarFotos();
+        });
+      });
+    }
+
+    function cerrarDetalle() {
+      ordenActual = null;
+      document.getElementById('detalle-card').style.display = 'none';
+      document.getElementById('listado-card').style.display = 'block';
+      renderOrdenes();
+    }
+
+    function renderItemsDetalle() {
+      const items = ordenActual.orden_items || [];
+      const tbody = document.getElementById('items-body');
+      tbody.innerHTML = items.length ? items.map(i => `
+        <tr>
+          <td><span class="badge">${TIPO_LABEL[i.tipo]}</span></td>
+          <td>${i.descripcion}</td>
+          <td>${Number(i.cantidad).toLocaleString('es-CL')}</td>
+          <td>${fmtMoneda(i.precio_unitario)}</td>
+          <td>${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td>
+          <td><button type="button" class="btn-danger quitar-item-btn" data-id="${i.id}" style="padding:0.2rem 0.5rem;">✕</button></td>
+        </tr>`).join('')
+        : '<tr><td colspan="6">Sin ítems.</td></tr>';
+
+      tbody.querySelectorAll('.quitar-item-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('¿Quitar este ítem? (no repone stock automáticamente)')) return;
+          await supabaseClient.from('orden_items').delete().eq('id', btn.dataset.id);
+          await abrirDetalle(ordenActual.id);
+        });
+      });
+
+      const t = calcularTotal(items);
+      const pagado = (ordenActual.pagos || []).reduce((s, p) => s + Number(p.monto), 0);
+      document.getElementById('totales').innerHTML = `
+        <div class="fila"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
+        <div class="fila"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>
+        <div class="fila total"><span>Total</span><span>${fmtMoneda(t.total)}</span></div>
+        <div class="fila"><span>Pagado</span><span>${fmtMoneda(pagado)}</span></div>
+        <div class="fila"><span>Saldo</span><span>${fmtMoneda(t.total - pagado)}</span></div>`;
+    }
+
+    function renderHoras() {
+      const horas = ordenActual.registro_horas || [];
+      const tbody = document.getElementById('horas-body');
+      tbody.innerHTML = horas.length ? horas.map(h => {
+        const mecanico = personalCache.find(p => p.id === h.personal_id);
+        return `
+        <tr>
+          <td>${fmtFecha(h.fecha)}</td>
+          <td>${mecanico ? mecanico.nombre : '–'}</td>
+          <td>${Number(h.horas).toLocaleString('es-CL')} h</td>
+          <td>${h.detalle ?? '–'}</td>
+          <td><button type="button" class="btn-danger quitar-hora-btn" data-id="${h.id}" style="padding:0.2rem 0.5rem;">✕</button></td>
+        </tr>`;
+      }).join('') : '<tr><td colspan="5">Sin horas registradas.</td></tr>';
+
+      tbody.querySelectorAll('.quitar-hora-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          await supabaseClient.from('registro_horas').delete().eq('id', btn.dataset.id);
+          await abrirDetalle(ordenActual.id);
+        });
+      });
+
+      const totalHoras = horas.reduce((s, h) => s + Number(h.horas), 0);
+      const horasCotizadas = (ordenActual.orden_items || [])
+        .filter(i => i.tipo === 'mano_obra')
+        .reduce((s, i) => s + Number(i.cantidad), 0);
+      document.getElementById('horas-resumen').textContent =
+        `Total trabajado: ${totalHoras.toLocaleString('es-CL')} h · Cotizado: ${horasCotizadas.toLocaleString('es-CL')} h`;
+    }
+
+    // ---------- Agregar ítems / horas ----------
+    function onTipoChange() {
+      const tipo = document.getElementById('item-tipo').value;
+      document.getElementById('grupo-trabajo').style.display = tipo === 'mano_obra' ? 'block' : 'none';
+      document.getElementById('grupo-repuesto').style.display = tipo === 'repuesto' ? 'block' : 'none';
+      document.getElementById('grupo-descripcion').style.display = tipo === 'otro' ? 'block' : 'none';
+      document.getElementById('item-cantidad-label').textContent = tipo === 'mano_obra' ? 'Horas' : 'Cantidad';
+      if (tipo === 'mano_obra') onTrabajoChange();
+      else if (tipo === 'repuesto') onRepuestoChange();
+      else {
+        document.getElementById('item-cantidad').value = '1';
+        document.getElementById('item-precio').value = '';
+      }
+    }
+
+    function onTrabajoChange() {
+      const t = trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value);
+      if (!t) return;
+      if (t.precio_fijo != null) {
+        document.getElementById('item-cantidad').value = '1';
+        document.getElementById('item-precio').value = Number(t.precio_fijo);
+      } else {
+        document.getElementById('item-cantidad').value = t.horas_estimadas;
+        document.getElementById('item-precio').value = Number(config.valor_hora);
+      }
+    }
+
+    function onRepuestoChange() {
+      const r = repuestosCache.find(x => x.id === document.getElementById('item-repuesto').value);
+      if (!r) return;
+      document.getElementById('item-cantidad').value = '1';
+      document.getElementById('item-precio').value = r.precio_venta != null ? Number(r.precio_venta) : '';
+    }
+
+    async function agregarItem() {
+      const errorEl = document.getElementById('item-error');
+      errorEl.textContent = '';
+      const tipo = document.getElementById('item-tipo').value;
+      const cantidad = Number(document.getElementById('item-cantidad').value);
+      const precio = Number(document.getElementById('item-precio').value);
+      let descripcion = '', trabajo_id = null, repuesto_id = null;
+
+      if (tipo === 'mano_obra') {
+        const t = trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value);
+        if (!t) return;
+        descripcion = t.nombre;
+        trabajo_id = t.id;
+      } else if (tipo === 'repuesto') {
+        const r = repuestosCache.find(x => x.id === document.getElementById('item-repuesto').value);
+        if (!r) return;
+        if (Number(r.stock_actual) < cantidad) {
+          errorEl.textContent = `Stock insuficiente de "${r.nombre}" (disponible: ${r.stock_actual}).`;
+          return;
+        }
+        descripcion = r.nombre;
+        repuesto_id = r.id;
+      } else {
+        descripcion = document.getElementById('item-descripcion').value.trim();
+        if (!descripcion) return;
+      }
+
+      const { error } = await supabaseClient.from('orden_items').insert({
+        orden_id: ordenActual.id,
+        tipo, trabajo_id, repuesto_id, descripcion,
+        cantidad, precio_unitario: precio,
+        orden: (ordenActual.orden_items || []).length + 1,
+      });
+      if (error) { errorEl.textContent = `Error: ${error.message}`; return; }
+
+      // Descuento automático de stock al usar un repuesto
+      if (repuesto_id) {
+        const r = repuestosCache.find(x => x.id === repuesto_id);
+        await supabaseClient.from('movimientos_stock').insert({
+          repuesto_id, tipo: 'salida', cantidad,
+          motivo: `Usado en ${fmtNumero('OT', ordenActual.numero)}`,
+          orden_id: ordenActual.id,
+        });
+        const nuevoStock = Number(r.stock_actual) - cantidad;
+        await supabaseClient.from('repuestos').update({ stock_actual: nuevoStock }).eq('id', repuesto_id);
+        r.stock_actual = nuevoStock;
+      }
+
+      document.getElementById('item-descripcion').value = '';
+      await abrirDetalle(ordenActual.id);
+    }
+
+    async function agregarHora() {
+      const horas = Number(document.getElementById('hora-horas').value);
+      if (!(horas > 0)) return;
+      await supabaseClient.from('registro_horas').insert({
+        orden_id: ordenActual.id,
+        personal_id: document.getElementById('hora-mecanico').value || null,
+        horas,
+        detalle: document.getElementById('hora-detalle').value || null,
+      });
+      document.getElementById('hora-horas').value = '';
+      document.getElementById('hora-detalle').value = '';
+      await abrirDetalle(ordenActual.id);
+    }
+
+    // ---------- Listado ----------
+    function renderOrdenes() {
+      const filtro = document.getElementById('filter-estado').value;
+      let lista = ordenesCache;
+      if (filtro === 'activas') lista = lista.filter(o => ['recepcion','diagnostico','en_proceso','listo'].includes(o.estado));
+      else if (filtro) lista = lista.filter(o => o.estado === filtro);
+
+      const tbody = document.getElementById('ordenes-body');
+      if (!lista.length) {
+        tbody.innerHTML = '<tr><td colspan="7">No hay órdenes.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = lista.map(o => {
+        const t = calcularTotal(o.orden_items);
+        return `
+        <tr>
+          <td>${fmtNumero('OT', o.numero)}</td>
+          <td>${fmtFecha(o.fecha_ingreso)}</td>
+          <td>${o.clientes ? o.clientes.nombre : '–'}</td>
+          <td>${o.vehiculos ? o.vehiculos.patente : '–'}</td>
+          <td>${fmtMoneda(t.total)}</td>
+          <td>${badgeEstado(o.estado, ESTADOS_ORDEN)}</td>
+          <td class="table-actions">
+            <button type="button" class="btn-secondary abrir-btn" data-id="${o.id}">Abrir</button>
+          </td>
+        </tr>`;
+      }).join('');
+
+      tbody.querySelectorAll('.abrir-btn').forEach(btn => {
+        btn.addEventListener('click', () => abrirDetalle(btn.dataset.id));
+      });
+    }
+
+    async function loadOrdenes() {
+      const { data, error } = await supabaseClient
+        .from('ordenes')
+        .select('*, clientes(nombre, telefono), vehiculos(patente, marca, modelo), orden_items(*), registro_horas(*), pagos(monto)')
+        .order('creado_en', { ascending: false });
+      if (error) {
+        document.getElementById('ordenes-body').innerHTML = `<tr><td colspan="7">Error: ${error.message}</td></tr>`;
+        return;
+      }
+      ordenesCache = data;
+      if (!ordenActual) renderOrdenes();
+    }
+
+    // ---------- Eventos ----------
+    document.getElementById('nueva-btn').addEventListener('click', () => {
+      document.getElementById('detalle-card').style.display = 'none';
+      document.getElementById('listado-card').style.display = 'block';
+      document.getElementById('nueva-card').style.display = 'block';
+      ordenActual = null;
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+    document.getElementById('cancelar-nueva-btn').addEventListener('click', () => {
+      document.getElementById('nueva-card').style.display = 'none';
+    });
+    document.getElementById('crear-ot-btn').addEventListener('click', crearOrden);
+    document.getElementById('cerrar-detalle-btn').addEventListener('click', cerrarDetalle);
+    document.getElementById('nueva-cliente').addEventListener('change', actualizarVehiculosNueva);
+    document.getElementById('item-tipo').addEventListener('change', onTipoChange);
+    document.getElementById('item-trabajo').addEventListener('change', onTrabajoChange);
+    document.getElementById('item-repuesto').addEventListener('change', onRepuestoChange);
+    document.getElementById('agregar-item-btn').addEventListener('click', agregarItem);
+    document.getElementById('agregar-hora-btn').addEventListener('click', agregarHora);
+    document.getElementById('filter-estado').addEventListener('change', renderOrdenes);
+
+    document.getElementById('detalle-estado').addEventListener('change', async (e) => {
+      if (!ordenActual) return;
+      const estado = e.target.value;
+      const payload = { estado };
+      if (estado === 'entregado') payload.fecha_entrega = new Date().toISOString();
+      await supabaseClient.from('ordenes').update(payload).eq('id', ordenActual.id);
+      await abrirDetalle(ordenActual.id);
+    });
+
+    document.getElementById('foto-input').addEventListener('change', async (e) => {
+      if (!ordenActual || !e.target.files.length) return;
+      const errorEl = document.getElementById('foto-error');
+      errorEl.textContent = '';
+      for (const file of e.target.files) {
+        const nombre = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9_.-]/g, '_')}`;
+        const { error } = await supabaseClient.storage.from('fotos-ot').upload(`${ordenActual.id}/${nombre}`, file);
+        if (error) errorEl.textContent = `Error al subir ${file.name}: ${error.message}`;
+      }
+      e.target.value = '';
+      await cargarFotos();
+    });
+
+    document.getElementById('whatsapp-ot-btn').addEventListener('click', () => {
+      if (!ordenActual) return;
+      const o = ordenActual;
+      const tel = o.clientes && o.clientes.telefono;
+      if (!tel) { alert('El cliente no tiene teléfono registrado.'); return; }
+
+      const vehiculo = o.vehiculos
+        ? `su vehículo ${o.vehiculos.patente} (${[o.vehiculos.marca, o.vehiculos.modelo].filter(Boolean).join(' ')})`
+        : 'su vehículo';
+      const MENSAJES_ESTADO = {
+        recepcion: `recibimos ${vehiculo} y pronto comenzaremos el diagnóstico`,
+        diagnostico: `${vehiculo} está en diagnóstico; le enviaremos el detalle a la brevedad`,
+        en_proceso: `${vehiculo} está siendo trabajado en nuestro taller`,
+        listo: `${vehiculo} está listo para retiro`,
+        entregado: `gracias por confiar en nosotros para el servicio de ${vehiculo}`,
+      };
+      const cuerpo = MENSAJES_ESTADO[o.estado] || `le informamos sobre ${vehiculo}`;
+      let mensaje = `Hola ${o.clientes.nombre}, le saluda ${config.nombre}: ${cuerpo} (${fmtNumero('OT', o.numero)}).`;
+      if (o.vehiculos) {
+        mensaje += `\nPuede seguir el estado de su vehículo aquí: ${window.location.origin}/portal.html?patente=${encodeURIComponent(o.vehiculos.patente)}&ot=${o.numero}`;
+      }
+      window.open(linkWhatsApp(tel, mensaje), '_blank');
+    });
+
+    document.getElementById('guardar-diagnostico-btn').addEventListener('click', async () => {
+      if (!ordenActual) return;
+      await supabaseClient.from('ordenes')
+        .update({ diagnostico: document.getElementById('detalle-diagnostico').value || null })
+        .eq('id', ordenActual.id);
+    });
+
+    (async () => {
+      const session = await initLayout('ordenes');
+      if (!session) return;
+      config = await getTallerConfig();
+
+      const [clientes, vehiculos, trabajos, repuestos, personal] = await Promise.all([
+        supabaseClient.from('clientes').select('id, nombre').eq('activo', true).order('nombre'),
+        supabaseClient.from('vehiculos').select('*').eq('activo', true).order('patente'),
+        supabaseClient.from('trabajos').select('*').eq('activo', true).order('nombre'),
+        supabaseClient.from('repuestos').select('*').eq('activo', true).order('nombre'),
+        supabaseClient.from('personal').select('*').eq('activo', true).order('nombre'),
+      ]);
+      clientesCache = clientes.data || [];
+      vehiculosCache = vehiculos.data || [];
+      trabajosCache = trabajos.data || [];
+      repuestosCache = repuestos.data || [];
+      personalCache = personal.data || [];
+
+      document.getElementById('nueva-cliente').innerHTML =
+        '<option value="">Seleccionar cliente...</option>' +
+        clientesCache.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
+      document.getElementById('item-trabajo').innerHTML =
+        trabajosCache.map(t => `<option value="${t.id}">${t.nombre} (${t.horas_estimadas} h)</option>`).join('');
+      document.getElementById('item-repuesto').innerHTML =
+        repuestosCache.map(r => `<option value="${r.id}">${r.sku ? r.sku + ' · ' : ''}${r.nombre} (stock: ${r.stock_actual})</option>`).join('');
+      document.getElementById('hora-mecanico').innerHTML =
+        personalCache.map(p => `<option value="${p.id}">${p.nombre}</option>`).join('');
+
+      onTipoChange();
+      await loadOrdenes();
+    })();
+  </script>
+</body>
+</html>

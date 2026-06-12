@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pagos · Autonova</title>
+  <link rel="stylesheet" href="../assets/css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar">
+        <h1>Pagos</h1>
+      </header>
+      <div class="content">
+
+        <div class="card">
+          <h2 style="margin-top:0;">Registrar pago</h2>
+          <form id="pago-form" class="form-row" style="align-items:end;">
+            <div class="form-group">
+              <label for="orden_id">Orden de trabajo</label>
+              <select id="orden_id" required></select>
+            </div>
+            <div class="form-group" style="max-width:160px;">
+              <label for="monto">Monto *</label>
+              <input type="number" id="monto" min="1" step="1" required />
+            </div>
+            <div class="form-group">
+              <label for="metodo_pago">Método</label>
+              <select id="metodo_pago">
+                <option value="efectivo">Efectivo</option>
+                <option value="tarjeta_debito">Tarjeta débito</option>
+                <option value="tarjeta_credito">Tarjeta crédito</option>
+                <option value="transferencia">Transferencia</option>
+                <option value="otro">Otro</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="notas">Notas</label>
+              <input type="text" id="notas" placeholder="Abono, saldo final..." />
+            </div>
+            <div class="form-group" style="flex:0;">
+              <button type="submit">Registrar</button>
+            </div>
+          </form>
+          <p id="saldo-info" style="color:var(--color-text-muted); font-size:0.88rem; margin:0;"></p>
+          <p class="error-message" id="form-error"></p>
+        </div>
+
+        <div class="card" style="margin-top:1rem;">
+          <div class="toolbar">
+            <h2 style="margin:0;">Historial de pagos</h2>
+            <span id="total-mes" class="badge badge-green"></span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>OT</th>
+                <th>Cliente</th>
+                <th>Monto</th>
+                <th>Método</th>
+                <th>Notas</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="pagos-body">
+              <tr><td colspan="7">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="../assets/vendor/supabase.min.js"></script>
+  <script src="../assets/js/supabaseClient.js"></script>
+  <script src="../assets/js/layout.js"></script>
+  <script>
+    let ordenesCache = [];
+    let config = null;
+
+    function totalOrden(o) {
+      const neto = (o.orden_items || []).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
+      return neto * (1 + Number(config.iva_pct) / 100);
+    }
+
+    function pagadoOrden(o) {
+      return (o.pagos || []).reduce((s, p) => s + Number(p.monto), 0);
+    }
+
+    function mostrarSaldo() {
+      const o = ordenesCache.find(x => x.id === document.getElementById('orden_id').value);
+      const info = document.getElementById('saldo-info');
+      if (!o) { info.textContent = ''; return; }
+      const total = totalOrden(o);
+      const pagado = pagadoOrden(o);
+      info.textContent = `Total OT: ${fmtMoneda(total)} · Pagado: ${fmtMoneda(pagado)} · Saldo: ${fmtMoneda(total - pagado)}`;
+      if (total - pagado > 0) document.getElementById('monto').value = Math.round(total - pagado);
+    }
+
+    async function loadOrdenes() {
+      const { data } = await supabaseClient
+        .from('ordenes')
+        .select('id, numero, cliente_id, estado, clientes(nombre), vehiculos(patente), orden_items(cantidad, precio_unitario), pagos(monto)')
+        .order('creado_en', { ascending: false });
+      ordenesCache = data || [];
+      document.getElementById('orden_id').innerHTML =
+        '<option value="">Seleccionar OT...</option>' +
+        ordenesCache.map(o => {
+          const saldo = totalOrden(o) - pagadoOrden(o);
+          const etiqueta = `${fmtNumero('OT', o.numero)} · ${o.clientes ? o.clientes.nombre : ''} ${o.vehiculos ? '· ' + o.vehiculos.patente : ''}${saldo > 0 ? ' — saldo ' + fmtMoneda(saldo) : ''}`;
+          return `<option value="${o.id}">${etiqueta}</option>`;
+        }).join('');
+    }
+
+    async function loadPagos() {
+      const { data, error } = await supabaseClient
+        .from('pagos')
+        .select('*, clientes(nombre), ordenes(numero)')
+        .order('fecha', { ascending: false })
+        .limit(100);
+      const tbody = document.getElementById('pagos-body');
+      if (error) {
+        tbody.innerHTML = `<tr><td colspan="7">Error: ${error.message}</td></tr>`;
+        return;
+      }
+      if (!data.length) {
+        tbody.innerHTML = '<tr><td colspan="7">No hay pagos registrados.</td></tr>';
+      } else {
+        tbody.innerHTML = data.map(p => `
+          <tr>
+            <td>${fmtFechaHora(p.fecha)}</td>
+            <td>${p.ordenes ? fmtNumero('OT', p.ordenes.numero) : '–'}</td>
+            <td>${p.clientes ? p.clientes.nombre : '–'}</td>
+            <td>${fmtMoneda(p.monto)}</td>
+            <td>${METODOS_PAGO[p.metodo_pago] ?? '–'}</td>
+            <td>${p.notas ?? '–'}</td>
+            <td><button type="button" class="btn-danger eliminar-btn" data-id="${p.id}" style="padding:0.2rem 0.5rem;">✕</button></td>
+          </tr>`).join('');
+
+        tbody.querySelectorAll('.eliminar-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            if (!confirm('¿Eliminar este pago?')) return;
+            await supabaseClient.from('pagos').delete().eq('id', btn.dataset.id);
+            await Promise.all([loadPagos(), loadOrdenes()]);
+          });
+        });
+      }
+
+      const monthStart = new Date();
+      monthStart.setDate(1);
+      monthStart.setHours(0, 0, 0, 0);
+      const totalMes = data
+        .filter(p => new Date(p.fecha) >= monthStart)
+        .reduce((s, p) => s + Number(p.monto), 0);
+      document.getElementById('total-mes').textContent = `Este mes: ${fmtMoneda(totalMes)}`;
+    }
+
+    document.getElementById('orden_id').addEventListener('change', mostrarSaldo);
+
+    document.getElementById('pago-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorEl = document.getElementById('form-error');
+      errorEl.textContent = '';
+
+      const ordenId = document.getElementById('orden_id').value;
+      const orden = ordenesCache.find(o => o.id === ordenId);
+      if (!orden) { errorEl.textContent = 'Selecciona una orden de trabajo.'; return; }
+
+      const { error } = await supabaseClient.from('pagos').insert({
+        orden_id: ordenId,
+        cliente_id: orden.cliente_id,
+        monto: Number(document.getElementById('monto').value),
+        metodo_pago: document.getElementById('metodo_pago').value,
+        notas: document.getElementById('notas').value || null,
+      });
+      if (error) { errorEl.textContent = `Error: ${error.message}`; return; }
+
+      document.getElementById('monto').value = '';
+      document.getElementById('notas').value = '';
+      await Promise.all([loadPagos(), loadOrdenes()]);
+      mostrarSaldo();
+    });
+
+    (async () => {
+      const session = await initLayout('pagos');
+      if (!session) return;
+      config = await getTallerConfig();
+      await Promise.all([loadOrdenes(), loadPagos()]);
+    })();
+  </script>
+</body>
+</html>
