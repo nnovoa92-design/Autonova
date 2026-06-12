@@ -21,8 +21,14 @@ estático (Netlify, Vercel, Cloudflare Pages).
 | `pages/trabajos.html` | Catálogo de trabajos con horas estimadas; precio = horas × valor hora del taller (o precio fijo) |
 | `pages/inventario.html` | Repuestos con stock, mínimos, entradas/salidas/ajustes |
 | `pages/pagos.html` | Pagos por OT con saldo pendiente |
+| `pages/inspecciones.html` | Inspecciones precompra: checklist de 7 secciones con puntaje 0-100, recomendación, ítems extra, WhatsApp, impresión y link público |
+| `pages/configuracion.html` | Configuración: datos del taller, valor hora, IVA y porcentajes de reparto de mano de obra (manuales) |
 | `portal.html` | **Público**: el cliente consulta el estado de su vehículo con patente + N° de OT (incluye fotos y detalle) |
 | `cotizacion.html` | **Público**: el cliente revisa y aprueba/rechaza la cotización desde el link que le envías por WhatsApp |
+| `inspeccion.html` | **Público**: informe completo de inspección precompra desde el link único |
+
+> Si tu base ya existía antes de la v2, ejecuta también `sql/actualizacion-v2.sql`
+> (crea inspecciones, migra las antiguas y agrega los porcentajes de reparto).
 
 Extras integrados:
 - **WhatsApp**: botones en cotizaciones y OTs que abren el chat del cliente con

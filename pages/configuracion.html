@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Configuración · Autonova</title>
+  <link rel="stylesheet" href="../assets/css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar">
+        <h1>Configuración del taller</h1>
+      </header>
+      <div class="content">
+
+        <div class="card">
+          <h2 style="margin-top:0;">Datos del taller</h2>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
+            Estos datos aparecen en las cotizaciones impresas, el portal del cliente y los mensajes de WhatsApp.
+          </p>
+          <form id="config-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="nombre">Nombre del taller *</label>
+                <input type="text" id="nombre" required />
+              </div>
+              <div class="form-group">
+                <label for="rut">RUT</label>
+                <input type="text" id="rut" />
+              </div>
+              <div class="form-group">
+                <label for="telefono">Teléfono</label>
+                <input type="text" id="telefono" />
+              </div>
+              <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="direccion">Dirección</label>
+              <input type="text" id="direccion" />
+            </div>
+
+            <h2>Valores</h2>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="valor_hora">Valor hora de taller ($)</label>
+                <input type="number" id="valor_hora" min="0" step="1" />
+              </div>
+              <div class="form-group">
+                <label for="iva_pct">IVA %</label>
+                <input type="number" id="iva_pct" min="0" max="100" step="0.5" />
+              </div>
+            </div>
+            <p style="color:var(--color-text-muted); font-size:0.85rem;">
+              El valor hora calcula el precio de los trabajos del catálogo que no tienen precio fijo.
+            </p>
+
+            <h2>Reparto de mano de obra (opcional)</h2>
+            <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
+              Porcentajes manuales para repartir la mano de obra de cada orden de trabajo.
+              Déjalos en 0 si no quieres usar esta función. Se muestran como referencia
+              en el detalle de cada OT; puedes cambiarlos cuando quieras.
+            </p>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="pct_mecanico">Mecánico %</label>
+                <input type="number" id="pct_mecanico" min="0" max="100" step="0.5" />
+              </div>
+              <div class="form-group">
+                <label for="pct_dueno">Dueño %</label>
+                <input type="number" id="pct_dueno" min="0" max="100" step="0.5" />
+              </div>
+              <div class="form-group">
+                <label for="pct_taller">Taller %</label>
+                <input type="number" id="pct_taller" min="0" max="100" step="0.5" />
+              </div>
+            </div>
+            <p id="suma-pcts" style="font-size:0.85rem; margin-top:0;"></p>
+
+            <button type="submit" id="guardar-btn">Guardar configuración</button>
+            <p class="error-message" id="form-error"></p>
+            <p id="form-ok" style="color:#1b6e3c; font-size:0.85rem;"></p>
+          </form>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="../assets/vendor/supabase.min.js"></script>
+  <script src="../assets/js/supabaseClient.js"></script>
+  <script src="../assets/js/layout.js"></script>
+  <script>
+    const CAMPOS = ['nombre','rut','telefono','email','direccion','valor_hora','iva_pct','pct_mecanico','pct_dueno','pct_taller'];
+
+    function actualizarSuma() {
+      const suma = ['pct_mecanico','pct_dueno','pct_taller']
+        .reduce((s, id) => s + Number(document.getElementById(id).value || 0), 0);
+      const el = document.getElementById('suma-pcts');
+      if (suma === 0) {
+        el.textContent = 'Reparto desactivado (todos en 0).';
+        el.style.color = 'var(--color-text-muted)';
+      } else if (suma === 100) {
+        el.textContent = 'Suma: 100% ✓';
+        el.style.color = '#1b6e3c';
+      } else {
+        el.textContent = `Suma: ${suma}% — se recomienda que sume 100%.`;
+        el.style.color = '#92600a';
+      }
+    }
+
+    ['pct_mecanico','pct_dueno','pct_taller'].forEach(id =>
+      document.getElementById(id).addEventListener('input', actualizarSuma));
+
+    document.getElementById('config-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorEl = document.getElementById('form-error');
+      const okEl = document.getElementById('form-ok');
+      errorEl.textContent = '';
+      okEl.textContent = '';
+
+      const payload = {};
+      CAMPOS.forEach(id => {
+        const v = document.getElementById(id).value;
+        payload[id] = ['valor_hora','iva_pct','pct_mecanico','pct_dueno','pct_taller'].includes(id)
+          ? Number(v || 0)
+          : (v || null);
+      });
+      payload.nombre = payload.nombre || 'Mi Taller';
+
+      const { error } = await supabaseClient.from('taller_config').update(payload).eq('id', 1);
+      if (error) {
+        errorEl.textContent = `Error: ${error.message} (¿ejecutaste sql/actualizacion-v2.sql?)`;
+        return;
+      }
+      tallerConfigCache = null;  // refresca el caché compartido
+      okEl.textContent = 'Configuración guardada.';
+    });
+
+    (async () => {
+      const session = await initLayout('configuracion');
+      if (!session) return;
+      const { data, error } = await supabaseClient.from('taller_config').select('*').eq('id', 1).single();
+      if (error || !data) {
+        document.getElementById('form-error').textContent =
+          'No se pudo cargar la configuración. ¿Ejecutaste sql/schema.sql?';
+        return;
+      }
+      CAMPOS.forEach(id => {
+        if (data[id] != null) document.getElementById(id).value = data[id];
+      });
+      actualizarSuma();
+    })();
+  </script>
+</body>
+</html>

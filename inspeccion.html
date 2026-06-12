@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Informe de inspección · Autonova</title>
+  <link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body class="portal-page">
+  <div class="portal-card" style="text-align:center;">
+    <h1 style="margin:0 0 0.25rem; font-size:1.4rem;" id="taller-nombre">Autonova</h1>
+    <p style="color:var(--color-text-muted); margin:0;">Informe de inspección precompra</p>
+  </div>
+
+  <div class="portal-card" id="contenido">
+    <p>Cargando informe...</p>
+  </div>
+
+  <script src="assets/vendor/supabase.min.js"></script>
+  <script src="assets/js/supabaseClient.js"></script>
+  <script src="assets/js/layout.js"></script>
+  <script src="assets/js/checklist.js"></script>
+  <script>
+    (async () => {
+      const contenido = document.getElementById('contenido');
+      const id = new URLSearchParams(window.location.search).get('id');
+      if (!id) {
+        contenido.innerHTML = '<p class="error-message">Link inválido: falta el identificador del informe.</p>';
+        return;
+      }
+
+      const { data: d, error } = await supabaseClient.rpc('portal_consultar_inspeccion', { p_id: id });
+      if (error || !d) {
+        contenido.innerHTML = '<p class="error-message">No encontramos este informe. Verifica el link o contacta al taller.</p>';
+        return;
+      }
+
+      if (d.taller && d.taller.nombre) document.getElementById('taller-nombre').textContent = d.taller.nombre;
+      const nivel = d.score >= 90 ? 'ok' : (d.score >= 60 ? 'warn' : 'bad');
+
+      contenido.innerHTML = `
+        <div style="display:flex; gap:1.5rem; align-items:center; flex-wrap:wrap; margin-bottom:1rem;">
+          <div class="score-circulo score-${nivel}">
+            <div class="score-num">${d.score ?? '–'}</div>
+            <div class="score-sub">de 100</div>
+          </div>
+          <div style="flex:1; min-width:260px;">
+            <h2 style="margin:0 0 0.4rem;">Inspección ${fmtNumero('INS', d.numero)}</h2>
+            <p style="margin:0 0 0.4rem;">
+              <strong>${d.nombre_comprador ?? ''}</strong><br>
+              ${[d.patente, d.marca, d.modelo].filter(Boolean).join(' · ')}${d.km ? ' · ' + d.km : ''}
+              ${d.precio_pedido ? '<br>Precio pedido: ' + fmtMoneda(d.precio_pedido) : ''}<br>
+              <span style="color:var(--color-text-muted); font-size:0.85rem;">Fecha: ${fmtFecha(d.fecha)}</span>
+            </p>
+            <p style="margin:0.4rem 0;">
+              <span class="badge badge-green">${d.ok} bien</span>
+              <span class="badge badge-yellow">${d.warn} atención</span>
+              <span class="badge badge-red">${d.bad} malo</span>
+              <span class="badge badge-gray">${d.na} n/a</span>
+            </p>
+            <p style="margin:0.4rem 0; font-weight:600;">${d.recomendacion ?? ''}</p>
+          </div>
+        </div>
+        ${inspRenderDetalle(d.datos || {})}
+        ${d.observaciones ? `<h3>Observaciones</h3><p>${d.observaciones}</p>` : ''}
+        ${d.taller ? `<p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:1.5rem;">
+          ${d.taller.nombre} · ${d.taller.direccion ?? ''} · ${d.taller.telefono ?? ''}
+        </p>` : ''}
+      `;
+    })();
+  </script>
+</body>
+</html>

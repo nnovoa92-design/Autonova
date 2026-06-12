@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inspecciones · Autonova</title>
+  <link rel="stylesheet" href="../assets/css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar">
+        <h1>Inspecciones precompra</h1>
+        <button id="nueva-btn">+ Nueva inspección</button>
+      </header>
+      <div class="content">
+
+        <!-- Paso 1: datos del comprador y vehículo -->
+        <div class="card" id="datos-card" style="display:none;">
+          <h2 style="margin-top:0;">Nueva inspección precompra</h2>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="i-nombre">Cliente (comprador) *</label>
+              <input type="text" id="i-nombre" placeholder="Nombre del comprador" />
+            </div>
+            <div class="form-group">
+              <label for="i-wa">WhatsApp</label>
+              <input type="text" id="i-wa" placeholder="+56 9 ..." />
+            </div>
+            <div class="form-group">
+              <label for="i-pat">Patente</label>
+              <input type="text" id="i-pat" placeholder="CRZC88" style="text-transform:uppercase;" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="i-marca">Marca</label>
+              <input type="text" id="i-marca" placeholder="Toyota" />
+            </div>
+            <div class="form-group">
+              <label for="i-modelo">Modelo y año</label>
+              <input type="text" id="i-modelo" placeholder="Corolla 2018" />
+            </div>
+            <div class="form-group">
+              <label for="i-km">Kilometraje</label>
+              <input type="text" id="i-km" placeholder="120.000 km" />
+            </div>
+            <div class="form-group">
+              <label for="i-precio">Precio pedido ($)</label>
+              <input type="number" id="i-precio" min="0" />
+            </div>
+          </div>
+          <button type="button" id="iniciar-btn">Iniciar checklist →</button>
+          <button type="button" id="cancelar-datos-btn" class="btn-secondary">Cancelar</button>
+          <p class="error-message" id="datos-error"></p>
+        </div>
+
+        <!-- Paso 2: checklist -->
+        <div class="card" id="checklist-card" style="display:none;">
+          <div class="toolbar">
+            <h2 style="margin:0;" id="checklist-title">Checklist</h2>
+            <span class="badge badge-blue" id="progreso"></span>
+          </div>
+          <div id="checklist-body"></div>
+          <div class="form-group" style="margin-top:1rem;">
+            <label for="i-obs">Observaciones generales</label>
+            <textarea id="i-obs" rows="3" placeholder="Detalles adicionales, ruidos, historial declarado..."></textarea>
+          </div>
+          <button type="button" id="finalizar-btn">Finalizar inspección</button>
+          <button type="button" id="cancelar-cl-btn" class="btn-secondary">Cancelar</button>
+          <p class="error-message" id="cl-error"></p>
+        </div>
+
+        <!-- Detalle / resultado -->
+        <div class="card" id="detalle-card" style="display:none;">
+          <div class="toolbar">
+            <h2 style="margin:0;" id="detalle-title">Inspección</h2>
+            <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+              <button type="button" id="wa-btn" class="btn-secondary">WhatsApp</button>
+              <button type="button" id="link-btn" class="btn-secondary">Copiar link</button>
+              <button type="button" id="imprimir-btn" class="btn-secondary">Imprimir</button>
+              <button type="button" id="volver-btn" class="btn-secondary">Volver</button>
+            </div>
+          </div>
+          <div id="detalle-body"></div>
+        </div>
+
+        <!-- Listado -->
+        <div class="card" id="listado-card">
+          <div class="toolbar">
+            <h2 style="margin:0;">Listado</h2>
+            <input type="search" id="buscar" placeholder="Buscar por comprador o patente..." style="max-width:300px;" />
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>N°</th>
+                <th>Fecha</th>
+                <th>Comprador</th>
+                <th>Vehículo</th>
+                <th>Puntaje</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="inspecciones-body">
+              <tr><td colspan="6">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div class="print-area" id="print-area"></div>
+
+  <script src="../assets/vendor/supabase.min.js"></script>
+  <script src="../assets/js/supabaseClient.js"></script>
+  <script src="../assets/js/layout.js"></script>
+  <script src="../assets/js/checklist.js"></script>
+  <script>
+    let inspeccionesCache = [];
+    let datosActuales = {};   // respuestas del checklist en curso
+    let cabecera = null;      // datos comprador/vehículo en curso
+    let inspActual = null;    // inspección abierta en detalle
+    let config = null;
+
+    function mostrar(cardId) {
+      ['datos-card','checklist-card','detalle-card','listado-card'].forEach(id => {
+        document.getElementById(id).style.display = id === cardId ? 'block' : 'none';
+      });
+      if (cardId === 'listado-card') renderListado();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // ---------- Paso 1: datos ----------
+    document.getElementById('nueva-btn').addEventListener('click', () => {
+      ['i-nombre','i-wa','i-pat','i-marca','i-modelo','i-km','i-precio'].forEach(id => {
+        document.getElementById(id).value = '';
+      });
+      document.getElementById('datos-error').textContent = '';
+      mostrar('datos-card');
+    });
+    document.getElementById('cancelar-datos-btn').addEventListener('click', () => mostrar('listado-card'));
+
+    document.getElementById('iniciar-btn').addEventListener('click', () => {
+      const nombre = document.getElementById('i-nombre').value.trim();
+      if (!nombre) {
+        document.getElementById('datos-error').textContent = 'Ingresa el nombre del comprador.';
+        return;
+      }
+      cabecera = {
+        nombre_comprador: nombre,
+        telefono: document.getElementById('i-wa').value.trim() || null,
+        patente: document.getElementById('i-pat').value.trim().toUpperCase() || null,
+        marca: document.getElementById('i-marca').value.trim() || null,
+        modelo: document.getElementById('i-modelo').value.trim() || null,
+        km: document.getElementById('i-km').value.trim() || null,
+        precio_pedido: Number(document.getElementById('i-precio').value) || null,
+      };
+      datosActuales = {};
+      document.getElementById('i-obs').value = '';
+      document.getElementById('checklist-title').textContent =
+        `Checklist — ${cabecera.patente ?? 'sin patente'} ${cabecera.marca ?? ''} ${cabecera.modelo ?? ''}`;
+      renderChecklist();
+      mostrar('checklist-card');
+    });
+
+    // ---------- Paso 2: checklist ----------
+    function renderChecklist() {
+      const body = document.getElementById('checklist-body');
+      body.innerHTML = INSP_CHECKLIST.map((sec, si) => {
+        const items = sec.items.map((item, ii) => {
+          const k = `${si}_${ii}`;
+          if (item.mode !== 'std') {
+            return `
+            <div class="cl-item">
+              <div class="cl-label">${item.t}</div>
+              <input type="text" class="cl-txt" data-k="${k}" value="${datosActuales[k + '_txt'] ?? ''}"
+                placeholder="${item.mode === 'dtc' ? 'P0301, P0420... o ninguno' : 'Km'}" style="max-width:240px;" />
+            </div>`;
+          }
+          return `
+          <div class="cl-item">
+            <div class="cl-label">${item.t}</div>
+            <div class="cl-botones" data-k="${k}">
+              ${Object.entries(INSP_ESTADOS).map(([v, e]) =>
+                `<button type="button" data-v="${v}" class="${datosActuales[k] === v ? 'sel-' + v : ''}">${e.label}</button>`
+              ).join('')}
+            </div>
+          </div>`;
+        }).join('');
+
+        const customs = (datosActuales._custom && datosActuales._custom[si]) || [];
+        const customsHtml = customs.map((nombre, ci) => {
+          const k = `c_${si}_${ci}`;
+          return `
+          <div class="cl-item">
+            <div class="cl-label">${nombre} <span class="badge">extra</span></div>
+            <div class="cl-botones" data-k="${k}">
+              ${Object.entries(INSP_ESTADOS).map(([v, e]) =>
+                `<button type="button" data-v="${v}" class="${datosActuales[k] === v ? 'sel-' + v : ''}">${e.label}</button>`
+              ).join('')}
+            </div>
+          </div>`;
+        }).join('');
+
+        return `
+        <h3>${sec.sec}</h3>
+        ${items}
+        ${customsHtml}
+        <button type="button" class="btn-secondary agregar-custom-btn" data-si="${si}"
+          style="margin:0.5rem 0 1rem; padding:0.3rem 0.7rem; font-size:0.78rem;">+ Agregar ítem</button>`;
+      }).join('');
+
+      body.querySelectorAll('.cl-botones button').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const k = btn.parentElement.dataset.k;
+          const v = btn.dataset.v;
+          datosActuales[k] = datosActuales[k] === v ? '' : v;
+          btn.parentElement.querySelectorAll('button').forEach(b =>
+            b.className = datosActuales[k] === b.dataset.v ? 'sel-' + b.dataset.v : '');
+          actualizarProgreso();
+        });
+      });
+
+      body.querySelectorAll('.cl-txt').forEach(inp => {
+        inp.addEventListener('input', () => { datosActuales[inp.dataset.k + '_txt'] = inp.value; });
+      });
+
+      body.querySelectorAll('.agregar-custom-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const nombre = prompt('Nombre del ítem extra:');
+          if (!nombre || !nombre.trim()) return;
+          datosActuales._custom = datosActuales._custom || {};
+          datosActuales._custom[btn.dataset.si] = datosActuales._custom[btn.dataset.si] || [];
+          datosActuales._custom[btn.dataset.si].push(nombre.trim());
+          renderChecklist();
+        });
+      });
+
+      actualizarProgreso();
+    }
+
+    function actualizarProgreso() {
+      const r = inspCalcular(datosActuales);
+      document.getElementById('progreso').textContent =
+        `${r.ok + r.warn + r.bad + r.na} de ${r.total} evaluados`;
+    }
+
+    document.getElementById('cancelar-cl-btn').addEventListener('click', () => {
+      if (confirm('¿Descartar esta inspección?')) mostrar('listado-card');
+    });
+
+    document.getElementById('finalizar-btn').addEventListener('click', async () => {
+      const errorEl = document.getElementById('cl-error');
+      errorEl.textContent = '';
+      const r = inspCalcular(datosActuales);
+      if (r.ok + r.warn + r.bad + r.na === 0) {
+        errorEl.textContent = 'Evalúa al menos un ítem antes de finalizar.';
+        return;
+      }
+      const obs = document.getElementById('i-obs').value.trim() || null;
+      datosActuales._obs = obs ?? undefined;
+
+      const { data, error } = await supabaseClient.from('inspecciones').insert({
+        ...cabecera,
+        datos: datosActuales,
+        score: r.score,
+        ok: r.ok, warn: r.warn, bad: r.bad, na: r.na, total: r.total,
+        recomendacion: r.rec,
+        observaciones: obs,
+      }).select('*').single();
+      if (error) {
+        errorEl.textContent = `Error al guardar: ${error.message}`;
+        return;
+      }
+      await loadInspecciones();
+      abrirDetalle(data.id);
+    });
+
+    // ---------- Detalle ----------
+    function abrirDetalle(id) {
+      inspActual = inspeccionesCache.find(x => x.id === id);
+      if (!inspActual) return;
+      const i = inspActual;
+      const nivel = i.score >= 90 ? 'ok' : (i.score >= 60 ? 'warn' : 'bad');
+
+      document.getElementById('detalle-title').textContent =
+        `${fmtNumero('INS', i.numero)} — ${i.patente ?? 'sin patente'}`;
+      document.getElementById('detalle-body').innerHTML = `
+        <div style="display:flex; gap:1.5rem; align-items:center; flex-wrap:wrap; margin-bottom:1rem;">
+          <div class="score-circulo score-${nivel}">
+            <div class="score-num">${i.score ?? '–'}</div>
+            <div class="score-sub">de 100</div>
+          </div>
+          <div style="flex:1; min-width:260px;">
+            <p style="margin:0 0 0.4rem;">
+              <strong>${i.nombre_comprador}</strong>${i.telefono ? ' · ' + i.telefono : ''}<br>
+              ${[i.marca, i.modelo].filter(Boolean).join(' ')}${i.km ? ' · ' + i.km : ''}
+              ${i.precio_pedido ? ' · Precio pedido: ' + fmtMoneda(i.precio_pedido) : ''}<br>
+              <span style="color:var(--color-text-muted); font-size:0.85rem;">Inspeccionado el ${fmtFechaHora(i.fecha)}</span>
+            </p>
+            <p style="margin:0.4rem 0;">
+              <span class="badge badge-green">${i.ok} bien</span>
+              <span class="badge badge-yellow">${i.warn} atención</span>
+              <span class="badge badge-red">${i.bad} malo</span>
+              <span class="badge badge-gray">${i.na} n/a</span>
+            </p>
+            <p style="margin:0.4rem 0; font-weight:600;">${i.recomendacion ?? ''}</p>
+          </div>
+        </div>
+        ${inspRenderDetalle(i.datos || {})}
+        ${i.observaciones ? `<h3>Observaciones</h3><p>${i.observaciones}</p>` : ''}
+      `;
+      mostrar('detalle-card');
+    }
+
+    document.getElementById('volver-btn').addEventListener('click', () => mostrar('listado-card'));
+
+    document.getElementById('wa-btn').addEventListener('click', () => {
+      if (!inspActual) return;
+      const i = inspActual;
+      if (!i.telefono) { alert('Esta inspección no tiene teléfono registrado.'); return; }
+      const mensaje =
+        `Hola ${i.nombre_comprador}, le saluda ${config.nombre}.\n` +
+        `Resultado de la inspección precompra ${fmtNumero('INS', i.numero)}` +
+        `${i.patente ? ' del vehículo ' + i.patente : ''} (${[i.marca, i.modelo].filter(Boolean).join(' ')}):\n` +
+        `Puntaje: ${i.score}/100 — ${i.ok} bien, ${i.warn} con atención, ${i.bad} malos.\n` +
+        `${i.recomendacion}\n` +
+        `Informe completo: ${window.location.origin}/inspeccion.html?id=${i.id}`;
+      window.open(linkWhatsApp(i.telefono, mensaje), '_blank');
+    });
+
+    document.getElementById('link-btn').addEventListener('click', async () => {
+      if (!inspActual) return;
+      const url = `${window.location.origin}/inspeccion.html?id=${inspActual.id}`;
+      try {
+        await navigator.clipboard.writeText(url);
+        alert('Link copiado:\n' + url);
+      } catch {
+        prompt('Copia el link manualmente:', url);
+      }
+    });
+
+    document.getElementById('imprimir-btn').addEventListener('click', () => {
+      if (!inspActual) return;
+      const i = inspActual;
+      document.getElementById('print-area').innerHTML = `
+        <div class="print-header">
+          <div>
+            <h1 style="margin:0;">${config.nombre}</h1>
+            <div>${config.direccion ?? ''}</div>
+            <div>${config.telefono ?? ''}</div>
+          </div>
+          <div style="text-align:right;">
+            <h2 style="margin:0;">INSPECCIÓN ${fmtNumero('INS', i.numero)}</h2>
+            <div>Fecha: ${fmtFecha(i.fecha)}</div>
+          </div>
+        </div>
+        <p>
+          <strong>Comprador:</strong> ${i.nombre_comprador}<br>
+          <strong>Vehículo:</strong> ${[i.patente, i.marca, i.modelo].filter(Boolean).join(' · ')}${i.km ? ' · ' + i.km : ''}
+          ${i.precio_pedido ? '<br><strong>Precio pedido:</strong> ' + fmtMoneda(i.precio_pedido) : ''}
+        </p>
+        <h2>Puntaje: ${i.score}/100</h2>
+        <p>${i.ok} bien · ${i.warn} con atención · ${i.bad} malos · ${i.na} no aplica</p>
+        <p><strong>${i.recomendacion ?? ''}</strong></p>
+        ${inspRenderDetalle(i.datos || {})}
+        ${i.observaciones ? `<h3>Observaciones</h3><p>${i.observaciones}</p>` : ''}
+      `;
+      window.print();
+    });
+
+    // ---------- Listado ----------
+    function renderListado() {
+      const q = document.getElementById('buscar').value.trim().toLowerCase();
+      const lista = q
+        ? inspeccionesCache.filter(i =>
+            (i.nombre_comprador || '').toLowerCase().includes(q) ||
+            (i.patente || '').toLowerCase().includes(q))
+        : inspeccionesCache;
+      const tbody = document.getElementById('inspecciones-body');
+      if (!lista.length) {
+        tbody.innerHTML = '<tr><td colspan="6">No hay inspecciones.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = lista.map(i => {
+        const nivel = i.score >= 90 ? 'badge-green' : (i.score >= 60 ? 'badge-yellow' : 'badge-red');
+        return `
+        <tr>
+          <td>${fmtNumero('INS', i.numero)}</td>
+          <td>${fmtFecha(i.fecha)}</td>
+          <td>${i.nombre_comprador}</td>
+          <td>${[i.patente, i.marca, i.modelo].filter(Boolean).join(' ') || '–'}</td>
+          <td><span class="badge ${nivel}">${i.score ?? '–'}/100</span></td>
+          <td class="table-actions">
+            <button type="button" class="btn-secondary ver-btn" data-id="${i.id}">Ver</button>
+            <button type="button" class="btn-danger eliminar-btn" data-id="${i.id}">Eliminar</button>
+          </td>
+        </tr>`;
+      }).join('');
+
+      tbody.querySelectorAll('.ver-btn').forEach(btn => {
+        btn.addEventListener('click', () => abrirDetalle(btn.dataset.id));
+      });
+      tbody.querySelectorAll('.eliminar-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('¿Eliminar esta inspección? No se puede deshacer.')) return;
+          await supabaseClient.from('inspecciones').delete().eq('id', btn.dataset.id);
+          await loadInspecciones();
+          renderListado();
+        });
+      });
+    }
+
+    async function loadInspecciones() {
+      const { data, error } = await supabaseClient
+        .from('inspecciones')
+        .select('*')
+        .order('fecha', { ascending: false });
+      if (error) {
+        document.getElementById('inspecciones-body').innerHTML =
+          `<tr><td colspan="6">Error: ${error.message} (¿ejecutaste sql/actualizacion-v2.sql?)</td></tr>`;
+        return;
+      }
+      inspeccionesCache = data;
+    }
+
+    document.getElementById('buscar').addEventListener('input', renderListado);
+
+    (async () => {
+      const session = await initLayout('inspecciones');
+      if (!session) return;
+      config = await getTallerConfig();
+      await loadInspecciones();
+      renderListado();
+    })();
+  </script>
+</body>
+</html>

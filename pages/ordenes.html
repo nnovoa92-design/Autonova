@@ -311,12 +311,27 @@
 
       const t = calcularTotal(items);
       const pagado = (ordenActual.pagos || []).reduce((s, p) => s + Number(p.monto), 0);
+
+      // Reparto de mano de obra según porcentajes manuales de la configuración
+      const sumaPcts = Number(config.pct_mecanico || 0) + Number(config.pct_dueno || 0) + Number(config.pct_taller || 0);
+      let repartoHtml = '';
+      if (sumaPcts > 0) {
+        const manoObra = items.filter(i => i.tipo === 'mano_obra')
+          .reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
+        repartoHtml = `
+        <div class="fila" style="margin-top:0.5rem; color:var(--color-text-muted);"><span>Mano de obra</span><span>${fmtMoneda(manoObra)}</span></div>
+        <div class="fila" style="color:var(--color-text-muted);"><span>· Mecánico ${Number(config.pct_mecanico)}%</span><span>${fmtMoneda(manoObra * Number(config.pct_mecanico || 0) / 100)}</span></div>
+        <div class="fila" style="color:var(--color-text-muted);"><span>· Dueño ${Number(config.pct_dueno)}%</span><span>${fmtMoneda(manoObra * Number(config.pct_dueno || 0) / 100)}</span></div>
+        <div class="fila" style="color:var(--color-text-muted);"><span>· Taller ${Number(config.pct_taller)}%</span><span>${fmtMoneda(manoObra * Number(config.pct_taller || 0) / 100)}</span></div>`;
+      }
+
       document.getElementById('totales').innerHTML = `
         <div class="fila"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
         <div class="fila"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>
         <div class="fila total"><span>Total</span><span>${fmtMoneda(t.total)}</span></div>
         <div class="fila"><span>Pagado</span><span>${fmtMoneda(pagado)}</span></div>
-        <div class="fila"><span>Saldo</span><span>${fmtMoneda(t.total - pagado)}</span></div>`;
+        <div class="fila"><span>Saldo</span><span>${fmtMoneda(t.total - pagado)}</span></div>
+        ${repartoHtml}`;
     }
 
     function renderHoras() {

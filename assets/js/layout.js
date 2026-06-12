@@ -3,11 +3,13 @@ const NAV_ITEMS = [
   { key: 'dashboard', label: 'Inicio', href: 'dashboard.html' },
   { key: 'cotizaciones', label: 'Cotizaciones', href: 'cotizaciones.html' },
   { key: 'ordenes', label: 'Órdenes de trabajo', href: 'ordenes.html' },
+  { key: 'inspecciones', label: 'Inspecciones', href: 'inspecciones.html' },
   { key: 'clientes', label: 'Clientes', href: 'clientes.html' },
   { key: 'vehiculos', label: 'Vehículos', href: 'vehiculos.html' },
   { key: 'trabajos', label: 'Catálogo de trabajos', href: 'trabajos.html' },
   { key: 'inventario', label: 'Inventario', href: 'inventario.html' },
   { key: 'pagos', label: 'Pagos', href: 'pagos.html' },
+  { key: 'configuracion', label: 'Configuración', href: 'configuracion.html' },
 ];
 
 // Estados con su etiqueta y color de badge
