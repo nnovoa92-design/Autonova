@@ -92,8 +92,11 @@ async function initLayout(activeKey) {
       return `<a href="${item.href}"${activeClass}>${item.label}</a>`;
     }).join('');
 
+    // Logo opcional: si existe assets/img/logo.png se muestra; si no, se oculta solo.
+    const logoTag = `<img class="brand-logo" src="../assets/img/logo.png" alt="" onerror="this.style.display='none'">`;
+
     sidebar.innerHTML = `
-      <div class="brand">Autonova <span class="brand-sub">Taller</span></div>
+      <div class="brand">${logoTag}<span>Autonova<span class="brand-sub">Sistema de Taller</span></span></div>
       <nav>${navLinks}</nav>
       <div class="sidebar-footer">
         <button id="logout-btn" class="btn-secondary" style="border-color: rgba(255,255,255,0.4); color: #fff;">Cerrar sesión</button>
@@ -101,6 +104,26 @@ async function initLayout(activeKey) {
     `;
 
     document.getElementById('logout-btn').addEventListener('click', logout);
+
+    // Menú móvil: botón hamburguesa + fondo oscuro
+    const shell = sidebar.closest('.app-shell');
+    const topbar = document.querySelector('.topbar');
+    if (shell && topbar && !document.querySelector('.menu-toggle')) {
+      const btn = document.createElement('button');
+      btn.className = 'menu-toggle';
+      btn.setAttribute('aria-label', 'Abrir menú');
+      btn.innerHTML = '☰';
+      topbar.insertBefore(btn, topbar.firstChild);
+
+      const backdrop = document.createElement('div');
+      backdrop.className = 'sidebar-backdrop';
+      shell.appendChild(backdrop);
+
+      const cerrar = () => shell.classList.remove('nav-open');
+      btn.addEventListener('click', () => shell.classList.toggle('nav-open'));
+      backdrop.addEventListener('click', cerrar);
+      sidebar.querySelectorAll('nav a').forEach(a => a.addEventListener('click', cerrar));
+    }
   }
 
   return session;

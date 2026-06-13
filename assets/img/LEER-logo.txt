@@ -1,0 +1,21 @@
+COLOCA AQUÍ EL LOGO DEL TALLER
+================================
+
+Guarda tu logo en esta misma carpeta con el nombre EXACTO:
+
+    logo.png
+
+(es decir: assets/img/logo.png)
+
+- Formato recomendado: PNG con fondo transparente.
+- Tamaño ideal: cuadrado, mínimo 512 x 512 px (sirve también para
+  el ícono cuando instalas la app en el celular/iPad).
+- Si tu archivo es .jpg, conviértelo a .png o renómbralo a logo.png.
+
+Apenas el archivo se llame logo.png, aparece solo en:
+  · la pantalla de inicio de sesión,
+  · la barra lateral (arriba, junto a "Autonova"),
+  · el ícono de la app instalada en el celular.
+
+Si no hay logo, la app funciona igual: simplemente no se muestra
+ninguna imagen (no da error).

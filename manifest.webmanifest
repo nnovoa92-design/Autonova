@@ -1,0 +1,15 @@
+{
+  "name": "Autonova — Sistema de Taller",
+  "short_name": "Autonova",
+  "description": "Gestión de taller mecánico: cotizaciones, órdenes de trabajo, inventario e inspecciones.",
+  "start_url": "index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#15181e",
+  "theme_color": "#15181e",
+  "icons": [
+    { "src": "assets/img/logo.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/img/logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
