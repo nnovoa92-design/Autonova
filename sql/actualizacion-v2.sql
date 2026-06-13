@@ -6,6 +6,12 @@
 -- y migracion.sql). Es seguro correrlo más de una vez.
 -- ============================================================
 
+-- Tabla de control de migraciones (por si migracion.sql no se ejecutó)
+create table if not exists _migracion_done (
+  id integer primary key,
+  fecha timestamptz not null default now()
+);
+
 -- ------------------------------------------------------------
 -- 1) Porcentajes de reparto (configurables, 0 = no usar)
 -- ------------------------------------------------------------
