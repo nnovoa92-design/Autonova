@@ -471,9 +471,12 @@
       const vehiculo = c.vehiculos;
 
       document.getElementById('print-area').innerHTML = `
+        <div class="print-brand">
+          <img src="../assets/img/logo.png" alt="" onerror="this.style.display='none'" />
+          <span class="print-brand-name">${config.nombre}</span>
+        </div>
         <div class="print-header">
           <div>
-            <h1 style="margin:0;">${config.nombre}</h1>
             <div>${config.rut ?? ''}</div>
             <div>${config.direccion ?? ''}</div>
             <div>${config.telefono ?? ''} · ${config.email ?? ''}</div>
