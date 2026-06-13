@@ -64,8 +64,10 @@
             <div class="form-group">
               <label for="item-tipo">Tipo de ítem</label>
               <select id="item-tipo">
-                <option value="mano_obra">Trabajo del catálogo</option>
+                <option value="mano_obra">Trabajo del catálogo (carga insumos)</option>
                 <option value="repuesto">Repuesto del inventario</option>
+                <option value="insumo_taller">Insumo de taller (libre)</option>
+                <option value="insumo_vehiculo">Insumo de vehículo (libre)</option>
                 <option value="otro">Otro (libre)</option>
               </select>
             </div>
@@ -292,7 +294,7 @@
       const tbody = document.getElementById('items-body');
       tbody.innerHTML = items.length ? items.map(i => `
         <tr>
-          <td><span class="badge">${TIPO_LABEL[i.tipo]}</span></td>
+          <td>${badgeItem(i.tipo)}</td>
           <td>${i.descripcion}</td>
           <td>${Number(i.cantidad).toLocaleString('es-CL')}</td>
           <td>${fmtMoneda(i.precio_unitario)}</td>
@@ -367,9 +369,10 @@
     // ---------- Agregar ítems / horas ----------
     function onTipoChange() {
       const tipo = document.getElementById('item-tipo').value;
+      const libre = (tipo === 'otro' || tipo === 'insumo_taller' || tipo === 'insumo_vehiculo');
       document.getElementById('grupo-trabajo').style.display = tipo === 'mano_obra' ? 'block' : 'none';
       document.getElementById('grupo-repuesto').style.display = tipo === 'repuesto' ? 'block' : 'none';
-      document.getElementById('grupo-descripcion').style.display = tipo === 'otro' ? 'block' : 'none';
+      document.getElementById('grupo-descripcion').style.display = libre ? 'block' : 'none';
       document.getElementById('item-cantidad-label').textContent = tipo === 'mano_obra' ? 'Horas' : 'Cantidad';
       if (tipo === 'mano_obra') onTrabajoChange();
       else if (tipo === 'repuesto') onRepuestoChange();
@@ -377,6 +380,17 @@
         document.getElementById('item-cantidad').value = '1';
         document.getElementById('item-precio').value = '';
       }
+    }
+
+    // Empareja la descripción de un insumo con un repuesto del inventario
+    // para precargar su precio de venta (sin IVA).
+    function matchInventario(desc) {
+      const d = (desc || '').toLowerCase();
+      const r = repuestosCache.find(x => {
+        const n = (x.nombre || '').toLowerCase();
+        return n && (d.includes(n) || n.includes(d));
+      });
+      return r ? Number(r.precio_venta || 0) : 0;
     }
 
     function onTrabajoChange() {
@@ -409,8 +423,18 @@
       if (tipo === 'mano_obra') {
         const t = trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value);
         if (!t) return;
-        descripcion = t.nombre;
-        trabajo_id = t.id;
+        // Carga mano de obra + insumos del trabajo como varias líneas (sin mover stock).
+        const moPrecio = t.precio_fijo != null ? Number(t.precio_fijo) : Number(config.valor_hora);
+        const moCantidad = t.precio_fijo != null ? 1 : Number(t.horas_estimadas || 0);
+        const base = (ordenActual.orden_items || []).length;
+        const lineas = [{ orden_id: ordenActual.id, tipo: 'mano_obra', trabajo_id: t.id, repuesto_id: null, descripcion: t.nombre, cantidad: moCantidad, precio_unitario: moPrecio, orden: base + 1 }];
+        (t.insumos || []).forEach((ins, k) => {
+          lineas.push({ orden_id: ordenActual.id, tipo: ins.categoria || 'otro', trabajo_id: null, repuesto_id: null, descripcion: ins.descripcion, cantidad: 1, precio_unitario: matchInventario(ins.descripcion), orden: base + 2 + k });
+        });
+        const { error } = await supabaseClient.from('orden_items').insert(lineas);
+        if (error) { errorEl.textContent = `Error: ${error.message}`; return; }
+        await abrirDetalle(ordenActual.id);
+        return;
       } else if (tipo === 'repuesto') {
         const r = repuestosCache.find(x => x.id === document.getElementById('item-repuesto').value);
         if (!r) return;

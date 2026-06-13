@@ -44,8 +44,10 @@
             <div class="form-group">
               <label for="item-tipo">Tipo de ítem</label>
               <select id="item-tipo">
-                <option value="mano_obra">Trabajo del catálogo</option>
+                <option value="mano_obra">Trabajo del catálogo (carga insumos)</option>
                 <option value="repuesto">Repuesto del inventario</option>
+                <option value="insumo_taller">Insumo de taller (libre)</option>
+                <option value="insumo_vehiculo">Insumo de vehículo (libre)</option>
                 <option value="otro">Otro (libre)</option>
               </select>
             </div>
@@ -74,14 +76,19 @@
             </div>
           </div>
 
+          <p style="color:var(--color-text-muted); font-size:0.82rem; margin:0.5rem 0 0.25rem;">
+            Al elegir un trabajo se cargan su mano de obra y los insumos que requiere.
+            Puedes editar la descripción, las horas y los precios en cada línea; el total se recalcula al instante.
+            <strong>Todos los valores son sin IVA</strong> (el IVA se agrega en el total).
+          </p>
           <table>
             <thead>
               <tr>
                 <th>Tipo</th>
                 <th>Descripción</th>
-                <th>Cant. / Horas</th>
-                <th>Precio unit.</th>
-                <th>Total</th>
+                <th style="width:110px;">Cant./Horas</th>
+                <th style="width:140px;">Precio unit.</th>
+                <th style="width:120px;">Total</th>
                 <th></th>
               </tr>
             </thead>
@@ -148,7 +155,28 @@
     let cotizacionesCache = [], itemsActuales = [];
     let config = null;
 
-    const TIPO_LABEL = { mano_obra: 'Mano de obra', repuesto: 'Repuesto', otro: 'Otro' };
+    // Busca un repuesto del inventario cuyo nombre coincida con la descripción
+    // del insumo, para precargar su precio de venta (sin IVA).
+    function matchInventario(desc) {
+      const d = (desc || '').toLowerCase();
+      const r = repuestosCache.find(x => {
+        const n = (x.nombre || '').toLowerCase();
+        return n && (d.includes(n) || n.includes(d));
+      });
+      return r ? { repuesto_id: r.id, precio: Number(r.precio_venta || 0) } : { repuesto_id: null, precio: 0 };
+    }
+
+    // Carga un trabajo del catálogo como varias líneas: mano de obra + sus insumos.
+    function agregarTrabajoCompleto(t) {
+      const moPrecio = t.precio_fijo != null ? Number(t.precio_fijo) : Number(config.valor_hora);
+      const moCantidad = t.precio_fijo != null ? 1 : Number(t.horas_estimadas || 0);
+      itemsActuales.push({ tipo: 'mano_obra', trabajo_id: t.id, repuesto_id: null, descripcion: t.nombre, cantidad: moCantidad, precio_unitario: moPrecio });
+      (t.insumos || []).forEach(ins => {
+        const m = matchInventario(ins.descripcion);
+        itemsActuales.push({ tipo: ins.categoria || 'otro', trabajo_id: null, repuesto_id: m.repuesto_id, descripcion: ins.descripcion, cantidad: 1, precio_unitario: m.precio });
+      });
+      renderItems();
+    }
 
     function precioTrabajo(t) {
       return t.precio_fijo != null ? Number(t.precio_fijo) : Number(t.horas_estimadas) * Number(config.valor_hora);
@@ -205,13 +233,16 @@
 
     function onTipoChange() {
       const tipo = document.getElementById('item-tipo').value;
+      const libre = (tipo === 'otro' || tipo === 'insumo_taller' || tipo === 'insumo_vehiculo');
       document.getElementById('grupo-trabajo').style.display = tipo === 'mano_obra' ? 'block' : 'none';
       document.getElementById('grupo-repuesto').style.display = tipo === 'repuesto' ? 'block' : 'none';
-      document.getElementById('grupo-descripcion').style.display = tipo === 'otro' ? 'block' : 'none';
-      document.getElementById('item-cantidad-label').textContent = tipo === 'mano_obra' ? 'Horas' : 'Cantidad';
-      if (tipo === 'mano_obra') onTrabajoChange();
-      else if (tipo === 'repuesto') onRepuestoChange();
-      else {
+      document.getElementById('grupo-descripcion').style.display = libre ? 'block' : 'none';
+      // Para un trabajo del catálogo, cantidad/precio no se usan (se cargan varias líneas).
+      document.getElementById('item-cantidad').parentElement.style.display = tipo === 'mano_obra' ? 'none' : 'block';
+      document.getElementById('item-precio').parentElement.style.display = tipo === 'mano_obra' ? 'none' : 'block';
+      document.getElementById('item-cantidad-label').textContent = 'Cantidad';
+      if (tipo === 'repuesto') onRepuestoChange();
+      else if (libre) {
         document.getElementById('item-cantidad').value = '1';
         document.getElementById('item-precio').value = '';
       }
@@ -239,16 +270,19 @@
 
     function agregarItem() {
       const tipo = document.getElementById('item-tipo').value;
-      const cantidad = Number(document.getElementById('item-cantidad').value);
-      const precio = Number(document.getElementById('item-precio').value);
-      let descripcion = '', trabajo_id = null, repuesto_id = null;
 
       if (tipo === 'mano_obra') {
         const t = trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value);
         if (!t) return;
-        descripcion = t.nombre;
-        trabajo_id = t.id;
-      } else if (tipo === 'repuesto') {
+        agregarTrabajoCompleto(t);
+        return;
+      }
+
+      const cantidad = Number(document.getElementById('item-cantidad').value) || 0;
+      const precio = Number(document.getElementById('item-precio').value) || 0;
+      let descripcion = '', repuesto_id = null;
+
+      if (tipo === 'repuesto') {
         const r = repuestosCache.find(x => x.id === document.getElementById('item-repuesto').value);
         if (!r) return;
         descripcion = r.nombre;
@@ -258,7 +292,7 @@
         if (!descripcion) return;
       }
 
-      itemsActuales.push({ tipo, trabajo_id, repuesto_id, descripcion, cantidad, precio_unitario: precio });
+      itemsActuales.push({ tipo, trabajo_id: null, repuesto_id, descripcion, cantidad, precio_unitario: precio });
       document.getElementById('item-descripcion').value = '';
       renderItems();
     }
@@ -267,23 +301,35 @@
       const tbody = document.getElementById('items-body');
       if (!itemsActuales.length) {
         tbody.innerHTML = '<tr><td colspan="6">Sin ítems. Agrega trabajos del catálogo o repuestos.</td></tr>';
-      } else {
-        tbody.innerHTML = itemsActuales.map((i, idx) => `
-          <tr>
-            <td><span class="badge">${TIPO_LABEL[i.tipo]}</span></td>
-            <td>${i.descripcion}</td>
-            <td>${Number(i.cantidad).toLocaleString('es-CL')}</td>
-            <td>${fmtMoneda(i.precio_unitario)}</td>
-            <td>${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td>
-            <td><button type="button" class="btn-danger quitar-btn" data-idx="${idx}" style="padding:0.2rem 0.5rem;">✕</button></td>
-          </tr>`).join('');
-        tbody.querySelectorAll('.quitar-btn').forEach(btn => {
-          btn.addEventListener('click', () => {
-            itemsActuales.splice(Number(btn.dataset.idx), 1);
-            renderItems();
-          });
-        });
+        renderTotales();
+        return;
       }
+      tbody.innerHTML = itemsActuales.map((i, idx) => `
+        <tr>
+          <td>${badgeItem(i.tipo)}</td>
+          <td><input type="text" class="cell-desc" data-idx="${idx}" value="${(i.descripcion || '').replace(/"/g, '&quot;')}" style="min-width:150px;" /></td>
+          <td><input type="number" class="cell-cant" data-idx="${idx}" value="${i.cantidad}" min="0" step="0.25" /></td>
+          <td><input type="number" class="cell-precio" data-idx="${idx}" value="${i.precio_unitario}" min="0" step="1" /></td>
+          <td class="cell-total" data-idx="${idx}">${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td>
+          <td><button type="button" class="btn-danger quitar-btn" data-idx="${idx}" style="padding:0.2rem 0.5rem;">✕</button></td>
+        </tr>`).join('');
+
+      const recalcRow = (idx) => {
+        const i = itemsActuales[idx];
+        const cell = tbody.querySelector(`.cell-total[data-idx="${idx}"]`);
+        if (cell) cell.textContent = fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario));
+        renderTotales();
+      };
+
+      tbody.querySelectorAll('.cell-desc').forEach(inp =>
+        inp.addEventListener('input', () => { itemsActuales[inp.dataset.idx].descripcion = inp.value; }));
+      tbody.querySelectorAll('.cell-cant').forEach(inp =>
+        inp.addEventListener('input', () => { itemsActuales[inp.dataset.idx].cantidad = Number(inp.value) || 0; recalcRow(inp.dataset.idx); }));
+      tbody.querySelectorAll('.cell-precio').forEach(inp =>
+        inp.addEventListener('input', () => { itemsActuales[inp.dataset.idx].precio_unitario = Number(inp.value) || 0; recalcRow(inp.dataset.idx); }));
+      tbody.querySelectorAll('.quitar-btn').forEach(btn =>
+        btn.addEventListener('click', () => { itemsActuales.splice(Number(btn.dataset.idx), 1); renderItems(); }));
+
       renderTotales();
     }
 

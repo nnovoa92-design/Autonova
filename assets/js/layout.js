@@ -38,6 +38,20 @@ const METODOS_PAGO = {
   otro: 'Otro',
 };
 
+// Tipos de ítem de cotización / orden de trabajo
+const TIPO_ITEM = {
+  mano_obra:       { label: 'Mano de obra',     badge: 'badge-blue' },
+  repuesto:        { label: 'Repuesto',         badge: 'badge-purple' },
+  insumo_taller:   { label: 'Insumo taller',    badge: 'badge-yellow' },
+  insumo_vehiculo: { label: 'Insumo vehículo',  badge: 'badge-green' },
+  otro:            { label: 'Otro',             badge: 'badge-gray' },
+};
+
+function badgeItem(tipo) {
+  const t = TIPO_ITEM[tipo] || TIPO_ITEM.otro;
+  return `<span class="badge ${t.badge}">${t.label}</span>`;
+}
+
 function fmtMoneda(n) {
   if (n == null || isNaN(Number(n))) return '–';
   return Number(n).toLocaleString('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 });
