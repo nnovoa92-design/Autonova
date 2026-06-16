@@ -86,6 +86,23 @@ function linkWhatsApp(telefono, mensaje) {
   return `https://wa.me/${digits}?text=${encodeURIComponent(mensaje)}`;
 }
 
+// Abre Gmail con el correo ya redactado (asunto + cuerpo). El usuario
+// solo presiona Enviar. Funciona a cualquier destinatario, sin dominio.
+function linkGmail(para, asunto, cuerpo) {
+  const p = new URLSearchParams({ view: 'cm', fs: '1', to: para || '', su: asunto || '', body: cuerpo || '' });
+  return 'https://mail.google.com/mail/?' + p.toString();
+}
+
+// Mes (1-12) de revisión técnica según el último dígito de la patente.
+// Calendario REFERENCIAL para autos particulares: ajústalo a tu región/año.
+const RT_MES_POR_DIGITO = { '1': 3, '2': 4, '3': 5, '4': 6, '5': 7, '6': 8, '7': 9, '8': 10, '9': 11, '0': 12 };
+function rtMesPatente(patente) {
+  const m = String(patente || '').match(/(\d)(?!.*\d)/); // último dígito
+  return m ? (RT_MES_POR_DIGITO[m[1]] || null) : null;
+}
+
+const NOMBRE_MES = ['', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
 // Configuración del taller cacheada (valor hora, IVA, datos para impresión)
 let tallerConfigCache = null;
 async function getTallerConfig() {

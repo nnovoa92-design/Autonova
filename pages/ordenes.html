@@ -49,6 +49,7 @@
             <div style="display:flex; gap:0.5rem; align-items:center;">
               <select id="detalle-estado" style="max-width:180px;"></select>
               <button type="button" id="whatsapp-ot-btn" class="btn-secondary">Avisar por WhatsApp</button>
+              <button type="button" id="email-ot-btn" class="btn-secondary">Avisar por correo</button>
               <button type="button" id="cerrar-detalle-btn" class="btn-secondary">Volver al listado</button>
             </div>
           </div>
@@ -165,6 +166,20 @@
             <tbody id="horas-body"></tbody>
           </table>
           <p id="horas-resumen" style="color:var(--color-text-muted); font-size:0.88rem;"></p>
+
+          <h3 style="margin-top:1.5rem;">Recordatorio de próxima mantención</h3>
+          <div class="form-row" style="align-items:end;">
+            <div class="form-group" style="max-width:200px;">
+              <label for="mant-meses">Avisar al cliente en</label>
+              <select id="mant-meses">
+                ${''}
+              </select>
+            </div>
+            <div class="form-group" style="flex:0;">
+              <button type="button" id="programar-mant-btn">Programar recordatorio</button>
+            </div>
+          </div>
+          <p id="mant-estado" style="color:var(--color-text-muted); font-size:0.85rem;"></p>
         </div>
 
         <!-- Listado -->
@@ -593,7 +608,7 @@
     async function loadOrdenes() {
       const { data, error } = await supabaseClient
         .from('ordenes')
-        .select('*, clientes(nombre, telefono), vehiculos(patente, marca, modelo), orden_items(*), registro_horas(*), pagos(monto)')
+        .select('*, clientes(nombre, telefono, email), vehiculos(patente, marca, modelo), orden_items(*), registro_horas(*), pagos(monto)')
         .order('creado_en', { ascending: false });
       if (error) {
         document.getElementById('ordenes-body').innerHTML = `<tr><td colspan="7">Error: ${error.message}</td></tr>`;
@@ -708,6 +723,57 @@
       }
       window.open(linkWhatsApp(tel, mensaje), '_blank');
     });
+
+    document.getElementById('email-ot-btn').addEventListener('click', () => {
+      if (!ordenActual) return;
+      const o = ordenActual;
+      const email = o.clientes && o.clientes.email;
+      if (!email) { alert('El cliente no tiene correo registrado.'); return; }
+      const vehiculo = o.vehiculos
+        ? `su vehículo ${o.vehiculos.patente} (${[o.vehiculos.marca, o.vehiculos.modelo].filter(Boolean).join(' ')})`
+        : 'su vehículo';
+      const MENSAJES_ESTADO = {
+        recepcion: `recibimos ${vehiculo} y pronto comenzaremos el diagnóstico`,
+        diagnostico: `${vehiculo} está en diagnóstico; le enviaremos el detalle a la brevedad`,
+        en_proceso: `${vehiculo} está siendo trabajado en nuestro taller`,
+        listo: `${vehiculo} está listo para retiro`,
+        entregado: `gracias por confiar en nosotros para el servicio de ${vehiculo}`,
+      };
+      const cuerpo = MENSAJES_ESTADO[o.estado] || `le informamos sobre ${vehiculo}`;
+      const asunto = `${fmtNumero('OT', o.numero)} - ${config.nombre}`;
+      let cuerpoMail = `Hola ${o.clientes.nombre},\n\nLe informamos que ${cuerpo} (${fmtNumero('OT', o.numero)}).`;
+      if (o.vehiculos) {
+        cuerpoMail += `\n\nPuede seguir el estado de su vehículo aquí:\n${window.location.origin}/portal.html?patente=${encodeURIComponent(o.vehiculos.patente)}&ot=${o.numero}`;
+      }
+      cuerpoMail += `\n\nSaludos,\n${config.nombre}`;
+      window.open(linkGmail(email, asunto, cuerpoMail), '_blank');
+    });
+
+    // Opciones 1 a 11 meses
+    document.getElementById('mant-meses').innerHTML =
+      Array.from({ length: 11 }, (_, i) => i + 1).map(m => `<option value="${m}">${m} mes${m > 1 ? 'es' : ''}</option>`).join('');
+
+    async function programarMantencion() {
+      if (!ordenActual) return;
+      const estado = document.getElementById('mant-estado');
+      const meses = Number(document.getElementById('mant-meses').value);
+      const fecha = new Date();
+      fecha.setMonth(fecha.getMonth() + meses);
+      const fechaObjetivo = fecha.toISOString().slice(0, 10);
+      const { error } = await supabaseClient.from('recordatorios').insert({
+        vehiculo_id: ordenActual.vehiculo_id,
+        cliente_id: ordenActual.cliente_id,
+        tipo: 'mantencion',
+        fecha_objetivo: fechaObjetivo,
+        detalle: `Próxima mantención (${fmtNumero('OT', ordenActual.numero)})`,
+      });
+      estado.textContent = error
+        ? `Error: ${error.message} (¿ejecutaste sql/actualizacion-v4.sql?)`
+        : `✓ Recordatorio programado para ${fmtFecha(fechaObjetivo)}. Aparecerá en Inicio ese mes.`;
+      estado.style.color = error ? 'var(--color-danger)' : '#1b6e3c';
+    }
+
+    document.getElementById('programar-mant-btn').addEventListener('click', programarMantencion);
 
     document.getElementById('guardar-diagnostico-btn').addEventListener('click', async () => {
       if (!ordenActual) return;

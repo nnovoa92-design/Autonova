@@ -413,6 +413,7 @@
             ${editable ? `<button type="button" class="btn-secondary editar-btn" data-id="${c.id}">Editar</button>` : ''}
             <button type="button" class="btn-secondary imprimir-btn" data-id="${c.id}">Imprimir</button>
             <button type="button" class="btn-secondary whatsapp-btn" data-id="${c.id}">WhatsApp</button>
+            <button type="button" class="btn-secondary email-btn" data-id="${c.id}">Correo</button>
             ${c.estado !== 'convertida' ? `<button type="button" class="btn-secondary link-btn" data-id="${c.id}">Copiar link</button>` : ''}
             ${c.estado === 'borrador' ? `<button type="button" class="estado-btn" data-id="${c.id}" data-estado="enviada">Marcar enviada</button>` : ''}
             ${c.estado === 'enviada' ? `<button type="button" class="estado-btn" data-id="${c.id}" data-estado="aprobada">Aprobar</button>
@@ -433,6 +434,9 @@
       });
       tbody.querySelectorAll('.whatsapp-btn').forEach(btn => {
         btn.addEventListener('click', () => enviarWhatsApp(btn.dataset.id));
+      });
+      tbody.querySelectorAll('.email-btn').forEach(btn => {
+        btn.addEventListener('click', () => enviarEmail(btn.dataset.id));
       });
       tbody.querySelectorAll('.link-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -509,6 +513,26 @@
       window.open(linkWhatsApp(tel, mensaje), '_blank');
     }
 
+    function enviarEmail(cotId) {
+      const c = cotizacionesCache.find(x => x.id === cotId);
+      if (!c) return;
+      const email = c.clientes && c.clientes.email;
+      if (!email) { alert('El cliente no tiene correo registrado.'); return; }
+
+      const t = calcularTotales(c.cotizacion_items || [], c.descuento_pct);
+      const vehiculo = c.vehiculos ? `${c.vehiculos.patente} (${[c.vehiculos.marca, c.vehiculos.modelo].filter(Boolean).join(' ')})` : 'su vehículo';
+      const detalle = (c.cotizacion_items || []).map(i => `- ${i.descripcion}: ${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}`).join('\n');
+      const asunto = `Cotización ${fmtNumero('COT', c.numero)} - ${config.nombre}`;
+      const cuerpo =
+        `Hola ${c.clientes.nombre},\n\n` +
+        `En ${config.nombre} preparamos la cotización ${fmtNumero('COT', c.numero)} para ${vehiculo}:\n\n` +
+        `${detalle}\n\n` +
+        `Total: ${fmtMoneda(t.total)} (IVA incluido). Válida por ${c.validez_dias} días.\n\n` +
+        `Puede revisarla y aprobarla aquí:\n${linkPublicoCotizacion(c.id)}\n\n` +
+        `Saludos,\n${config.nombre}`;
+      window.open(linkGmail(email, asunto, cuerpo), '_blank');
+    }
+
     function imprimirCotizacion(cotId) {
       const c = cotizacionesCache.find(x => x.id === cotId);
       if (!c) return;
@@ -574,7 +598,7 @@
     async function loadCotizaciones() {
       const { data, error } = await supabaseClient
         .from('cotizaciones')
-        .select('*, clientes(nombre, rut, telefono), vehiculos(patente, marca, modelo, anio), cotizacion_items(*)')
+        .select('*, clientes(nombre, rut, telefono, email), vehiculos(patente, marca, modelo, anio), cotizacion_items(*)')
         .order('creado_en', { ascending: false });
       if (error) {
         document.getElementById('cotizaciones-body').innerHTML = `<tr><td colspan="7">Error: ${error.message}</td></tr>`;
