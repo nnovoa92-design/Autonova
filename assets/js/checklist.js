@@ -143,6 +143,21 @@ function inspCalcular(datos) {
   return { ok, warn, bad, na, total, score, rec, nivel };
 }
 
+// Observación + fotos asociadas a un ítem (cuando hay atención/malo).
+function inspEvidencia(datos, k) {
+  const obs = datos[k + '_obs'];
+  const fotos = datos[k + '_fotos'] || [];
+  if (!obs && !fotos.length) return '';
+  let html = '';
+  if (obs) html += `<div style="font-size:0.82rem; color:var(--color-text-muted); margin-top:3px;">${obs}</div>`;
+  if (fotos.length) {
+    html += `<div class="fotos-grid" style="margin-top:5px;">` +
+      fotos.map(u => `<div class="foto-item"><a href="${u}" target="_blank"><img src="${u}" loading="lazy" /></a></div>`).join('') +
+      `</div>`;
+  }
+  return html;
+}
+
 // Render de solo lectura del checklist respondido (detalle interno
 // e informe público). Muestra solo ítems con respuesta o texto.
 function inspRenderDetalle(datos) {
@@ -153,7 +168,7 @@ function inspRenderDetalle(datos) {
       if (item.mode === 'std') {
         const v = datos[k];
         if (!v || !INSP_ESTADOS[v]) return;
-        filas.push(`<tr><td>${item.t}</td><td><span class="badge ${INSP_ESTADOS[v].badge}">${INSP_ESTADOS[v].label}</span></td></tr>`);
+        filas.push(`<tr><td>${item.t}${inspEvidencia(datos, k)}</td><td><span class="badge ${INSP_ESTADOS[v].badge}">${INSP_ESTADOS[v].label}</span></td></tr>`);
       } else {
         const txt = inspTexto(datos, k);
         if (!txt) return;
@@ -162,9 +177,10 @@ function inspRenderDetalle(datos) {
     });
     const customs = (datos._custom && datos._custom[si]) || [];
     customs.forEach((nombre, ci) => {
-      const v = datos['c_' + si + '_' + ci];
+      const k = 'c_' + si + '_' + ci;
+      const v = datos[k];
       if (!v || !INSP_ESTADOS[v]) return;
-      filas.push(`<tr><td>${nombre} <span class="badge">extra</span></td><td><span class="badge ${INSP_ESTADOS[v].badge}">${INSP_ESTADOS[v].label}</span></td></tr>`);
+      filas.push(`<tr><td>${nombre} <span class="badge">extra</span>${inspEvidencia(datos, k)}</td><td><span class="badge ${INSP_ESTADOS[v].badge}">${INSP_ESTADOS[v].label}</span></td></tr>`);
     });
     if (!filas.length) return '';
     return `<h3>${sec.sec}</h3><table><tbody>${filas.join('')}</tbody></table>`;

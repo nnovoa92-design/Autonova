@@ -122,6 +122,7 @@
   <script>
     let inspeccionesCache = [];
     let datosActuales = {};   // respuestas del checklist en curso
+    let inspFolder = null;    // carpeta de fotos de la inspección en curso
     let cabecera = null;      // datos comprador/vehículo en curso
     let inspActual = null;    // inspección abierta en detalle
     let config = null;
@@ -160,6 +161,7 @@
         precio_pedido: Number(document.getElementById('i-precio').value) || null,
       };
       datosActuales = {};
+      inspFolder = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : 'ins-' + Date.now();
       document.getElementById('i-obs').value = '';
       document.getElementById('checklist-title').textContent =
         `Checklist — ${cabecera.patente ?? 'sin patente'} ${cabecera.marca ?? ''} ${cabecera.modelo ?? ''}`;
@@ -168,6 +170,49 @@
     });
 
     // ---------- Paso 2: checklist ----------
+    // Render de un ítem evaluable. Si está en "Atención" o "Malo",
+    // exige observación + foto (cámara o galería).
+    function clItemHtml(k, label) {
+      const val = datosActuales[k] || '';
+      const requiere = (val === 'warn' || val === 'bad');
+      const fotos = datosActuales[k + '_fotos'] || [];
+      const botones = Object.entries(INSP_ESTADOS).map(([v, e]) =>
+        `<button type="button" data-v="${v}" class="${val === v ? 'sel-' + v : ''}">${e.label}</button>`).join('');
+      return `
+        <div class="cl-item" style="flex-direction:column; align-items:stretch;">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:0.75rem; flex-wrap:wrap;">
+            <div class="cl-label">${label}</div>
+            <div class="cl-botones" data-k="${k}">${botones}</div>
+          </div>
+          ${requiere ? `
+          <div style="margin-top:0.5rem; padding:0.6rem; background:#fff7f6; border:1px solid #f3c9c4; border-radius:8px;">
+            <label style="font-size:0.78rem; color:var(--color-danger); margin:0 0 0.25rem;">Observación obligatoria *</label>
+            <input type="text" class="cl-obs" data-k="${k}" value="${(datosActuales[k+'_obs']||'').replace(/"/g,'&quot;')}" placeholder="Describe el problema encontrado..." />
+            <div style="margin-top:0.5rem; display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap;">
+              <label class="btn btn-secondary" style="cursor:pointer; padding:0.35rem 0.8rem; font-size:0.8rem;">
+                📷 Tomar foto / Galería *
+                <input type="file" class="cl-foto" data-k="${k}" accept="image/*" multiple style="display:none;" />
+              </label>
+              <span style="font-size:0.78rem; color:${fotos.length ? '#1b6e3c' : 'var(--color-danger)'};">${fotos.length ? fotos.length + ' foto(s) adjunta(s)' : 'Sin fotos'}</span>
+            </div>
+            ${fotos.length ? `<div class="fotos-grid">${fotos.map((u, fi) => `<div class="foto-item"><img src="${u}" /><button type="button" class="cl-foto-del" data-k="${k}" data-fi="${fi}">✕</button></div>`).join('')}</div>` : ''}
+          </div>` : ''}
+        </div>`;
+    }
+
+    async function subirFotosInsp(k, files) {
+      const estado = document.getElementById('cl-error');
+      for (const file of files) {
+        const nombre = `${k}_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9_.-]/g, '_')}`;
+        const path = `inspeccion/${inspFolder}/${nombre}`;
+        const { error } = await supabaseClient.storage.from('fotos-ot').upload(path, file);
+        if (error) { estado.textContent = `Error al subir foto: ${error.message}`; continue; }
+        const url = supabaseClient.storage.from('fotos-ot').getPublicUrl(path).data.publicUrl;
+        (datosActuales[k + '_fotos'] ||= []).push(url);
+      }
+      renderChecklist();
+    }
+
     function renderChecklist() {
       const body = document.getElementById('checklist-body');
       body.innerHTML = INSP_CHECKLIST.map((sec, si) => {
@@ -181,29 +226,13 @@
                 placeholder="${item.mode === 'dtc' ? 'P0301, P0420... o ninguno' : 'Km'}" style="max-width:240px;" />
             </div>`;
           }
-          return `
-          <div class="cl-item">
-            <div class="cl-label">${item.t}</div>
-            <div class="cl-botones" data-k="${k}">
-              ${Object.entries(INSP_ESTADOS).map(([v, e]) =>
-                `<button type="button" data-v="${v}" class="${datosActuales[k] === v ? 'sel-' + v : ''}">${e.label}</button>`
-              ).join('')}
-            </div>
-          </div>`;
+          return clItemHtml(k, item.t);
         }).join('');
 
         const customs = (datosActuales._custom && datosActuales._custom[si]) || [];
         const customsHtml = customs.map((nombre, ci) => {
           const k = `c_${si}_${ci}`;
-          return `
-          <div class="cl-item">
-            <div class="cl-label">${nombre} <span class="badge">extra</span></div>
-            <div class="cl-botones" data-k="${k}">
-              ${Object.entries(INSP_ESTADOS).map(([v, e]) =>
-                `<button type="button" data-v="${v}" class="${datosActuales[k] === v ? 'sel-' + v : ''}">${e.label}</button>`
-              ).join('')}
-            </div>
-          </div>`;
+          return clItemHtml(k, `${nombre} <span class="badge">extra</span>`);
         }).join('');
 
         return `
@@ -219,14 +248,30 @@
           const k = btn.parentElement.dataset.k;
           const v = btn.dataset.v;
           datosActuales[k] = datosActuales[k] === v ? '' : v;
-          btn.parentElement.querySelectorAll('button').forEach(b =>
-            b.className = datosActuales[k] === b.dataset.v ? 'sel-' + b.dataset.v : '');
-          actualizarProgreso();
+          renderChecklist(); // re-render: muestra/oculta el bloque de evidencia
         });
       });
 
       body.querySelectorAll('.cl-txt').forEach(inp => {
         inp.addEventListener('input', () => { datosActuales[inp.dataset.k + '_txt'] = inp.value; });
+      });
+
+      body.querySelectorAll('.cl-obs').forEach(inp => {
+        inp.addEventListener('input', () => { datosActuales[inp.dataset.k + '_obs'] = inp.value; });
+      });
+
+      body.querySelectorAll('.cl-foto').forEach(inp => {
+        inp.addEventListener('change', () => {
+          if (inp.files && inp.files.length) subirFotosInsp(inp.dataset.k, inp.files);
+        });
+      });
+
+      body.querySelectorAll('.cl-foto-del').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const arr = datosActuales[btn.dataset.k + '_fotos'] || [];
+          arr.splice(Number(btn.dataset.fi), 1);
+          renderChecklist();
+        });
       });
 
       body.querySelectorAll('.agregar-custom-btn').forEach(btn => {
@@ -261,6 +306,28 @@
         errorEl.textContent = 'Evalúa al menos un ítem antes de finalizar.';
         return;
       }
+
+      // Evidencia obligatoria (observación + foto) en ítems con atención o malo
+      const faltantes = [];
+      const revisar = (k, etiqueta) => {
+        const v = datosActuales[k];
+        if (v === 'warn' || v === 'bad') {
+          const tieneObs = (datosActuales[k + '_obs'] || '').trim();
+          const tieneFoto = (datosActuales[k + '_fotos'] || []).length > 0;
+          if (!tieneObs || !tieneFoto) faltantes.push(etiqueta);
+        }
+      };
+      INSP_CHECKLIST.forEach((sec, si) => {
+        sec.items.forEach((item, ii) => { if (item.mode === 'std') revisar(`${si}_${ii}`, item.t); });
+        const customs = (datosActuales._custom && datosActuales._custom[si]) || [];
+        customs.forEach((nombre, ci) => revisar(`c_${si}_${ci}`, nombre));
+      });
+      if (faltantes.length) {
+        errorEl.textContent = `Falta observación y/o foto en: ${faltantes.join(', ')}.`;
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+
       const obs = document.getElementById('i-obs').value.trim() || null;
       datosActuales._obs = obs ?? undefined;
 
