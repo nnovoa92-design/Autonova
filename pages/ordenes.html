@@ -79,6 +79,11 @@
               <label for="item-repuesto">Repuesto</label>
               <select id="item-repuesto"></select>
             </div>
+            <div class="form-group" id="grupo-pct" style="display:none; max-width:180px;">
+              <label for="item-pct">% usado del producto: <strong id="item-pct-label">100%</strong></label>
+              <input type="range" id="item-pct" min="5" max="100" step="5" value="100" style="padding:0;" />
+              <small style="color:var(--color-text-muted);">Descuenta esa fracción del stock.</small>
+            </div>
             <div class="form-group" id="grupo-descripcion" style="display:none;">
               <label for="item-descripcion">Descripción</label>
               <input type="text" id="item-descripcion" />
@@ -372,7 +377,10 @@
       const libre = (tipo === 'otro' || tipo === 'insumo_taller' || tipo === 'insumo_vehiculo');
       document.getElementById('grupo-trabajo').style.display = tipo === 'mano_obra' ? 'block' : 'none';
       document.getElementById('grupo-repuesto').style.display = tipo === 'repuesto' ? 'block' : 'none';
+      document.getElementById('grupo-pct').style.display = tipo === 'repuesto' ? 'block' : 'none';
       document.getElementById('grupo-descripcion').style.display = libre ? 'block' : 'none';
+      // Para repuesto de inventario, la cantidad la define el % usado (se oculta el campo cantidad).
+      document.getElementById('item-cantidad').parentElement.style.display = tipo === 'repuesto' ? 'none' : 'block';
       document.getElementById('item-cantidad-label').textContent = tipo === 'mano_obra' ? 'Horas' : 'Cantidad';
       if (tipo === 'mano_obra') onTrabajoChange();
       else if (tipo === 'repuesto') onRepuestoChange();
@@ -408,7 +416,8 @@
     function onRepuestoChange() {
       const r = repuestosCache.find(x => x.id === document.getElementById('item-repuesto').value);
       if (!r) return;
-      document.getElementById('item-cantidad').value = '1';
+      document.getElementById('item-pct').value = '100';
+      document.getElementById('item-pct-label').textContent = '100%';
       document.getElementById('item-precio').value = r.precio_venta != null ? Number(r.precio_venta) : '';
     }
 
@@ -416,7 +425,7 @@
       const errorEl = document.getElementById('item-error');
       errorEl.textContent = '';
       const tipo = document.getElementById('item-tipo').value;
-      const cantidad = Number(document.getElementById('item-cantidad').value);
+      let cantidad = Number(document.getElementById('item-cantidad').value);
       const precio = Number(document.getElementById('item-precio').value);
       let descripcion = '', trabajo_id = null, repuesto_id = null;
 
@@ -438,11 +447,13 @@
       } else if (tipo === 'repuesto') {
         const r = repuestosCache.find(x => x.id === document.getElementById('item-repuesto').value);
         if (!r) return;
+        const pct = Number(document.getElementById('item-pct').value) || 100;
+        cantidad = pct / 100;  // 100% = 1 unidad; 50% = 0.5 unidad
         if (Number(r.stock_actual) < cantidad) {
           errorEl.textContent = `Stock insuficiente de "${r.nombre}" (disponible: ${r.stock_actual}).`;
           return;
         }
-        descripcion = r.nombre;
+        descripcion = r.nombre + (pct < 100 ? ` (${pct}% usado)` : '');
         repuesto_id = r.id;
       } else {
         descripcion = document.getElementById('item-descripcion').value.trim();
@@ -551,6 +562,9 @@
     document.getElementById('item-tipo').addEventListener('change', onTipoChange);
     document.getElementById('item-trabajo').addEventListener('change', onTrabajoChange);
     document.getElementById('item-repuesto').addEventListener('change', onRepuestoChange);
+    document.getElementById('item-pct').addEventListener('input', (e) => {
+      document.getElementById('item-pct-label').textContent = e.target.value + '%';
+    });
     document.getElementById('agregar-item-btn').addEventListener('click', agregarItem);
     document.getElementById('agregar-hora-btn').addEventListener('click', agregarHora);
     document.getElementById('filter-estado').addEventListener('change', renderOrdenes);
