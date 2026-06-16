@@ -32,10 +32,6 @@
                 <label for="marca">Marca</label>
                 <input type="text" id="marca" />
               </div>
-              <div class="form-group">
-                <label for="ubicacion">Ubicación</label>
-                <input type="text" id="ubicacion" placeholder="Estante A1" />
-              </div>
             </div>
             <div class="form-row">
               <div class="form-group">
@@ -106,7 +102,6 @@
               <tr>
                 <th>SKU</th>
                 <th>Repuesto</th>
-                <th>Ubicación</th>
                 <th>Stock</th>
                 <th>Costo</th>
                 <th>Precio venta</th>
@@ -114,7 +109,7 @@
               </tr>
             </thead>
             <tbody id="repuestos-body">
-              <tr><td colspan="7">Cargando...</td></tr>
+              <tr><td colspan="6">Cargando...</td></tr>
             </tbody>
           </table>
         </div>
@@ -130,7 +125,7 @@
     let repuestosCache = [];
 
     function clearForm() {
-      ['repuesto-id','sku','nombre','marca','ubicacion','costo','precio_venta'].forEach(id => {
+      ['repuesto-id','sku','nombre','marca','costo','precio_venta'].forEach(id => {
         document.getElementById(id).value = '';
       });
       document.getElementById('stock_actual').value = '0';
@@ -146,7 +141,6 @@
       document.getElementById('sku').value = r.sku ?? '';
       document.getElementById('nombre').value = r.nombre ?? '';
       document.getElementById('marca').value = r.marca ?? '';
-      document.getElementById('ubicacion').value = r.ubicacion ?? '';
       document.getElementById('stock_actual').value = r.stock_actual ?? 0;
       document.getElementById('stock_minimo').value = r.stock_minimo ?? 0;
       document.getElementById('costo').value = r.costo ?? '';
@@ -160,7 +154,7 @@
     function renderRepuestos(repuestos) {
       const tbody = document.getElementById('repuestos-body');
       if (!repuestos.length) {
-        tbody.innerHTML = '<tr><td colspan="7">No se encontraron repuestos.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6">No se encontraron repuestos.</td></tr>';
         return;
       }
       tbody.innerHTML = repuestos.map(r => {
@@ -170,7 +164,6 @@
         <tr>
           <td>${r.sku ?? '–'}</td>
           <td>${r.nombre}${r.marca ? ` <small style="color:var(--color-text-muted);">(${r.marca})</small>` : ''}</td>
-          <td>${r.ubicacion ?? '–'}</td>
           <td>${stockStr}</td>
           <td>${fmtMoneda(r.costo)}</td>
           <td>${fmtMoneda(r.precio_venta)}</td>
@@ -240,7 +233,6 @@
         sku: document.getElementById('sku').value || null,
         nombre: document.getElementById('nombre').value,
         marca: document.getElementById('marca').value || null,
-        ubicacion: document.getElementById('ubicacion').value || null,
         stock_actual: document.getElementById('stock_actual').value || 0,
         stock_minimo: document.getElementById('stock_minimo').value || 0,
         costo: document.getElementById('costo').value || null,

@@ -400,7 +400,7 @@
         const t = calcularTotales(c.cotizacion_items || [], c.descuento_pct);
         const vehiculo = c.vehiculos ? `${c.vehiculos.patente}` : '–';
         const puedeConvertir = c.estado === 'aprobada';
-        const editable = c.estado === 'borrador' || c.estado === 'enviada';
+        const editable = c.estado !== 'convertida';
         return `
         <tr>
           <td>${fmtNumero('COT', c.numero)}</td>
