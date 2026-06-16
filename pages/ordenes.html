@@ -117,6 +117,29 @@
           <p class="error-message" id="foto-error"></p>
           <div id="fotos-grid" class="fotos-grid"></div>
 
+          <h3 style="margin-top:1.5rem;">Trabajos realizados / avances</h3>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.5rem;">
+            Registra cada "qué se hizo" con su foto. Cada avance se muestra por separado en el informe del cliente.
+          </p>
+          <div class="form-row" style="align-items:end;">
+            <div class="form-group" style="flex:1;">
+              <label for="avance-texto">Qué se hizo / observación</label>
+              <input type="text" id="avance-texto" placeholder="Ej: Se cambió la correa y se ajustó tensor" />
+            </div>
+            <div class="form-group">
+              <label class="btn btn-secondary" style="cursor:pointer; display:inline-block;">
+                📷 Fotos del avance
+                <input type="file" id="avance-fotos" accept="image/*" multiple style="display:none;" />
+              </label>
+              <span id="avance-fotos-estado" style="font-size:0.78rem; color:var(--color-text-muted); margin-left:0.4rem;">Sin fotos</span>
+            </div>
+            <div class="form-group" style="flex:0;">
+              <button type="button" id="agregar-avance-btn">Agregar avance</button>
+            </div>
+          </div>
+          <p class="error-message" id="avance-error"></p>
+          <div id="avances-lista"></div>
+
           <h3 style="margin-top:1.5rem;">Horas de taller registradas</h3>
           <div class="form-row" style="align-items:end;">
             <div class="form-group">
@@ -250,10 +273,45 @@
       estadoSel.innerHTML = Object.entries(ESTADOS_ORDEN)
         .map(([k, v]) => `<option value="${k}"${k === o.estado ? ' selected' : ''}>${v.label}</option>`).join('');
 
+      avanceFotosPendientes = [];
+      const afEstado = document.getElementById('avance-fotos-estado');
+      if (afEstado) afEstado.textContent = 'Sin fotos';
       renderItemsDetalle();
       renderHoras();
+      renderAvances();
       await cargarFotos();
       window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // ---------- Avances / "qué se hizo" (ordenes.avances jsonb) ----------
+    let avanceFotosPendientes = [];
+
+    function renderAvances() {
+      const cont = document.getElementById('avances-lista');
+      const avances = (ordenActual && ordenActual.avances) || [];
+      if (!avances.length) {
+        cont.innerHTML = '<p style="color:var(--color-text-muted); font-size:0.85rem;">Sin avances registrados.</p>';
+        return;
+      }
+      cont.innerHTML = avances.map((a, idx) => `
+        <div class="card" style="margin:0.5rem 0; padding:0.75rem;">
+          <div style="display:flex; justify-content:space-between; gap:0.5rem;">
+            <strong>${a.texto || '(sin descripción)'}</strong>
+            <button type="button" class="btn-danger avance-del-btn" data-idx="${idx}" style="padding:0.2rem 0.5rem;">✕</button>
+          </div>
+          <div style="font-size:0.78rem; color:var(--color-text-muted);">${fmtFechaHora(a.fecha)}</div>
+          ${(a.fotos && a.fotos.length) ? `<div class="fotos-grid" style="margin-top:0.4rem;">${a.fotos.map(u => `<div class="foto-item"><a href="${u}" target="_blank"><img src="${u}" loading="lazy" /></a></div>`).join('')}</div>` : ''}
+        </div>`).join('');
+
+      cont.querySelectorAll('.avance-del-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('¿Eliminar este avance?')) return;
+          const avances = (ordenActual.avances || []).slice();
+          avances.splice(Number(btn.dataset.idx), 1);
+          await supabaseClient.from('ordenes').update({ avances }).eq('id', ordenActual.id);
+          await abrirDetalle(ordenActual.id);
+        });
+      });
     }
 
     // ---------- Fotos (Supabase Storage, bucket "fotos-ot") ----------
@@ -589,6 +647,42 @@
       }
       e.target.value = '';
       await cargarFotos();
+    });
+
+    document.getElementById('avance-fotos').addEventListener('change', async (e) => {
+      if (!ordenActual || !e.target.files.length) return;
+      const estado = document.getElementById('avance-fotos-estado');
+      estado.textContent = 'Subiendo...';
+      for (const file of e.target.files) {
+        const nombre = `avance_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9_.-]/g, '_')}`;
+        const path = `${ordenActual.id}/avance/${nombre}`;
+        const { error } = await supabaseClient.storage.from('fotos-ot').upload(path, file);
+        if (!error) {
+          const url = supabaseClient.storage.from('fotos-ot').getPublicUrl(path).data.publicUrl;
+          avanceFotosPendientes.push(url);
+        }
+      }
+      e.target.value = '';
+      estado.textContent = avanceFotosPendientes.length + ' foto(s) lista(s)';
+    });
+
+    document.getElementById('agregar-avance-btn').addEventListener('click', async () => {
+      if (!ordenActual) return;
+      const errorEl = document.getElementById('avance-error');
+      errorEl.textContent = '';
+      const texto = document.getElementById('avance-texto').value.trim();
+      if (!texto && !avanceFotosPendientes.length) {
+        errorEl.textContent = 'Escribe qué se hizo o adjunta al menos una foto.';
+        return;
+      }
+      const avances = (ordenActual.avances || []).slice();
+      avances.push({ fecha: new Date().toISOString(), texto, fotos: avanceFotosPendientes.slice() });
+      const { error } = await supabaseClient.from('ordenes').update({ avances }).eq('id', ordenActual.id);
+      if (error) { errorEl.textContent = `Error: ${error.message} (¿ejecutaste sql/actualizacion-v4.sql?)`; return; }
+      document.getElementById('avance-texto').value = '';
+      avanceFotosPendientes = [];
+      document.getElementById('avance-fotos-estado').textContent = 'Sin fotos';
+      await abrirDetalle(ordenActual.id);
     });
 
     document.getElementById('whatsapp-ot-btn').addEventListener('click', () => {
