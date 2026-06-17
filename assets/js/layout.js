@@ -93,9 +93,9 @@ function linkGmail(para, asunto, cuerpo) {
   return 'https://mail.google.com/mail/?' + p.toString();
 }
 
-// Mes (1-12) de revisión técnica según el último dígito de la patente.
-// Calendario REFERENCIAL para autos particulares: ajústalo a tu región/año.
-const RT_MES_POR_DIGITO = { '1': 3, '2': 4, '3': 5, '4': 6, '5': 7, '6': 8, '7': 9, '8': 10, '9': 11, '0': 12 };
+// Mes (1-12) de revisión técnica según el último dígito de la patente
+// (calendario para vehículos particulares).
+const RT_MES_POR_DIGITO = { '9': 1, '0': 2, '1': 4, '2': 5, '3': 6, '4': 7, '5': 8, '6': 9, '7': 10, '8': 11 };
 function rtMesPatente(patente) {
   const m = String(patente || '').match(/(\d)(?!.*\d)/); // último dígito
   return m ? (RT_MES_POR_DIGITO[m[1]] || null) : null;
