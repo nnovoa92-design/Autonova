@@ -37,6 +37,13 @@
               <label for="descuento_pct">Descuento %</label>
               <input type="number" id="descuento_pct" value="0" min="0" max="100" step="0.5" />
             </div>
+            <div class="form-group">
+              <label for="con_iva">IVA</label>
+              <select id="con_iva">
+                <option value="true">Con IVA</option>
+                <option value="false">Sin IVA (solo neto)</option>
+              </select>
+            </div>
           </div>
 
           <h3>Ítems</h3>
@@ -182,12 +189,12 @@
       return t.precio_fijo != null ? Number(t.precio_fijo) : Number(t.horas_estimadas) * Number(config.valor_hora);
     }
 
-    function calcularTotales(items, descuentoPct) {
+    function calcularTotales(items, descuentoPct, conIva = true) {
       const subtotal = items.reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
       const descuento = subtotal * (Number(descuentoPct || 0) / 100);
       const neto = subtotal - descuento;
-      const iva = neto * (Number(config.iva_pct) / 100);
-      return { subtotal, descuento, neto, iva, total: neto + iva };
+      const iva = conIva ? neto * (Number(config.iva_pct) / 100) : 0;
+      return { subtotal, descuento, neto, iva, conIva, total: neto + iva };
     }
 
     // ---------- Editor ----------
@@ -202,6 +209,7 @@
         document.getElementById('vehiculo_id').value = cot.vehiculo_id ?? '';
         document.getElementById('validez_dias').value = cot.validez_dias;
         document.getElementById('descuento_pct').value = cot.descuento_pct;
+        document.getElementById('con_iva').value = (cot.con_iva === false) ? 'false' : 'true';
         document.getElementById('notas').value = cot.notas ?? '';
         itemsActuales = (cot.cotizacion_items || []).map(i => ({ ...i }));
       } else {
@@ -211,6 +219,7 @@
         document.getElementById('vehiculo_id').innerHTML = '<option value="">Sin vehículo</option>';
         document.getElementById('validez_dias').value = '15';
         document.getElementById('descuento_pct').value = '0';
+        document.getElementById('con_iva').value = 'true';
         document.getElementById('notas').value = '';
         itemsActuales = [];
       }
@@ -334,12 +343,13 @@
     }
 
     function renderTotales() {
-      const t = calcularTotales(itemsActuales, document.getElementById('descuento_pct').value);
+      const conIva = document.getElementById('con_iva').value === 'true';
+      const t = calcularTotales(itemsActuales, document.getElementById('descuento_pct').value, conIva);
       document.getElementById('totales').innerHTML = `
         <div class="fila"><span>Subtotal</span><span>${fmtMoneda(t.subtotal)}</span></div>
         ${t.descuento > 0 ? `<div class="fila"><span>Descuento</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
         <div class="fila"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
-        <div class="fila"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>
+        ${conIva ? `<div class="fila"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>` : '<div class="fila" style="color:var(--color-text-muted);"><span>Sin IVA</span><span>–</span></div>'}
         <div class="fila total"><span>Total</span><span>${fmtMoneda(t.total)}</span></div>`;
     }
 
@@ -356,6 +366,7 @@
         vehiculo_id: document.getElementById('vehiculo_id').value || null,
         validez_dias: document.getElementById('validez_dias').value || 15,
         descuento_pct: document.getElementById('descuento_pct').value || 0,
+        con_iva: document.getElementById('con_iva').value === 'true',
         notas: document.getElementById('notas').value || null,
       };
 
@@ -397,7 +408,7 @@
         return;
       }
       tbody.innerHTML = lista.map(c => {
-        const t = calcularTotales(c.cotizacion_items || [], c.descuento_pct);
+        const t = calcularTotales(c.cotizacion_items || [], c.descuento_pct, c.con_iva !== false);
         const vehiculo = c.vehiculos ? `${c.vehiculos.patente}` : '–';
         const puedeConvertir = c.estado === 'aprobada';
         const editable = c.estado !== 'convertida';
@@ -471,6 +482,7 @@
         vehiculo_id: c.vehiculo_id,
         estado: 'recepcion',
         km_ingreso: vehiculo ? vehiculo.kilometraje : null,
+        con_iva: c.con_iva !== false,
         notas: c.notas,
       }).select('id, numero').single();
       if (error) { alert(`Error: ${error.message}`); return; }
@@ -502,13 +514,13 @@
       const tel = c.clientes && c.clientes.telefono;
       if (!tel) { alert('El cliente no tiene teléfono registrado.'); return; }
 
-      const t = calcularTotales(c.cotizacion_items || [], c.descuento_pct);
+      const t = calcularTotales(c.cotizacion_items || [], c.descuento_pct, c.con_iva !== false);
       const vehiculo = c.vehiculos ? ` para su vehículo ${c.vehiculos.patente} (${[c.vehiculos.marca, c.vehiculos.modelo].filter(Boolean).join(' ')})` : '';
       const detalle = (c.cotizacion_items || []).map(i => `• ${i.descripcion}`).join('\n');
       const mensaje =
         `Hola ${c.clientes.nombre}, le saluda ${config.nombre}.\n` +
         `Le enviamos la cotización ${fmtNumero('COT', c.numero)}${vehiculo}:\n${detalle}\n` +
-        `Total: ${fmtMoneda(t.total)} (IVA incluido). Válida por ${c.validez_dias} días.\n` +
+        `Total: ${fmtMoneda(t.total)} (${t.conIva ? 'IVA incluido' : 'sin IVA'}). Válida por ${c.validez_dias} días.\n` +
         `Puede revisar y aprobar la cotización aquí: ${linkPublicoCotizacion(c.id)}`;
       window.open(linkWhatsApp(tel, mensaje), '_blank');
     }
@@ -519,7 +531,7 @@
       const email = c.clientes && c.clientes.email;
       if (!email) { alert('El cliente no tiene correo registrado.'); return; }
 
-      const t = calcularTotales(c.cotizacion_items || [], c.descuento_pct);
+      const t = calcularTotales(c.cotizacion_items || [], c.descuento_pct, c.con_iva !== false);
       const vehiculo = c.vehiculos ? `${c.vehiculos.patente} (${[c.vehiculos.marca, c.vehiculos.modelo].filter(Boolean).join(' ')})` : 'su vehículo';
       const detalle = (c.cotizacion_items || []).map(i => `- ${i.descripcion}: ${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}`).join('\n');
       const asunto = `Cotización ${fmtNumero('COT', c.numero)} - ${config.nombre}`;
@@ -527,7 +539,7 @@
         `Hola ${c.clientes.nombre},\n\n` +
         `En ${config.nombre} preparamos la cotización ${fmtNumero('COT', c.numero)} para ${vehiculo}:\n\n` +
         `${detalle}\n\n` +
-        `Total: ${fmtMoneda(t.total)} (IVA incluido). Válida por ${c.validez_dias} días.\n\n` +
+        `Total: ${fmtMoneda(t.total)} (${t.conIva ? 'IVA incluido' : 'sin IVA'}). Válida por ${c.validez_dias} días.\n\n` +
         `Puede revisarla y aprobarla aquí:\n${linkPublicoCotizacion(c.id)}\n\n` +
         `Saludos,\n${config.nombre}`;
       window.open(linkGmail(email, asunto, cuerpo), '_blank');
@@ -536,7 +548,7 @@
     function imprimirCotizacion(cotId) {
       const c = cotizacionesCache.find(x => x.id === cotId);
       if (!c) return;
-      const t = calcularTotales(c.cotizacion_items || [], c.descuento_pct);
+      const t = calcularTotales(c.cotizacion_items || [], c.descuento_pct, c.con_iva !== false);
       const cliente = c.clientes || {};
       const vehiculo = c.vehiculos;
 
@@ -584,7 +596,7 @@
           <div style="display:flex; justify-content:space-between;"><span>Subtotal</span><span>${fmtMoneda(t.subtotal)}</span></div>
           ${t.descuento > 0 ? `<div style="display:flex; justify-content:space-between;"><span>Descuento</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
           <div style="display:flex; justify-content:space-between;"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
-          <div style="display:flex; justify-content:space-between;"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>
+          ${t.conIva ? `<div style="display:flex; justify-content:space-between;"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>` : '<div style="display:flex; justify-content:space-between;"><span>Sin IVA</span><span>–</span></div>'}
           <div style="display:flex; justify-content:space-between; font-weight:bold; border-top:2px solid #000; margin-top:4px; padding-top:4px;">
             <span>TOTAL</span><span>${fmtMoneda(t.total)}</span>
           </div>
@@ -617,6 +629,7 @@
     document.getElementById('item-trabajo').addEventListener('change', onTrabajoChange);
     document.getElementById('item-repuesto').addEventListener('change', onRepuestoChange);
     document.getElementById('descuento_pct').addEventListener('input', renderTotales);
+    document.getElementById('con_iva').addEventListener('change', renderTotales);
     document.getElementById('filter-estado').addEventListener('change', renderCotizaciones);
 
     (async () => {

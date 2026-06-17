@@ -37,6 +37,13 @@
               </select>
             </div>
             <div class="form-group">
+              <label for="con_iva">IVA</label>
+              <select id="con_iva">
+                <option value="true">Monto con IVA</option>
+                <option value="false">Monto neto (sin IVA)</option>
+              </select>
+            </div>
+            <div class="form-group">
               <label for="notas">Notas</label>
               <input type="text" id="notas" placeholder="Abono, saldo final..." />
             </div>
@@ -60,6 +67,8 @@
                 <th>OT</th>
                 <th>Cliente</th>
                 <th>Monto</th>
+                <th>IVA</th>
+                <th>Neto</th>
                 <th>Método</th>
                 <th>Notas</th>
                 <th></th>
@@ -116,6 +125,12 @@
         }).join('');
     }
 
+    // Neto de un pago: si lleva IVA, se descuenta; si no, el monto ya es neto.
+    function netoPago(p) {
+      const factor = 1 + Number(config.iva_pct) / 100;
+      return (p.con_iva === false) ? Number(p.monto) : Number(p.monto) / factor;
+    }
+
     async function loadPagos() {
       const { data, error } = await supabaseClient
         .from('pagos')
@@ -124,22 +139,28 @@
         .limit(100);
       const tbody = document.getElementById('pagos-body');
       if (error) {
-        tbody.innerHTML = `<tr><td colspan="7">Error: ${error.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9">Error: ${error.message}</td></tr>`;
         return;
       }
       if (!data.length) {
-        tbody.innerHTML = '<tr><td colspan="7">No hay pagos registrados.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9">No hay pagos registrados.</td></tr>';
       } else {
-        tbody.innerHTML = data.map(p => `
+        tbody.innerHTML = data.map(p => {
+          const neto = netoPago(p);
+          const iva = Number(p.monto) - neto;
+          return `
           <tr>
             <td>${fmtFechaHora(p.fecha)}</td>
             <td>${p.ordenes ? fmtNumero('OT', p.ordenes.numero) : '–'}</td>
             <td>${p.clientes ? p.clientes.nombre : '–'}</td>
             <td>${fmtMoneda(p.monto)}</td>
+            <td>${p.con_iva === false ? '<span class="badge badge-gray">sin IVA</span>' : fmtMoneda(iva)}</td>
+            <td>${fmtMoneda(neto)}</td>
             <td>${METODOS_PAGO[p.metodo_pago] ?? '–'}</td>
             <td>${p.notas ?? '–'}</td>
             <td><button type="button" class="btn-danger eliminar-btn" data-id="${p.id}" style="padding:0.2rem 0.5rem;">✕</button></td>
-          </tr>`).join('');
+          </tr>`;
+        }).join('');
 
         tbody.querySelectorAll('.eliminar-btn').forEach(btn => {
           btn.addEventListener('click', async () => {
@@ -153,10 +174,11 @@
       const monthStart = new Date();
       monthStart.setDate(1);
       monthStart.setHours(0, 0, 0, 0);
-      const totalMes = data
-        .filter(p => new Date(p.fecha) >= monthStart)
-        .reduce((s, p) => s + Number(p.monto), 0);
-      document.getElementById('total-mes').textContent = `Este mes: ${fmtMoneda(totalMes)}`;
+      const delMes = data.filter(p => new Date(p.fecha) >= monthStart);
+      const totalMes = delMes.reduce((s, p) => s + Number(p.monto), 0);
+      const netoMes = delMes.reduce((s, p) => s + netoPago(p), 0);
+      document.getElementById('total-mes').textContent =
+        `Este mes: ${fmtMoneda(totalMes)} · Neto (sin IVA): ${fmtMoneda(netoMes)}`;
     }
 
     document.getElementById('orden_id').addEventListener('change', mostrarSaldo);
@@ -175,6 +197,7 @@
         cliente_id: orden.cliente_id,
         monto: Number(document.getElementById('monto').value),
         metodo_pago: document.getElementById('metodo_pago').value,
+        con_iva: document.getElementById('con_iva').value === 'true',
         notas: document.getElementById('notas').value || null,
       });
       if (error) { errorEl.textContent = `Error: ${error.message}`; return; }

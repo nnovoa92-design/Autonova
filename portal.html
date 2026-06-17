@@ -66,8 +66,10 @@
 
     async function render(d) {
       const ivaPct = Number((d.taller && d.taller.iva_pct) ?? 19);
+      const conIva = d.con_iva !== false;
       const neto = (d.items || []).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
-      const total = neto * (1 + ivaPct / 100);
+      const iva = conIva ? neto * (ivaPct / 100) : 0;
+      const total = neto + iva;
 
       const idx = PASOS.indexOf(d.estado);
       const pasos = d.estado === 'cancelado'
@@ -121,7 +123,7 @@
         </table>
         <div class="totales">
           <div class="fila"><span>Neto</span><span>${fmtMoneda(neto)}</span></div>
-          <div class="fila"><span>IVA ${ivaPct}%</span><span>${fmtMoneda(neto * ivaPct / 100)}</span></div>
+          ${conIva ? `<div class="fila"><span>IVA ${ivaPct}%</span><span>${fmtMoneda(iva)}</span></div>` : '<div class="fila" style="color:var(--color-text-muted);"><span>Sin IVA</span><span>–</span></div>'}
           <div class="fila total"><span>Total</span><span>${fmtMoneda(total)}</span></div>
         </div>` : ''}
         ${fotosHtml}

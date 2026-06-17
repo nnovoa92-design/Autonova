@@ -33,7 +33,11 @@
           </div>
           <div class="card stat-card">
             <div class="stat-value" id="stat-ingresos-mes">–</div>
-            <div class="stat-label">Ingresos del mes</div>
+            <div class="stat-label">Ingresos del mes (total)</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-value" id="stat-ventas-netas">–</div>
+            <div class="stat-label">Ventas netas del mes (sin IVA)</div>
           </div>
         </div>
 
@@ -148,13 +152,18 @@
       const totalHoras = (horasMes || []).reduce((s, h) => s + Number(h.horas || 0), 0);
       document.getElementById('stat-horas-mes').textContent = totalHoras.toLocaleString('es-CL') + ' h';
 
-      // Ingresos del mes
+      // Ingresos del mes (total y neto sin IVA)
+      const cfg = await getTallerConfig();
+      const factorIva = 1 + Number(cfg.iva_pct) / 100;
       const { data: pagosMes } = await supabaseClient
         .from('pagos')
-        .select('monto')
+        .select('monto, con_iva')
         .gte('fecha', monthStart.toISOString());
       const totalMes = (pagosMes || []).reduce((s, p) => s + Number(p.monto || 0), 0);
+      const netasMes = (pagosMes || []).reduce((s, p) =>
+        s + (p.con_iva === false ? Number(p.monto || 0) : Number(p.monto || 0) / factorIva), 0);
       document.getElementById('stat-ingresos-mes').textContent = fmtMoneda(totalMes);
+      document.getElementById('stat-ventas-netas').textContent = fmtMoneda(netasMes);
 
       // Vehículos actualmente en taller
       const { data: ots } = await supabaseClient

@@ -31,8 +31,9 @@
       const subtotal = (d.items || []).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
       const descuento = subtotal * (Number(d.descuento_pct || 0) / 100);
       const neto = subtotal - descuento;
-      const iva = neto * (ivaPct / 100);
-      return { ivaPct, subtotal, descuento, neto, iva, total: neto + iva };
+      const conIva = d.con_iva !== false;
+      const iva = conIva ? neto * (ivaPct / 100) : 0;
+      return { ivaPct, subtotal, descuento, neto, iva, conIva, total: neto + iva };
     }
 
     function render(d, mensajeRespuesta) {
@@ -66,7 +67,7 @@
           <div class="fila"><span>Subtotal</span><span>${fmtMoneda(t.subtotal)}</span></div>
           ${t.descuento > 0 ? `<div class="fila"><span>Descuento</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
           <div class="fila"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
-          <div class="fila"><span>IVA ${t.ivaPct}%</span><span>${fmtMoneda(t.iva)}</span></div>
+          ${t.conIva ? `<div class="fila"><span>IVA ${t.ivaPct}%</span><span>${fmtMoneda(t.iva)}</span></div>` : '<div class="fila" style="color:var(--color-text-muted);"><span>Sin IVA</span><span>–</span></div>'}
           <div class="fila total"><span>Total</span><span>${fmtMoneda(t.total)}</span></div>
         </div>
         ${d.notas ? `<p style="margin-top:1rem;"><strong>Notas:</strong> ${d.notas}</p>` : ''}

@@ -46,8 +46,12 @@
         <div class="card" id="detalle-card" style="display:none;">
           <div class="toolbar">
             <h2 style="margin:0;" id="detalle-title">OT</h2>
-            <div style="display:flex; gap:0.5rem; align-items:center;">
+            <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
               <select id="detalle-estado" style="max-width:180px;"></select>
+              <select id="detalle-con-iva" style="max-width:170px;" title="Aplicar IVA">
+                <option value="true">Con IVA</option>
+                <option value="false">Sin IVA (solo neto)</option>
+              </select>
               <button type="button" id="whatsapp-ot-btn" class="btn-secondary">Avisar por WhatsApp</button>
               <button type="button" id="email-ot-btn" class="btn-secondary">Avisar por correo</button>
               <button type="button" id="cerrar-detalle-btn" class="btn-secondary">Volver al listado</button>
@@ -230,10 +234,10 @@
 
     const TIPO_LABEL = { mano_obra: 'Mano de obra', repuesto: 'Repuesto', otro: 'Otro' };
 
-    function calcularTotal(items) {
+    function calcularTotal(items, conIva = true) {
       const neto = (items || []).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
-      const iva = neto * (Number(config.iva_pct) / 100);
-      return { neto, iva, total: neto + iva };
+      const iva = conIva ? neto * (Number(config.iva_pct) / 100) : 0;
+      return { neto, iva, conIva, total: neto + iva };
     }
 
     // ---------- Nueva OT ----------
@@ -287,6 +291,7 @@
       const estadoSel = document.getElementById('detalle-estado');
       estadoSel.innerHTML = Object.entries(ESTADOS_ORDEN)
         .map(([k, v]) => `<option value="${k}"${k === o.estado ? ' selected' : ''}>${v.label}</option>`).join('');
+      document.getElementById('detalle-con-iva').value = (o.con_iva === false) ? 'false' : 'true';
 
       avanceFotosPendientes = [];
       const afEstado = document.getElementById('avance-fotos-estado');
@@ -389,7 +394,7 @@
         });
       });
 
-      const t = calcularTotal(items);
+      const t = calcularTotal(items, ordenActual.con_iva !== false);
       const pagado = (ordenActual.pagos || []).reduce((s, p) => s + Number(p.monto), 0);
 
       // Reparto de mano de obra según porcentajes manuales de la configuración
@@ -407,7 +412,7 @@
 
       document.getElementById('totales').innerHTML = `
         <div class="fila"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
-        <div class="fila"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>
+        ${t.conIva ? `<div class="fila"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>` : '<div class="fila" style="color:var(--color-text-muted);"><span>Sin IVA</span><span>–</span></div>'}
         <div class="fila total"><span>Total</span><span>${fmtMoneda(t.total)}</span></div>
         <div class="fila"><span>Pagado</span><span>${fmtMoneda(pagado)}</span></div>
         <div class="fila"><span>Saldo</span><span>${fmtMoneda(t.total - pagado)}</span></div>
@@ -585,7 +590,7 @@
         return;
       }
       tbody.innerHTML = lista.map(o => {
-        const t = calcularTotal(o.orden_items);
+        const t = calcularTotal(o.orden_items, o.con_iva !== false);
         return `
         <tr>
           <td>${fmtNumero('OT', o.numero)}</td>
@@ -641,6 +646,14 @@
     document.getElementById('agregar-item-btn').addEventListener('click', agregarItem);
     document.getElementById('agregar-hora-btn').addEventListener('click', agregarHora);
     document.getElementById('filter-estado').addEventListener('change', renderOrdenes);
+
+    document.getElementById('detalle-con-iva').addEventListener('change', async (e) => {
+      if (!ordenActual) return;
+      const conIva = e.target.value === 'true';
+      await supabaseClient.from('ordenes').update({ con_iva: conIva }).eq('id', ordenActual.id);
+      ordenActual.con_iva = conIva;
+      renderItemsDetalle();
+    });
 
     document.getElementById('detalle-estado').addEventListener('change', async (e) => {
       if (!ordenActual) return;
