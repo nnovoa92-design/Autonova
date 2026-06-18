@@ -181,7 +181,10 @@
       const mec = (m.quien_trabajo === 'yo') ? 0 : moNeta * PCT_MEC;
       const dueno = (m.quien_trabajo === 'yo') ? moNeta * PCT_DUENO_YO : moNeta * PCT_DUENO_AMBOS;
       const taller = moNeta * PCT_TALLER;
-      const ganRepuesto = Number(m.precio_repuesto || 0) - Number(m.costo_repuesto || 0);
+      // Ganancia de repuesto solo si se registró el costo (igual que el Excel):
+      // sin costo no se puede calcular la ganancia, queda en 0.
+      const costoRep = Number(m.costo_repuesto || 0);
+      const ganRepuesto = costoRep > 0 ? (Number(m.precio_repuesto || 0) - costoRep) : 0;
       const ingresoTaller = taller + ganRepuesto;
       const totalConRep = totalMoBruto + Number(m.precio_repuesto || 0);
       const iva = totalMoBruto - moNeta;
