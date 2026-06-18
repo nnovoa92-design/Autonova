@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Contabilidad · Autonova</title>
+  <link rel="stylesheet" href="../assets/css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar">
+        <h1>Contabilidad</h1>
+        <div style="display:flex; gap:0.5rem; align-items:center;">
+          <select id="filtro-mes"></select>
+          <select id="filtro-anio"></select>
+          <button id="nuevo-btn">+ Nuevo movimiento</button>
+        </div>
+      </header>
+      <div class="content">
+
+        <!-- Formulario -->
+        <div class="card" id="form-card" style="display:none;">
+          <h2 id="form-title" style="margin-top:0;">Nuevo movimiento</h2>
+          <input type="hidden" id="mov-id" />
+          <div class="form-row">
+            <div class="form-group">
+              <label for="fecha">Fecha *</label>
+              <input type="date" id="fecha" required />
+            </div>
+            <div class="form-group">
+              <label for="patente">Patente</label>
+              <input type="text" id="patente" style="text-transform:uppercase;" />
+            </div>
+            <div class="form-group">
+              <label for="vehiculo">Vehículo</label>
+              <input type="text" id="vehiculo" placeholder="Marca modelo año" />
+            </div>
+            <div class="form-group">
+              <label for="cliente">Cliente</label>
+              <input type="text" id="cliente" />
+            </div>
+            <div class="form-group">
+              <label for="telefono">Teléfono</label>
+              <input type="text" id="telefono" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="descripcion">Descripción del trabajo</label>
+            <input type="text" id="descripcion" />
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="quien_trabajo">¿Quién trabajó?</label>
+              <select id="quien_trabajo">
+                <option value="yo">Yo (85% dueño)</option>
+                <option value="ambos">Ambos (40/45/15)</option>
+                <option value="2do_mec">2do mecánico</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="horas">Horas</label>
+              <input type="number" id="horas" min="0" step="0.5" value="0" />
+            </div>
+            <div class="form-group">
+              <label for="mo_neta">Mano de obra NETA ($)</label>
+              <input type="number" id="mo_neta" min="0" step="1" value="0" />
+            </div>
+            <div class="form-group">
+              <label for="tipo_doc">Documento</label>
+              <select id="tipo_doc">
+                <option value="neto">Neto (sin IVA)</option>
+                <option value="boleta">Boleta (+19%)</option>
+                <option value="factura">Factura (+19%)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="num_doc">N° documento</label>
+              <input type="text" id="num_doc" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="forma_pago">Forma de pago</label>
+              <select id="forma_pago">
+                <option value="efectivo">Efectivo</option>
+                <option value="transferencia">Transferencia</option>
+                <option value="debito">Débito</option>
+                <option value="credito">Crédito</option>
+                <option value="mixto">Mixto</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="estado_pago">Estado de pago</label>
+              <select id="estado_pago">
+                <option value="pagado">Pagado</option>
+                <option value="pendiente">Pendiente</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="costo_repuesto">Costo repuesto ($)</label>
+              <input type="number" id="costo_repuesto" min="0" step="1" value="0" />
+            </div>
+            <div class="form-group">
+              <label for="precio_repuesto">Precio repuesto al cliente ($)</label>
+              <input type="number" id="precio_repuesto" min="0" step="1" value="0" />
+            </div>
+          </div>
+          <div class="totales" id="preview-totales" style="margin:0 0 1rem;"></div>
+          <button type="button" id="guardar-btn">Guardar movimiento</button>
+          <button type="button" id="cancelar-btn" class="btn-secondary">Cancelar</button>
+          <p class="error-message" id="form-error"></p>
+        </div>
+
+        <!-- Resumen del mes -->
+        <div class="cards-grid" id="resumen-cards"></div>
+
+        <!-- Reparto y cobros -->
+        <div class="card" id="reparto-card">
+          <h2 style="margin-top:0;">Distribución y cobros del mes</h2>
+          <table>
+            <thead>
+              <tr><th>Concepto</th><th>Total generado</th><th>Cobrado</th><th>Pendiente</th></tr>
+            </thead>
+            <tbody id="reparto-body"></tbody>
+          </table>
+        </div>
+
+        <!-- Libro del mes -->
+        <div class="card" style="margin-top:1rem;">
+          <div class="toolbar">
+            <h2 style="margin:0;" id="libro-titulo">Movimientos</h2>
+            <button id="imprimir-btn" class="btn-secondary">Imprimir mes</button>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Patente</th>
+                <th>Cliente</th>
+                <th>Descripción</th>
+                <th>MO neta</th>
+                <th>Doc.</th>
+                <th>Repuesto (gan.)</th>
+                <th>Total c/rep</th>
+                <th>Ing. taller</th>
+                <th>Pago</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="libro-body">
+              <tr><td colspan="11">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div class="print-area" id="print-area"></div>
+
+  <script src="../assets/vendor/supabase.min.js"></script>
+  <script src="../assets/js/supabaseClient.js"></script>
+  <script src="../assets/js/layout.js"></script>
+  <script>
+    // Reparto (según el sistema del taller). Editable aquí si cambia.
+    const PCT_MEC = 0.40, PCT_DUENO_AMBOS = 0.45, PCT_DUENO_YO = 0.85, PCT_TALLER = 0.15;
+    const IVA = 0.19;
+
+    let movimientosCache = [];
+    let config = null;
+
+    const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+    // Cálculos por movimiento (igual que el Excel)
+    function calc(m) {
+      const moNeta = Number(m.mo_neta || 0);
+      const totalMoBruto = (m.tipo_doc === 'neto') ? moNeta : moNeta * (1 + IVA);
+      const mec = (m.quien_trabajo === 'yo') ? 0 : moNeta * PCT_MEC;
+      const dueno = (m.quien_trabajo === 'yo') ? moNeta * PCT_DUENO_YO : moNeta * PCT_DUENO_AMBOS;
+      const taller = moNeta * PCT_TALLER;
+      const ganRepuesto = Number(m.precio_repuesto || 0) - Number(m.costo_repuesto || 0);
+      const ingresoTaller = taller + ganRepuesto;
+      const totalConRep = totalMoBruto + Number(m.precio_repuesto || 0);
+      const iva = totalMoBruto - moNeta;
+      return { moNeta, totalMoBruto, mec, dueno, taller, ganRepuesto, ingresoTaller, totalConRep, iva };
+    }
+
+    // ---------- Selectores de mes/año ----------
+    function initFiltros() {
+      const hoy = new Date();
+      const mesSel = document.getElementById('filtro-mes');
+      mesSel.innerHTML = MESES.map((m, i) => `<option value="${i}">${m}</option>`).join('');
+      mesSel.value = hoy.getMonth();
+      const anioSel = document.getElementById('filtro-anio');
+      const anios = [];
+      for (let a = hoy.getFullYear() - 2; a <= hoy.getFullYear() + 1; a++) anios.push(a);
+      anioSel.innerHTML = anios.map(a => `<option value="${a}">${a}</option>`).join('');
+      anioSel.value = hoy.getFullYear();
+    }
+
+    // ---------- Formulario ----------
+    function limpiarForm() {
+      document.getElementById('mov-id').value = '';
+      document.getElementById('fecha').value = new Date().toISOString().slice(0, 10);
+      ['patente','vehiculo','cliente','telefono','descripcion','num_doc'].forEach(id => document.getElementById(id).value = '');
+      ['horas','mo_neta','costo_repuesto','precio_repuesto'].forEach(id => document.getElementById(id).value = '0');
+      document.getElementById('quien_trabajo').value = 'ambos';
+      document.getElementById('tipo_doc').value = 'neto';
+      document.getElementById('forma_pago').value = 'efectivo';
+      document.getElementById('estado_pago').value = 'pagado';
+      document.getElementById('form-title').textContent = 'Nuevo movimiento';
+      document.getElementById('form-error').textContent = '';
+      previewTotales();
+    }
+
+    function llenarForm(m) {
+      document.getElementById('mov-id').value = m.id;
+      document.getElementById('fecha').value = m.fecha;
+      document.getElementById('patente').value = m.patente ?? '';
+      document.getElementById('vehiculo').value = m.vehiculo ?? '';
+      document.getElementById('cliente').value = m.cliente ?? '';
+      document.getElementById('telefono').value = m.telefono ?? '';
+      document.getElementById('descripcion').value = m.descripcion ?? '';
+      document.getElementById('quien_trabajo').value = m.quien_trabajo;
+      document.getElementById('horas').value = m.horas ?? 0;
+      document.getElementById('mo_neta').value = m.mo_neta ?? 0;
+      document.getElementById('tipo_doc').value = m.tipo_doc;
+      document.getElementById('num_doc').value = m.num_doc ?? '';
+      document.getElementById('forma_pago').value = m.forma_pago ?? 'efectivo';
+      document.getElementById('estado_pago').value = m.estado_pago;
+      document.getElementById('costo_repuesto').value = m.costo_repuesto ?? 0;
+      document.getElementById('precio_repuesto').value = m.precio_repuesto ?? 0;
+      document.getElementById('form-title').textContent = 'Editar movimiento';
+      document.getElementById('form-card').style.display = 'block';
+      previewTotales();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function leerForm() {
+      return {
+        fecha: document.getElementById('fecha').value,
+        patente: document.getElementById('patente').value.trim().toUpperCase() || null,
+        vehiculo: document.getElementById('vehiculo').value.trim() || null,
+        cliente: document.getElementById('cliente').value.trim() || null,
+        telefono: document.getElementById('telefono').value.trim() || null,
+        descripcion: document.getElementById('descripcion').value.trim() || null,
+        quien_trabajo: document.getElementById('quien_trabajo').value,
+        horas: Number(document.getElementById('horas').value) || 0,
+        mo_neta: Number(document.getElementById('mo_neta').value) || 0,
+        tipo_doc: document.getElementById('tipo_doc').value,
+        num_doc: document.getElementById('num_doc').value.trim() || null,
+        forma_pago: document.getElementById('forma_pago').value,
+        estado_pago: document.getElementById('estado_pago').value,
+        costo_repuesto: Number(document.getElementById('costo_repuesto').value) || 0,
+        precio_repuesto: Number(document.getElementById('precio_repuesto').value) || 0,
+      };
+    }
+
+    function previewTotales() {
+      const t = calc(leerForm());
+      document.getElementById('preview-totales').innerHTML = `
+        <div class="fila"><span>Total MO bruto</span><span>${fmtMoneda(t.totalMoBruto)}</span></div>
+        <div class="fila"><span>2do mecánico (40%)</span><span>${fmtMoneda(t.mec)}</span></div>
+        <div class="fila"><span>Dueño</span><span>${fmtMoneda(t.dueno)}</span></div>
+        <div class="fila"><span>Taller (15%)</span><span>${fmtMoneda(t.taller)}</span></div>
+        <div class="fila"><span>Ganancia repuesto</span><span>${fmtMoneda(t.ganRepuesto)}</span></div>
+        <div class="fila"><span>Ingreso real taller</span><span>${fmtMoneda(t.ingresoTaller)}</span></div>
+        <div class="fila total"><span>Total c/ repuestos</span><span>${fmtMoneda(t.totalConRep)}</span></div>`;
+    }
+
+    document.getElementById('nuevo-btn').addEventListener('click', () => {
+      limpiarForm();
+      document.getElementById('form-card').style.display = 'block';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+    document.getElementById('cancelar-btn').addEventListener('click', () => {
+      document.getElementById('form-card').style.display = 'none';
+    });
+    ['quien_trabajo','tipo_doc','mo_neta','costo_repuesto','precio_repuesto'].forEach(id =>
+      document.getElementById(id).addEventListener('input', previewTotales));
+
+    document.getElementById('guardar-btn').addEventListener('click', async () => {
+      const errorEl = document.getElementById('form-error');
+      errorEl.textContent = '';
+      const payload = leerForm();
+      if (!payload.fecha) { errorEl.textContent = 'Ingresa la fecha.'; return; }
+      const id = document.getElementById('mov-id').value;
+      let error;
+      if (id) ({ error } = await supabaseClient.from('movimientos_contables').update(payload).eq('id', id));
+      else ({ error } = await supabaseClient.from('movimientos_contables').insert(payload));
+      if (error) { errorEl.textContent = `Error: ${error.message} (¿ejecutaste sql/actualizacion-v6.sql?)`; return; }
+      document.getElementById('form-card').style.display = 'none';
+      await cargar();
+    });
+
+    // ---------- Carga y render ----------
+    document.getElementById('filtro-mes').addEventListener('change', cargar);
+    document.getElementById('filtro-anio').addEventListener('change', cargar);
+
+    async function cargar() {
+      const mes = Number(document.getElementById('filtro-mes').value);
+      const anio = Number(document.getElementById('filtro-anio').value);
+      const desde = new Date(anio, mes, 1).toISOString().slice(0, 10);
+      const hasta = new Date(anio, mes + 1, 0).toISOString().slice(0, 10);
+      document.getElementById('libro-titulo').textContent = `Movimientos de ${MESES[mes]} ${anio}`;
+
+      const { data, error } = await supabaseClient
+        .from('movimientos_contables')
+        .select('*')
+        .gte('fecha', desde).lte('fecha', hasta)
+        .order('fecha');
+      if (error) {
+        document.getElementById('libro-body').innerHTML = `<tr><td colspan="11">Error: ${error.message} (¿ejecutaste sql/actualizacion-v6.sql?)</td></tr>`;
+        return;
+      }
+      movimientosCache = data;
+      render();
+    }
+
+    function render() {
+      const tbody = document.getElementById('libro-body');
+      if (!movimientosCache.length) {
+        tbody.innerHTML = '<tr><td colspan="11">Sin movimientos este mes.</td></tr>';
+      } else {
+        tbody.innerHTML = movimientosCache.map(m => {
+          const t = calc(m);
+          return `<tr>
+            <td>${fmtFecha(m.fecha)}</td>
+            <td>${m.patente ?? '–'}</td>
+            <td>${m.cliente ?? '–'}</td>
+            <td>${m.descripcion ?? '–'}</td>
+            <td>${fmtMoneda(t.moNeta)}</td>
+            <td>${m.tipo_doc}${m.num_doc ? ' ' + m.num_doc : ''}</td>
+            <td>${fmtMoneda(t.ganRepuesto)}</td>
+            <td>${fmtMoneda(t.totalConRep)}</td>
+            <td>${fmtMoneda(t.ingresoTaller)}</td>
+            <td>${m.estado_pago === 'pendiente' ? '<span class="badge badge-yellow">pendiente</span>' : '<span class="badge badge-green">pagado</span>'}</td>
+            <td class="table-actions">
+              <button type="button" class="btn-secondary editar-btn" data-id="${m.id}">Editar</button>
+              <button type="button" class="btn-danger borrar-btn" data-id="${m.id}">✕</button>
+            </td>
+          </tr>`;
+        }).join('');
+        tbody.querySelectorAll('.editar-btn').forEach(b => b.addEventListener('click', () => {
+          const m = movimientosCache.find(x => x.id === b.dataset.id); if (m) llenarForm(m);
+        }));
+        tbody.querySelectorAll('.borrar-btn').forEach(b => b.addEventListener('click', async () => {
+          if (!confirm('¿Eliminar este movimiento?')) return;
+          await supabaseClient.from('movimientos_contables').delete().eq('id', b.dataset.id);
+          await cargar();
+        }));
+      }
+      renderResumen();
+    }
+
+    function renderResumen() {
+      const acc = movimientosCache.reduce((a, m) => {
+        const t = calc(m);
+        a.ingresos += t.totalConRep;
+        a.moNeta += t.moNeta;
+        a.iva += t.iva;
+        a.mec += t.mec;
+        a.dueno += t.dueno;
+        a.taller += t.taller;
+        a.ganRep += t.ganRepuesto;
+        a.ingTaller += t.ingresoTaller;
+        if (m.estado_pago === 'pendiente') a.pendiente += t.totalConRep; else a.cobrado += t.totalConRep;
+        a.vehiculos.add((m.patente || '') + (m.cliente || ''));
+        return a;
+      }, { ingresos:0, moNeta:0, iva:0, mec:0, dueno:0, taller:0, ganRep:0, ingTaller:0, cobrado:0, pendiente:0, vehiculos:new Set() });
+
+      document.getElementById('resumen-cards').innerHTML = `
+        <div class="card stat-card"><div class="stat-value">${fmtMoneda(acc.ingresos)}</div><div class="stat-label">Ingresos del mes (total)</div></div>
+        <div class="card stat-card"><div class="stat-value">${fmtMoneda(acc.moNeta)}</div><div class="stat-label">Mano de obra neta</div></div>
+        <div class="card stat-card"><div class="stat-value">${fmtMoneda(acc.ingTaller)}</div><div class="stat-label">Ingreso real del taller</div></div>
+        <div class="card stat-card"><div class="stat-value">${fmtMoneda(acc.iva)}</div><div class="stat-label">IVA (boletas/facturas)</div></div>
+        <div class="card stat-card"><div class="stat-value">${acc.vehiculos.size}</div><div class="stat-label">Vehículos atendidos</div></div>`;
+
+      document.getElementById('reparto-body').innerHTML = `
+        <tr><td>2do mecánico (40%)</td><td>${fmtMoneda(acc.mec)}</td><td colspan="2">–</td></tr>
+        <tr><td>Dueño</td><td>${fmtMoneda(acc.dueno)}</td><td colspan="2">–</td></tr>
+        <tr><td>Taller (15%)</td><td>${fmtMoneda(acc.taller)}</td><td colspan="2">–</td></tr>
+        <tr><td>Ganancia repuestos</td><td>${fmtMoneda(acc.ganRep)}</td><td colspan="2">–</td></tr>
+        <tr style="font-weight:700;"><td>Total facturado</td><td>${fmtMoneda(acc.ingresos)}</td><td>${fmtMoneda(acc.cobrado)}</td><td>${fmtMoneda(acc.pendiente)}</td></tr>`;
+    }
+
+    document.getElementById('imprimir-btn').addEventListener('click', () => {
+      const mes = MESES[Number(document.getElementById('filtro-mes').value)];
+      const anio = document.getElementById('filtro-anio').value;
+      const filas = movimientosCache.map(m => {
+        const t = calc(m);
+        return `<tr><td>${fmtFecha(m.fecha)}</td><td>${m.patente ?? ''}</td><td>${m.cliente ?? ''}</td><td>${m.descripcion ?? ''}</td><td style="text-align:right;">${fmtMoneda(t.moNeta)}</td><td style="text-align:right;">${fmtMoneda(t.totalConRep)}</td><td>${m.estado_pago}</td></tr>`;
+      }).join('');
+      const totalMes = movimientosCache.reduce((s, m) => s + calc(m).totalConRep, 0);
+      document.getElementById('print-area').innerHTML = `
+        <div class="print-brand"><img src="../assets/img/logo.png" alt="" onerror="this.style.display='none'" /><span class="print-brand-name">${config.nombre}</span></div>
+        <h2>Libro contable — ${mes} ${anio}</h2>
+        <table style="width:100%; border-collapse:collapse;">
+          <thead><tr style="border-bottom:1px solid #000;"><th style="text-align:left;">Fecha</th><th style="text-align:left;">Patente</th><th style="text-align:left;">Cliente</th><th style="text-align:left;">Descripción</th><th style="text-align:right;">MO neta</th><th style="text-align:right;">Total c/rep</th><th>Pago</th></tr></thead>
+          <tbody>${filas}</tbody>
+        </table>
+        <h3 style="text-align:right; margin-top:1rem;">Total del mes: ${fmtMoneda(totalMes)}</h3>`;
+      window.print();
+    });
+
+    (async () => {
+      const session = await initLayout('contabilidad');
+      if (!session) return;
+      config = await getTallerConfig();
+      initFiltros();
+      await cargar();
+    })();
+  </script>
+</body>
+</html>

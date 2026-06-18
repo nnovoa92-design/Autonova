@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { key: 'trabajos', label: 'Catálogo de trabajos', href: 'trabajos.html' },
   { key: 'inventario', label: 'Inventario', href: 'inventario.html' },
   { key: 'pagos', label: 'Pagos', href: 'pagos.html' },
+  { key: 'contabilidad', label: 'Contabilidad', href: 'contabilidad.html' },
   { key: 'configuracion', label: 'Configuración', href: 'configuracion.html' },
 ];
 
