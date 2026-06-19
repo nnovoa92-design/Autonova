@@ -155,17 +155,27 @@
           </table>
         </div>
 
+        <!-- Resumen tributario y saldo real -->
+        <div class="card" id="tributario-card" style="margin-top:1rem;">
+          <h2 style="margin-top:0;">Resumen tributario y saldo real del mes</h2>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.5rem;">
+            Lo <strong>tributable</strong> sale de tus documentos (boletas/facturas). Las guías de despacho y montos sin
+            documento son <strong>solo registro</strong> y no cuentan para el IVA.
+          </p>
+          <div id="tributario-body"></div>
+        </div>
+
         <!-- Libro de Ventas (DTE emitidos / SII) -->
         <div class="card" style="margin-top:1rem;">
           <div class="toolbar">
-            <h2 style="margin:0;">Ventas emitidas (boletas / facturas SII)</h2>
+            <h2 style="margin:0;">Ventas emitidas (boletas / facturas)</h2>
             <label class="btn" style="cursor:pointer;">
-              📥 Importar ventas (XML o ZIP)
+              📥 Importar Emitidos (ventas)
               <input type="file" id="ventas-input" accept=".xml,.zip" multiple style="display:none;" />
             </label>
           </div>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.5rem;">
-            Sube los XML que exportas de TUU (o el .zip directo). Se cargan tus boletas y facturas sin duplicar.
+            Sube los XML/ZIP de "Emitidos" que exportas de TUU. Se cargan tus boletas y facturas sin duplicar.
           </p>
           <p id="ventas-estado" style="font-size:0.85rem; margin:0;"></p>
           <div class="cards-grid" id="ventas-resumen" style="margin-top:0.75rem;"></div>
@@ -174,6 +184,28 @@
               <tr><th>Fecha</th><th>Tipo</th><th>Folio</th><th>Receptor</th><th>Neto</th><th>IVA</th><th>Total</th><th></th></tr>
             </thead>
             <tbody id="ventas-body"><tr><td colspan="8">—</td></tr></tbody>
+          </table>
+        </div>
+
+        <!-- Libro de Compras (DTE recibidos) -->
+        <div class="card" style="margin-top:1rem;">
+          <div class="toolbar">
+            <h2 style="margin:0;">Compras / gastos (facturas de proveedores)</h2>
+            <label class="btn" style="cursor:pointer;">
+              📥 Importar Recibidos (compras)
+              <input type="file" id="compras-input" accept=".xml,.zip" multiple style="display:none;" />
+            </label>
+          </div>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.5rem;">
+            Sube los XML/ZIP de "Recibidos" de TUU. Las guías de despacho se marcan como "solo registro" (no suman IVA crédito).
+          </p>
+          <p id="compras-estado" style="font-size:0.85rem; margin:0;"></p>
+          <div class="cards-grid" id="compras-resumen" style="margin-top:0.75rem;"></div>
+          <table>
+            <thead>
+              <tr><th>Fecha</th><th>Tipo</th><th>Folio</th><th>Proveedor</th><th>Neto</th><th>IVA</th><th>Total</th><th></th></tr>
+            </thead>
+            <tbody id="compras-body"><tr><td colspan="8">—</td></tr></tbody>
           </table>
         </div>
 
@@ -345,10 +377,11 @@
       movimientosCache = data;
       render();
       await cargarVentas(desde, hasta);
+      await cargarCompras(desde, hasta);
     }
 
     // ---------- Libro de Ventas (DTE) ----------
-    const TIPO_DTE = { 33: 'Factura', 34: 'Factura exenta', 39: 'Boleta', 41: 'Boleta exenta', 61: 'Nota crédito', 56: 'Nota débito' };
+    const TIPO_DTE = { 33: 'Factura', 34: 'Factura exenta', 39: 'Boleta', 41: 'Boleta exenta', 52: 'Guía despacho', 61: 'Nota crédito', 56: 'Nota débito' };
 
     async function cargarVentas(desde, hasta) {
       const tbody = document.getElementById('ventas-body');
@@ -358,8 +391,10 @@
       if (error) {
         tbody.innerHTML = `<tr><td colspan="8">Error: ${error.message} (¿ejecutaste sql/actualizacion-v7.sql?)</td></tr>`;
         document.getElementById('ventas-resumen').innerHTML = '';
+        ventasMes = [];
         return;
       }
+      ventasMes = data;
       if (!data.length) {
         tbody.innerHTML = '<tr><td colspan="8">Sin ventas este mes. Usa "Importar ventas" para cargar tus XML.</td></tr>';
       } else {
@@ -400,6 +435,8 @@
       return {
         tipo_dte: tipo, folio,
         fecha: g('FchEmis') || null,
+        rut_emisor: g('RUTEmisor') || null,
+        emisor: g('RznSoc') || null,
         rut_receptor: g('RUTRecep') || null,
         receptor: g('RznSocRecep') || null,
         neto: Number(g('MntNeto')) || 0,
@@ -410,53 +447,140 @@
       };
     }
 
-    document.getElementById('ventas-input').addEventListener('change', async (e) => {
-      const estado = document.getElementById('ventas-estado');
-      const files = [...e.target.files];
-      if (!files.length) return;
-      estado.style.color = 'var(--color-text-muted)';
-      estado.textContent = 'Leyendo archivos...';
+    // Documentos que NO cuentan para IVA (solo registro): guías de despacho.
+    const TIPOS_SOLO_REGISTRO = [52];
+    function esTributable(tipo) { return !TIPOS_SOLO_REGISTRO.includes(Number(tipo)); }
 
+    async function leerXmls(files, estado) {
       const xmls = [];
-      try {
-        for (const file of files) {
-          const nombre = file.name.toLowerCase();
-          if (nombre.endsWith('.zip')) {
-            const zip = await JSZip.loadAsync(file);
-            for (const n of Object.keys(zip.files)) {
-              if (n.toLowerCase().endsWith('.xml')) xmls.push(await zip.files[n].async('string'));
-            }
-          } else if (nombre.endsWith('.xml')) {
-            xmls.push(await file.text());
+      for (const file of files) {
+        const nombre = file.name.toLowerCase();
+        if (nombre.endsWith('.zip')) {
+          const zip = await JSZip.loadAsync(file);
+          for (const n of Object.keys(zip.files)) {
+            if (n.toLowerCase().endsWith('.xml')) xmls.push(await zip.files[n].async('string'));
           }
+        } else if (nombre.endsWith('.xml')) {
+          xmls.push(await file.text());
         }
-      } catch (err) {
-        estado.style.color = 'var(--color-danger)';
-        estado.textContent = 'No se pudo leer el archivo: ' + err.message;
-        return;
       }
+      return xmls;
+    }
 
-      const registros = xmls.map(parseDte).filter(Boolean);
-      if (!registros.length) {
-        estado.style.color = 'var(--color-danger)';
-        estado.textContent = 'No se encontraron documentos válidos en los archivos.';
+    // Importador genérico para Emitidos (ventas) y Recibidos (compras).
+    function configImportador(inputId, estadoId, tabla, conflicto, mapear, sqlRef) {
+      document.getElementById(inputId).addEventListener('change', async (e) => {
+        const estado = document.getElementById(estadoId);
+        const files = [...e.target.files];
+        if (!files.length) return;
+        estado.style.color = 'var(--color-text-muted)';
+        estado.textContent = 'Leyendo archivos...';
+        let xmls;
+        try { xmls = await leerXmls(files, estado); }
+        catch (err) { estado.style.color = 'var(--color-danger)'; estado.textContent = 'No se pudo leer: ' + err.message; return; }
+
+        const registros = xmls.map(parseDte).filter(Boolean).map(mapear);
         e.target.value = '';
-        return;
-      }
+        if (!registros.length) {
+          estado.style.color = 'var(--color-danger)';
+          estado.textContent = 'No se encontraron documentos válidos en los archivos.';
+          return;
+        }
+        const { error } = await supabaseClient.from(tabla).upsert(registros, { onConflict: conflicto, ignoreDuplicates: true });
+        if (error) {
+          estado.style.color = 'var(--color-danger)';
+          estado.textContent = `Error al guardar: ${error.message} (¿ejecutaste ${sqlRef}?)`;
+          return;
+        }
+        estado.style.color = '#1b6e3c';
+        estado.textContent = `✓ ${registros.length} documento(s) procesado(s). Revisa el mes con el selector de arriba.`;
+        await cargar();
+      });
+    }
 
-      // Insertar sin duplicar (clave única tipo_dte + folio)
-      const { error } = await supabaseClient.from('ventas_dte')
-        .upsert(registros, { onConflict: 'tipo_dte,folio', ignoreDuplicates: true });
-      e.target.value = '';
+    configImportador('ventas-input', 'ventas-estado', 'ventas_dte', 'tipo_dte,folio',
+      d => ({ tipo_dte: d.tipo_dte, folio: d.folio, fecha: d.fecha, rut_receptor: d.rut_receptor, receptor: d.receptor, neto: d.neto, iva: d.iva, exento: d.exento, total: d.total, items: d.items }),
+      'sql/actualizacion-v7.sql');
+
+    configImportador('compras-input', 'compras-estado', 'compras_dte', 'tipo_dte,folio,rut_emisor',
+      d => ({ tipo_dte: d.tipo_dte, folio: d.folio, fecha: d.fecha, rut_emisor: d.rut_emisor, emisor: d.emisor, neto: d.neto, iva: d.iva, exento: d.exento, total: d.total, items: d.items }),
+      'sql/actualizacion-v8.sql');
+
+    // ---------- Compras (DTE recibidos) ----------
+    let comprasMes = [], ventasMes = [];
+
+    async function cargarCompras(desde, hasta) {
+      const tbody = document.getElementById('compras-body');
+      const { data, error } = await supabaseClient
+        .from('compras_dte').select('*')
+        .gte('fecha', desde).lte('fecha', hasta).order('fecha');
       if (error) {
-        estado.style.color = 'var(--color-danger)';
-        estado.textContent = `Error al guardar: ${error.message} (¿ejecutaste sql/actualizacion-v7.sql?)`;
+        tbody.innerHTML = `<tr><td colspan="8">Error: ${error.message} (¿ejecutaste sql/actualizacion-v8.sql?)</td></tr>`;
+        document.getElementById('compras-resumen').innerHTML = '';
+        comprasMes = [];
+        renderResumenTributario();
         return;
       }
-      estado.style.color = '#1b6e3c';
-      estado.textContent = `✓ ${registros.length} documento(s) procesado(s). Revisa el mes correspondiente con el selector de arriba.`;
-      await cargar();
-    });
+      comprasMes = data;
+      if (!data.length) {
+        tbody.innerHTML = '<tr><td colspan="8">Sin compras este mes. Usa "Importar Recibidos".</td></tr>';
+      } else {
+        tbody.innerHTML = data.map(c => {
+          const soloReg = !esTributable(c.tipo_dte);
+          return `<tr${soloReg ? ' style="color:var(--color-text-muted);"' : ''}>
+            <td>${fmtFecha(c.fecha)}</td>
+            <td>${TIPO_DTE[c.tipo_dte] || ('Tipo ' + c.tipo_dte)}${soloReg ? ' <span class="badge badge-gray">solo registro</span>' : ''}</td>
+            <td>${c.folio}</td>
+            <td>${c.emisor || (c.rut_emisor || '–')}</td>
+            <td>${fmtMoneda(c.neto)}</td>
+            <td>${soloReg ? '–' : fmtMoneda(c.iva)}</td>
+            <td>${fmtMoneda(c.total)}</td>
+            <td><button type="button" class="btn-danger compra-del" data-id="${c.id}" style="padding:0.2rem 0.5rem;">✕</button></td>
+          </tr>`;
+        }).join('');
+        tbody.querySelectorAll('.compra-del').forEach(b => b.addEventListener('click', async () => {
+          if (!confirm('¿Eliminar esta compra del registro?')) return;
+          await supabaseClient.from('compras_dte').delete().eq('id', b.dataset.id);
+          await cargar();
+        }));
+      }
+      const trib = data.filter(c => esTributable(c.tipo_dte));
+      const tot = trib.reduce((a, c) => { a.neto += Number(c.neto); a.iva += Number(c.iva); a.total += Number(c.total); return a; }, { neto:0, iva:0, total:0 });
+      document.getElementById('compras-resumen').innerHTML = `
+        <div class="card stat-card"><div class="stat-value">${fmtMoneda(tot.neto)}</div><div class="stat-label">Neto comprado</div></div>
+        <div class="card stat-card"><div class="stat-value">${fmtMoneda(tot.iva)}</div><div class="stat-label">IVA crédito</div></div>
+        <div class="card stat-card"><div class="stat-value">${fmtMoneda(tot.total)}</div><div class="stat-label">Total comprado</div></div>
+        <div class="card stat-card"><div class="stat-value">${data.length}</div><div class="stat-label">Documentos</div></div>`;
+      renderResumenTributario();
+    }
+
+    function renderResumenTributario() {
+      const vTrib = ventasMes.filter(v => esTributable(v.tipo_dte));
+      const cTrib = comprasMes.filter(c => esTributable(c.tipo_dte));
+      const ventasTotal = vTrib.reduce((s, v) => s + Number(v.total), 0);
+      const ventasNeto = vTrib.reduce((s, v) => s + Number(v.neto), 0);
+      const ivaDebito = vTrib.reduce((s, v) => s + Number(v.iva), 0);
+      const comprasTotal = cTrib.reduce((s, c) => s + Number(c.total), 0);
+      const comprasNeto = cTrib.reduce((s, c) => s + Number(c.neto), 0);
+      const ivaCredito = cTrib.reduce((s, c) => s + Number(c.iva), 0);
+      const ivaPagar = ivaDebito - ivaCredito;
+      const saldoReal = ventasTotal - comprasTotal;
+
+      document.getElementById('tributario-body').innerHTML = `
+        <div class="totales" style="max-width:420px; margin-left:0;">
+          <div class="fila"><span>Ventas (neto)</span><span>${fmtMoneda(ventasNeto)}</span></div>
+          <div class="fila"><span>Compras (neto)</span><span>-${fmtMoneda(comprasNeto)}</span></div>
+          <div class="fila" style="border-top:1px solid var(--color-border); padding-top:0.4rem;"><span><strong>IVA débito (ventas)</strong></span><span>${fmtMoneda(ivaDebito)}</span></div>
+          <div class="fila"><span><strong>IVA crédito (compras)</strong></span><span>-${fmtMoneda(ivaCredito)}</span></div>
+          <div class="fila total"><span>IVA ${ivaPagar >= 0 ? 'a pagar' : 'a favor'}</span><span>${fmtMoneda(Math.abs(ivaPagar))}</span></div>
+        </div>
+        <div class="cards-grid" style="margin-top:1rem;">
+          <div class="card stat-card" style="border-top-color:#1b6e3c;">
+            <div class="stat-value" style="color:${saldoReal >= 0 ? '#1b6e3c' : 'var(--color-danger)'};">${fmtMoneda(saldoReal)}</div>
+            <div class="stat-label">Saldo real del mes (ventas − compras)</div>
+          </div>
+        </div>`;
+    }
 
     function render() {
       const tbody = document.getElementById('libro-body');
