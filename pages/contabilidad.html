@@ -155,6 +155,28 @@
           </table>
         </div>
 
+        <!-- Libro de Ventas (DTE emitidos / SII) -->
+        <div class="card" style="margin-top:1rem;">
+          <div class="toolbar">
+            <h2 style="margin:0;">Ventas emitidas (boletas / facturas SII)</h2>
+            <label class="btn" style="cursor:pointer;">
+              📥 Importar ventas (XML o ZIP)
+              <input type="file" id="ventas-input" accept=".xml,.zip" multiple style="display:none;" />
+            </label>
+          </div>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.5rem;">
+            Sube los XML que exportas de TUU (o el .zip directo). Se cargan tus boletas y facturas sin duplicar.
+          </p>
+          <p id="ventas-estado" style="font-size:0.85rem; margin:0;"></p>
+          <div class="cards-grid" id="ventas-resumen" style="margin-top:0.75rem;"></div>
+          <table>
+            <thead>
+              <tr><th>Fecha</th><th>Tipo</th><th>Folio</th><th>Receptor</th><th>Neto</th><th>IVA</th><th>Total</th><th></th></tr>
+            </thead>
+            <tbody id="ventas-body"><tr><td colspan="8">—</td></tr></tbody>
+          </table>
+        </div>
+
       </div>
     </div>
   </div>
@@ -162,6 +184,7 @@
   <div class="print-area" id="print-area"></div>
 
   <script src="../assets/vendor/supabase.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="../assets/js/supabaseClient.js"></script>
   <script src="../assets/js/layout.js"></script>
   <script>
@@ -321,7 +344,119 @@
       }
       movimientosCache = data;
       render();
+      await cargarVentas(desde, hasta);
     }
+
+    // ---------- Libro de Ventas (DTE) ----------
+    const TIPO_DTE = { 33: 'Factura', 34: 'Factura exenta', 39: 'Boleta', 41: 'Boleta exenta', 61: 'Nota crédito', 56: 'Nota débito' };
+
+    async function cargarVentas(desde, hasta) {
+      const tbody = document.getElementById('ventas-body');
+      const { data, error } = await supabaseClient
+        .from('ventas_dte').select('*')
+        .gte('fecha', desde).lte('fecha', hasta).order('fecha');
+      if (error) {
+        tbody.innerHTML = `<tr><td colspan="8">Error: ${error.message} (¿ejecutaste sql/actualizacion-v7.sql?)</td></tr>`;
+        document.getElementById('ventas-resumen').innerHTML = '';
+        return;
+      }
+      if (!data.length) {
+        tbody.innerHTML = '<tr><td colspan="8">Sin ventas este mes. Usa "Importar ventas" para cargar tus XML.</td></tr>';
+      } else {
+        tbody.innerHTML = data.map(v => `<tr>
+          <td>${fmtFecha(v.fecha)}</td>
+          <td>${TIPO_DTE[v.tipo_dte] || ('Tipo ' + v.tipo_dte)}</td>
+          <td>${v.folio}</td>
+          <td>${v.receptor || (v.rut_receptor || '–')}</td>
+          <td>${fmtMoneda(v.neto)}</td>
+          <td>${fmtMoneda(v.iva)}</td>
+          <td>${fmtMoneda(v.total)}</td>
+          <td><button type="button" class="btn-danger venta-del" data-id="${v.id}" style="padding:0.2rem 0.5rem;">✕</button></td>
+        </tr>`).join('');
+        tbody.querySelectorAll('.venta-del').forEach(b => b.addEventListener('click', async () => {
+          if (!confirm('¿Eliminar esta venta del registro?')) return;
+          await supabaseClient.from('ventas_dte').delete().eq('id', b.dataset.id);
+          await cargar();
+        }));
+      }
+      const tot = data.reduce((a, v) => { a.neto += Number(v.neto); a.iva += Number(v.iva); a.total += Number(v.total); return a; }, { neto:0, iva:0, total:0 });
+      document.getElementById('ventas-resumen').innerHTML = `
+        <div class="card stat-card"><div class="stat-value">${fmtMoneda(tot.neto)}</div><div class="stat-label">Neto vendido</div></div>
+        <div class="card stat-card"><div class="stat-value">${fmtMoneda(tot.iva)}</div><div class="stat-label">IVA débito</div></div>
+        <div class="card stat-card"><div class="stat-value">${fmtMoneda(tot.total)}</div><div class="stat-label">Total vendido</div></div>
+        <div class="card stat-card"><div class="stat-value">${data.length}</div><div class="stat-label">Documentos</div></div>`;
+    }
+
+    function parseDte(xmlText) {
+      const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+      const g = (name) => {
+        const el = doc.getElementsByTagName(name)[0];
+        return el ? el.textContent.trim() : '';
+      };
+      const tipo = parseInt(g('TipoDTE'), 10);
+      const folio = parseInt(g('Folio'), 10);
+      if (!tipo || !folio) return null;
+      const items = [...doc.getElementsByTagName('NmbItem')].map(n => n.textContent.trim()).join(' / ');
+      return {
+        tipo_dte: tipo, folio,
+        fecha: g('FchEmis') || null,
+        rut_receptor: g('RUTRecep') || null,
+        receptor: g('RznSocRecep') || null,
+        neto: Number(g('MntNeto')) || 0,
+        iva: Number(g('IVA')) || 0,
+        exento: Number(g('MntExe')) || 0,
+        total: Number(g('MntTotal')) || 0,
+        items: items || null,
+      };
+    }
+
+    document.getElementById('ventas-input').addEventListener('change', async (e) => {
+      const estado = document.getElementById('ventas-estado');
+      const files = [...e.target.files];
+      if (!files.length) return;
+      estado.style.color = 'var(--color-text-muted)';
+      estado.textContent = 'Leyendo archivos...';
+
+      const xmls = [];
+      try {
+        for (const file of files) {
+          const nombre = file.name.toLowerCase();
+          if (nombre.endsWith('.zip')) {
+            const zip = await JSZip.loadAsync(file);
+            for (const n of Object.keys(zip.files)) {
+              if (n.toLowerCase().endsWith('.xml')) xmls.push(await zip.files[n].async('string'));
+            }
+          } else if (nombre.endsWith('.xml')) {
+            xmls.push(await file.text());
+          }
+        }
+      } catch (err) {
+        estado.style.color = 'var(--color-danger)';
+        estado.textContent = 'No se pudo leer el archivo: ' + err.message;
+        return;
+      }
+
+      const registros = xmls.map(parseDte).filter(Boolean);
+      if (!registros.length) {
+        estado.style.color = 'var(--color-danger)';
+        estado.textContent = 'No se encontraron documentos válidos en los archivos.';
+        e.target.value = '';
+        return;
+      }
+
+      // Insertar sin duplicar (clave única tipo_dte + folio)
+      const { error } = await supabaseClient.from('ventas_dte')
+        .upsert(registros, { onConflict: 'tipo_dte,folio', ignoreDuplicates: true });
+      e.target.value = '';
+      if (error) {
+        estado.style.color = 'var(--color-danger)';
+        estado.textContent = `Error al guardar: ${error.message} (¿ejecutaste sql/actualizacion-v7.sql?)`;
+        return;
+      }
+      estado.style.color = '#1b6e3c';
+      estado.textContent = `✓ ${registros.length} documento(s) procesado(s). Revisa el mes correspondiente con el selector de arriba.`;
+      await cargar();
+    });
 
     function render() {
       const tbody = document.getElementById('libro-body');
