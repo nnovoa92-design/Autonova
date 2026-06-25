@@ -278,13 +278,13 @@
         const f = filas[btn.dataset.idx];
         const tel = f.cliente && f.cliente.telefono;
         if (!tel) { alert('El cliente no tiene teléfono registrado.'); return; }
-        window.open(linkWhatsApp(tel, mensajeFormal(f)), '_blank');
+        abrirEnlace(linkWhatsApp(tel, mensajeFormal(f)));
       }));
       tbody.querySelectorAll('.rec-mail').forEach(btn => btn.addEventListener('click', () => {
         const f = filas[btn.dataset.idx];
         const email = f.cliente && f.cliente.email;
         if (!email) { alert('El cliente no tiene correo registrado.'); return; }
-        window.open(linkGmail(email, `Recordatorio - ${config.nombre}`, mensajeFormal(f).replace(/: /, ':\n\n')), '_blank');
+        abrirEnlace(linkGmail(email, `Recordatorio - ${config.nombre}`, mensajeFormal(f).replace(/: /, ':\n\n')));
       }));
       tbody.querySelectorAll('.rec-ok').forEach(btn => btn.addEventListener('click', async () => {
         await supabaseClient.from('recordatorios').update({ enviado: true, fecha_envio: new Date().toISOString() }).eq('id', btn.dataset.id);

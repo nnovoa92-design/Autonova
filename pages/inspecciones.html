@@ -397,7 +397,7 @@
         `Puntaje: ${i.score}/100 — ${i.ok} bien, ${i.warn} con atención, ${i.bad} malos.\n` +
         `${i.recomendacion}\n` +
         `Informe completo: ${window.location.origin}/inspeccion.html?id=${i.id}`;
-      window.open(linkWhatsApp(i.telefono, mensaje), '_blank');
+      abrirEnlace(linkWhatsApp(i.telefono, mensaje));
     });
 
     document.getElementById('link-btn').addEventListener('click', async () => {

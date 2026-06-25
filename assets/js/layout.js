@@ -94,6 +94,15 @@ function linkGmail(para, asunto, cuerpo) {
   return 'https://mail.google.com/mail/?' + p.toString();
 }
 
+// Abre un enlace en pestaña nueva; si el navegador bloquea la ventana
+// emergente, navega en la misma pestaña (así nunca "no pasa nada").
+function abrirEnlace(url) {
+  if (!url) return;
+  let w = null;
+  try { w = window.open(url, '_blank'); } catch (e) { w = null; }
+  if (!w) window.location.href = url;
+}
+
 // Mes (1-12) de revisión técnica según el último dígito de la patente
 // (calendario para vehículos particulares).
 const RT_MES_POR_DIGITO = { '9': 1, '0': 2, '1': 4, '2': 5, '3': 6, '4': 7, '5': 8, '6': 9, '7': 10, '8': 11 };
