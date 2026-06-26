@@ -23,11 +23,17 @@
           <div class="form-row">
             <div class="form-group">
               <label for="cliente_id">Cliente *</label>
-              <select id="cliente_id" required></select>
+              <div class="select-con-boton">
+                <select id="cliente_id" required></select>
+                <button type="button" class="btn-secondary btn-mini" id="nuevo-cliente-btn">+ Nuevo</button>
+              </div>
             </div>
             <div class="form-group">
               <label for="vehiculo_id">Vehículo</label>
-              <select id="vehiculo_id"><option value="">Sin vehículo</option></select>
+              <div class="select-con-boton">
+                <select id="vehiculo_id"><option value="">Sin vehículo</option></select>
+                <button type="button" class="btn-secondary btn-mini" id="nuevo-vehiculo-btn">+ Nuevo</button>
+              </div>
             </div>
             <div class="form-group">
               <label for="validez_dias">Validez (días)</label>
@@ -60,11 +66,17 @@
             </div>
             <div class="form-group" id="grupo-trabajo">
               <label for="item-trabajo">Trabajo precargado</label>
-              <select id="item-trabajo"></select>
+              <div class="select-con-boton">
+                <select id="item-trabajo"></select>
+                <button type="button" class="btn-secondary btn-mini" id="nuevo-trabajo-btn">+ Nuevo</button>
+              </div>
             </div>
             <div class="form-group" id="grupo-repuesto" style="display:none;">
               <label for="item-repuesto">Repuesto</label>
-              <select id="item-repuesto"></select>
+              <div class="select-con-boton">
+                <select id="item-repuesto"></select>
+                <button type="button" class="btn-secondary btn-mini" id="nuevo-repuesto-btn">+ Nuevo</button>
+              </div>
             </div>
             <div class="form-group" id="grupo-descripcion" style="display:none;">
               <label for="item-descripcion">Descripción</label>
@@ -154,7 +166,13 @@
   <!-- Plantilla imprimible -->
   <div class="print-area" id="print-area"></div>
 
+  <!-- Modal genérico -->
+  <div class="modal-backdrop" id="modal-backdrop">
+    <div class="modal" id="modal"></div>
+  </div>
+
   <script src="../assets/vendor/supabase.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script src="../assets/js/supabaseClient.js"></script>
   <script src="../assets/js/layout.js"></script>
   <script>
@@ -426,6 +444,7 @@
           <td>${badgeEstado(c.estado, ESTADOS_COTIZACION)}</td>
           <td class="table-actions">
             ${editable ? `<button type="button" class="btn-secondary editar-btn" data-id="${c.id}">Editar</button>` : ''}
+            <button type="button" class="btn-secondary pdf-btn" data-id="${c.id}">PDF</button>
             <button type="button" class="btn-secondary imprimir-btn" data-id="${c.id}">Imprimir</button>
             <button type="button" class="btn-secondary whatsapp-btn" data-id="${c.id}">WhatsApp</button>
             <button type="button" class="btn-secondary email-btn" data-id="${c.id}">Correo</button>
@@ -446,6 +465,14 @@
       });
       tbody.querySelectorAll('.imprimir-btn').forEach(btn => {
         btn.addEventListener('click', () => imprimirCotizacion(btn.dataset.id));
+      });
+      tbody.querySelectorAll('.pdf-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const c = cotizacionesCache.find(x => x.id === btn.dataset.id);
+          if (!c) return;
+          construirPrintCotizacion(c);
+          descargarPDF('print-area', `Cotizacion-${fmtNumero('COT', c.numero)}`);
+        });
       });
       tbody.querySelectorAll('.whatsapp-btn').forEach(btn => {
         btn.addEventListener('click', () => enviarWhatsApp(btn.dataset.id));
@@ -552,6 +579,11 @@
     function imprimirCotizacion(cotId) {
       const c = cotizacionesCache.find(x => x.id === cotId);
       if (!c) return;
+      construirPrintCotizacion(c);
+      window.print();
+    }
+
+    function construirPrintCotizacion(c) {
       const t = calcularTotales(c.cotizacion_items || [], c.descuento_pct, c.con_iva !== false);
       const cliente = c.clientes || {};
       const vehiculo = c.vehiculos;
@@ -607,7 +639,6 @@
         </div>
         ${c.notas ? `<p style="margin-top:1.5rem;"><strong>Notas:</strong> ${c.notas}</p>` : ''}
       `;
-      window.print();
     }
 
     // ---------- Carga de datos ----------
@@ -623,6 +654,121 @@
       cotizacionesCache = data;
       renderCotizaciones();
     }
+
+    // ---------- Repoblar desplegables ----------
+    function poblarClientes(sel) {
+      document.getElementById('cliente_id').innerHTML =
+        '<option value="">Seleccionar cliente...</option>' +
+        clientesCache.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
+      if (sel) document.getElementById('cliente_id').value = sel;
+    }
+    function poblarTrabajos(sel) {
+      document.getElementById('item-trabajo').innerHTML =
+        trabajosCache.map(t => `<option value="${t.id}">${t.nombre} (${t.horas_estimadas} h)</option>`).join('');
+      if (sel) document.getElementById('item-trabajo').value = sel;
+    }
+    function poblarRepuestos(sel) {
+      document.getElementById('item-repuesto').innerHTML =
+        repuestosCache.map(r => `<option value="${r.id}">${r.sku ? r.sku + ' · ' : ''}${r.nombre} — ${fmtMoneda(r.precio_venta)}</option>`).join('');
+      if (sel) document.getElementById('item-repuesto').value = sel;
+    }
+
+    // ---------- Modales "+ Nuevo" ----------
+    const $backdrop = document.getElementById('modal-backdrop');
+    const val = (id) => { const e = document.getElementById(id); return e && e.value.trim() ? e.value.trim() : null; };
+    const modalError = (m) => { document.getElementById('modal-error').textContent = m; };
+    const campo = (id, label, type = 'text', extra = '') => `<div class="form-group"><label for="m-${id}">${label}</label><input type="${type}" id="m-${id}" ${extra} /></div>`;
+    function cerrarModal() { $backdrop.classList.remove('abierto'); document.getElementById('modal').innerHTML = ''; }
+    function abrirModal(titulo, camposHtml, onGuardar) {
+      document.getElementById('modal').innerHTML = `
+        <h3>${titulo}</h3>
+        ${camposHtml}
+        <p class="error-message" id="modal-error"></p>
+        <div class="modal-acciones">
+          <button type="button" id="modal-guardar">Guardar</button>
+          <button type="button" class="btn-secondary" id="modal-cancelar">Cancelar</button>
+        </div>`;
+      $backdrop.classList.add('abierto');
+      document.getElementById('modal-cancelar').addEventListener('click', cerrarModal);
+      document.getElementById('modal-guardar').addEventListener('click', onGuardar);
+    }
+    $backdrop.addEventListener('click', (e) => { if (e.target === $backdrop) cerrarModal(); });
+
+    document.getElementById('nuevo-cliente-btn').addEventListener('click', () => {
+      abrirModal('Nuevo cliente',
+        `<div class="form-row">${campo('cl-nombre', 'Nombre o razón social *')}${campo('cl-rut', 'RUT')}</div>
+         <div class="form-row">${campo('cl-tel', 'Teléfono', 'tel')}${campo('cl-email', 'Email', 'email')}</div>
+         ${campo('cl-dir', 'Dirección')}`,
+        async () => {
+          const nombre = val('m-cl-nombre');
+          if (!nombre) { modalError('Ingresa el nombre.'); return; }
+          const { data, error } = await supabaseClient.from('clientes')
+            .insert({ nombre, rut: val('m-cl-rut'), telefono: val('m-cl-tel'), email: val('m-cl-email'), direccion: val('m-cl-dir') })
+            .select('id, nombre, rut, telefono, email').single();
+          if (error) { modalError('Error: ' + error.message); return; }
+          clientesCache.push(data); clientesCache.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+          poblarClientes(data.id); actualizarVehiculos();
+          cerrarModal();
+        });
+    });
+
+    document.getElementById('nuevo-vehiculo-btn').addEventListener('click', () => {
+      const clienteId = document.getElementById('cliente_id').value;
+      if (!clienteId) { alert('Primero selecciona (o crea) el cliente al que pertenece el vehículo.'); return; }
+      const cli = clientesCache.find(c => c.id === clienteId);
+      abrirModal(`Nuevo vehículo de ${cli ? cli.nombre : ''}`,
+        `<div class="form-row">${campo('v-pat', 'Patente *', 'text', 'style="text-transform:uppercase;"')}${campo('v-marca', 'Marca')}${campo('v-modelo', 'Modelo')}</div>
+         <div class="form-row">${campo('v-anio', 'Año', 'number')}${campo('v-km', 'Kilometraje', 'number')}</div>`,
+        async () => {
+          const patente = (val('m-v-pat') || '').toUpperCase();
+          if (!patente) { modalError('Ingresa la patente.'); return; }
+          const { data, error } = await supabaseClient.from('vehiculos')
+            .insert({ cliente_id: clienteId, patente, marca: val('m-v-marca'), modelo: val('m-v-modelo'), anio: val('m-v-anio'), kilometraje: val('m-v-km') })
+            .select('*').single();
+          if (error) { modalError('Error: ' + error.message); return; }
+          vehiculosCache.push(data);
+          actualizarVehiculos();
+          document.getElementById('vehiculo_id').value = data.id;
+          cerrarModal();
+        });
+    });
+
+    document.getElementById('nuevo-trabajo-btn').addEventListener('click', () => {
+      abrirModal('Nuevo trabajo del catálogo',
+        `${campo('t-nombre', 'Nombre del trabajo *')}
+         <div class="form-row">${campo('t-horas', 'Horas de taller', 'number', 'step="0.25" value="1"')}${campo('t-precio', 'Precio fijo (opcional)', 'number', 'step="1" placeholder="Vacío = horas × valor hora"')}</div>
+         <p style="color:var(--color-text-muted); font-size:0.8rem; margin:0;">Se agrega al catálogo y queda disponible al instante.</p>`,
+        async () => {
+          const nombre = val('m-t-nombre');
+          if (!nombre) { modalError('Ingresa el nombre del trabajo.'); return; }
+          const { data, error } = await supabaseClient.from('trabajos')
+            .insert({ nombre, horas_estimadas: val('m-t-horas') || 1, precio_fijo: val('m-t-precio'), insumos: [] })
+            .select('*').single();
+          if (error) { modalError('Error: ' + error.message); return; }
+          trabajosCache.push(data); trabajosCache.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+          document.getElementById('item-tipo').value = 'mano_obra'; onTipoChange();
+          poblarTrabajos(data.id);
+          cerrarModal();
+        });
+    });
+
+    document.getElementById('nuevo-repuesto-btn').addEventListener('click', () => {
+      abrirModal('Nuevo repuesto / insumo',
+        `<div class="form-row">${campo('r-nombre', 'Nombre *')}${campo('r-marca', 'Marca')}</div>
+         <div class="form-row">${campo('r-sku', 'SKU / código')}${campo('r-venta', 'Precio venta', 'number', 'step="1"')}${campo('r-stock', 'Stock inicial', 'number', 'step="1" value="0"')}</div>`,
+        async () => {
+          const nombre = val('m-r-nombre');
+          if (!nombre) { modalError('Ingresa el nombre.'); return; }
+          const { data, error } = await supabaseClient.from('repuestos')
+            .insert({ nombre, marca: val('m-r-marca'), sku: val('m-r-sku'), precio_venta: val('m-r-venta'), stock_actual: val('m-r-stock') || 0 })
+            .select('*').single();
+          if (error) { modalError('Error: ' + error.message); return; }
+          repuestosCache.push(data); repuestosCache.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+          document.getElementById('item-tipo').value = 'repuesto'; onTipoChange();
+          poblarRepuestos(data.id); onRepuestoChange();
+          cerrarModal();
+        });
+    });
 
     document.getElementById('nueva-btn').addEventListener('click', () => abrirEditor(null));
     document.getElementById('cerrar-editor-btn').addEventListener('click', cerrarEditor);
@@ -642,7 +788,7 @@
       config = await getTallerConfig();
 
       const [clientes, vehiculos, trabajos, repuestos] = await Promise.all([
-        supabaseClient.from('clientes').select('id, nombre, rut, telefono').eq('activo', true).order('nombre'),
+        supabaseClient.from('clientes').select('id, nombre, rut, telefono, email').eq('activo', true).order('nombre'),
         supabaseClient.from('vehiculos').select('*').eq('activo', true).order('patente'),
         supabaseClient.from('trabajos').select('*').eq('activo', true).order('nombre'),
         supabaseClient.from('repuestos').select('*').eq('activo', true).order('nombre'),
@@ -652,13 +798,9 @@
       trabajosCache = trabajos.data || [];
       repuestosCache = repuestos.data || [];
 
-      document.getElementById('cliente_id').innerHTML =
-        '<option value="">Seleccionar cliente...</option>' +
-        clientesCache.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
-      document.getElementById('item-trabajo').innerHTML =
-        trabajosCache.map(t => `<option value="${t.id}">${t.nombre} (${t.horas_estimadas} h)</option>`).join('');
-      document.getElementById('item-repuesto').innerHTML =
-        repuestosCache.map(r => `<option value="${r.id}">${r.sku ? r.sku + ' · ' : ''}${r.nombre} — ${fmtMoneda(r.precio_venta)}</option>`).join('');
+      poblarClientes();
+      poblarTrabajos();
+      poblarRepuestos();
 
       onTipoChange();
       await loadCotizaciones();

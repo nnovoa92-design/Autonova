@@ -79,6 +79,7 @@
             <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
               <button type="button" id="wa-btn" class="btn-secondary">WhatsApp</button>
               <button type="button" id="link-btn" class="btn-secondary">Copiar link</button>
+              <button type="button" id="pdf-btn" class="btn-secondary">PDF</button>
               <button type="button" id="imprimir-btn" class="btn-secondary">Imprimir</button>
               <button type="button" id="volver-btn" class="btn-secondary">Volver</button>
             </div>
@@ -116,6 +117,7 @@
   <div class="print-area" id="print-area"></div>
 
   <script src="../assets/vendor/supabase.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script src="../assets/js/supabaseClient.js"></script>
   <script src="../assets/js/layout.js"></script>
   <script src="../assets/js/checklist.js"></script>
@@ -413,7 +415,17 @@
 
     document.getElementById('imprimir-btn').addEventListener('click', () => {
       if (!inspActual) return;
-      const i = inspActual;
+      construirPrintInspeccion(inspActual);
+      window.print();
+    });
+
+    document.getElementById('pdf-btn').addEventListener('click', () => {
+      if (!inspActual) return;
+      construirPrintInspeccion(inspActual);
+      descargarPDF('print-area', `Inspeccion-${fmtNumero('INS', inspActual.numero)}`);
+    });
+
+    function construirPrintInspeccion(i) {
       document.getElementById('print-area').innerHTML = `
         <div class="print-brand">
           <img src="../assets/img/logo.png" alt="" onerror="this.style.display='none'" />
@@ -440,8 +452,7 @@
         ${inspRenderDetalle(i.datos || {})}
         ${i.observaciones ? `<h3>Observaciones</h3><p>${i.observaciones}</p>` : ''}
       `;
-      window.print();
-    });
+    }
 
     // ---------- Listado ----------
     function renderListado() {

@@ -52,6 +52,7 @@
                 <option value="true">Con IVA</option>
                 <option value="false">Sin IVA (solo neto)</option>
               </select>
+              <button type="button" id="pdf-ot-btn" class="btn-secondary">PDF</button>
               <button type="button" id="whatsapp-ot-btn" class="btn-secondary">Avisar por WhatsApp</button>
               <button type="button" id="email-ot-btn" class="btn-secondary">Avisar por correo</button>
               <button type="button" id="cerrar-detalle-btn" class="btn-secondary">Volver al listado</button>
@@ -223,7 +224,10 @@
     </div>
   </div>
 
+  <div class="print-area" id="print-area"></div>
+
   <script src="../assets/vendor/supabase.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script src="../assets/js/supabaseClient.js"></script>
   <script src="../assets/js/layout.js"></script>
   <script>
@@ -730,6 +734,38 @@
       }
       abrirEnlace(linkWhatsApp(tel, mensaje));
     });
+
+    document.getElementById('pdf-ot-btn').addEventListener('click', () => {
+      if (!ordenActual) return;
+      construirPrintOrden(ordenActual);
+      descargarPDF('print-area', fmtNumero('OT', ordenActual.numero));
+    });
+
+    function construirPrintOrden(o) {
+      const items = o.orden_items || [];
+      const t = calcularTotal(items, o.con_iva !== false);
+      const veh = o.vehiculos ? `${o.vehiculos.patente} · ${[o.vehiculos.marca, o.vehiculos.modelo].filter(Boolean).join(' ')}` : '';
+      const estadoLabel = (ESTADOS_ORDEN[o.estado] || {}).label || o.estado;
+      document.getElementById('print-area').innerHTML = `
+        <div class="print-brand"><img src="../assets/img/logo.png" alt="" onerror="this.style.display='none'" /><span class="print-brand-name">${config.nombre}</span></div>
+        <div class="print-header">
+          <div><div>${config.rut ?? ''}</div><div>${config.direccion ?? ''}</div><div>${config.telefono ?? ''}</div></div>
+          <div style="text-align:right;"><h2 style="margin:0;">${fmtNumero('OT', o.numero)}</h2><div>Ingreso: ${fmtFecha(o.fecha_ingreso)}</div><div>Estado: ${estadoLabel}</div></div>
+        </div>
+        <p><strong>Cliente:</strong> ${o.clientes ? o.clientes.nombre : '–'}<br>${veh ? `<strong>Vehículo:</strong> ${veh}` : ''}</p>
+        ${o.diagnostico ? `<p><strong>Motivo de trabajo:</strong> ${o.diagnostico}</p>` : ''}
+        <table style="width:100%; border-collapse:collapse;">
+          <thead><tr style="border-bottom:1px solid #000;"><th style="text-align:left;padding:4px;">Descripción</th><th style="text-align:right;padding:4px;">Cant.</th><th style="text-align:right;padding:4px;">P. unit.</th><th style="text-align:right;padding:4px;">Total</th></tr></thead>
+          <tbody>${items.map(i => `<tr style="border-bottom:1px solid #ccc;"><td style="padding:4px;">${i.descripcion}</td><td style="text-align:right;padding:4px;">${Number(i.cantidad).toLocaleString('es-CL')}</td><td style="text-align:right;padding:4px;">${fmtMoneda(i.precio_unitario)}</td><td style="text-align:right;padding:4px;">${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td></tr>`).join('')}</tbody>
+        </table>
+        <div style="margin-top:1rem; margin-left:auto; max-width:300px;">
+          <div style="display:flex;justify-content:space-between;"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
+          ${t.conIva ? `<div style="display:flex;justify-content:space-between;"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>` : '<div style="display:flex;justify-content:space-between;"><span>Sin IVA</span><span>–</span></div>'}
+          <div style="display:flex;justify-content:space-between;font-weight:bold;border-top:2px solid #000;margin-top:4px;padding-top:4px;"><span>TOTAL</span><span>${fmtMoneda(t.total)}</span></div>
+        </div>
+        ${(o.avances && o.avances.length) ? `<h3 style="margin-top:1.5rem;">Trabajos realizados</h3>${o.avances.map(a => `<p style="margin:0.3rem 0;">• ${a.texto || ''} <span style="color:#666;">(${fmtFecha(a.fecha)})</span></p>`).join('')}` : ''}
+      `;
+    }
 
     document.getElementById('email-ot-btn').addEventListener('click', () => {
       if (!ordenActual) return;

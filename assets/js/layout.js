@@ -103,6 +103,26 @@ function abrirEnlace(url) {
   if (!w) window.location.href = url;
 }
 
+// Descarga un elemento (el "print-area" ya armado) como archivo PDF.
+// Si la librería html2pdf no está disponible, cae a la impresión del navegador.
+function descargarPDF(elementId, nombreArchivo) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  if (typeof html2pdf === 'undefined') { window.print(); return; }
+  const prev = el.getAttribute('style') || '';
+  // El print-area está oculto por defecto; lo mostramos fuera de pantalla para capturarlo.
+  el.style.cssText = 'display:block; position:absolute; left:-9999px; top:0; width:800px; background:#fff; padding:24px;';
+  html2pdf().set({
+    margin: 8,
+    filename: (nombreArchivo || 'documento') + '.pdf',
+    image: { type: 'jpeg', quality: 0.96 },
+    html2canvas: { scale: 2, useCORS: true },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+  }).from(el).save()
+    .then(() => { el.setAttribute('style', prev); })
+    .catch(() => { el.setAttribute('style', prev); window.print(); });
+}
+
 // Mes (1-12) de revisión técnica según el último dígito de la patente
 // (calendario para vehículos particulares).
 const RT_MES_POR_DIGITO = { '9': 1, '0': 2, '1': 4, '2': 5, '3': 6, '4': 7, '5': 8, '6': 9, '7': 10, '8': 11 };
