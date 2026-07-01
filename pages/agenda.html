@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agenda · Autonova</title>
+  <link rel="stylesheet" href="../assets/css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar">
+        <h1>Agenda</h1>
+        <div style="display:flex; gap:0.5rem; align-items:center;">
+          <button id="link-reserva-btn" class="btn-secondary">Link de reserva</button>
+          <button id="nueva-btn">+ Nueva cita</button>
+        </div>
+      </header>
+      <div class="content">
+
+        <!-- Reservas online pendientes -->
+        <div class="card" id="online-card" style="display:none; border-top:3px solid var(--color-primary);">
+          <h2 style="margin-top:0;">🔔 Reservas online por confirmar</h2>
+          <div id="online-body"></div>
+        </div>
+
+        <!-- Formulario nueva cita -->
+        <div class="card" id="form-card" style="display:none;">
+          <h2 id="form-title" style="margin-top:0;">Nueva cita</h2>
+          <input type="hidden" id="cita-id" />
+          <div class="form-row">
+            <div class="form-group">
+              <label for="cliente_id">Cliente</label>
+              <select id="cliente_id"></select>
+            </div>
+            <div class="form-group">
+              <label for="vehiculo_id">Vehículo</label>
+              <select id="vehiculo_id"><option value="">Sin vehículo</option></select>
+            </div>
+            <div class="form-group">
+              <label for="trabajo_id">Trabajo / servicio</label>
+              <select id="trabajo_id"><option value="">Sin especificar</option></select>
+            </div>
+            <div class="form-group">
+              <label for="personal_id">Mecánico</label>
+              <select id="personal_id"><option value="">Sin asignar</option></select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="fecha">Fecha *</label>
+              <input type="date" id="fecha" required />
+            </div>
+            <div class="form-group">
+              <label for="hora">Hora *</label>
+              <input type="time" id="hora" step="900" required />
+            </div>
+            <div class="form-group">
+              <label for="duracion">Duración (min)</label>
+              <input type="number" id="duracion" min="15" step="15" value="60" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="notas">Notas</label>
+            <input type="text" id="notas" />
+          </div>
+          <button type="button" id="guardar-btn">Guardar cita</button>
+          <button type="button" id="cancelar-form-btn" class="btn-secondary">Cancelar</button>
+          <p class="error-message" id="form-error"></p>
+        </div>
+
+        <!-- Navegación por día -->
+        <div class="card">
+          <div class="toolbar">
+            <div style="display:flex; gap:0.5rem; align-items:center;">
+              <button id="dia-prev" class="btn-secondary">←</button>
+              <input type="date" id="dia-actual" />
+              <button id="dia-next" class="btn-secondary">→</button>
+              <button id="dia-hoy" class="btn-secondary">Hoy</button>
+            </div>
+            <span id="dia-titulo" style="font-family:var(--font-display); text-transform:uppercase; font-size:1rem;"></span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Hora</th>
+                <th>Cliente</th>
+                <th>Vehículo</th>
+                <th>Trabajo</th>
+                <th>Mecánico</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="citas-body">
+              <tr><td colspan="7">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="../assets/vendor/supabase.min.js"></script>
+  <script src="../assets/js/supabaseClient.js"></script>
+  <script src="../assets/js/layout.js"></script>
+  <script>
+    let clientesCache = [], vehiculosCache = [], trabajosCache = [], personalCache = [];
+    const ESTADOS_CITA = {
+      pendiente:  { label: 'Pendiente',  badge: 'badge-yellow' },
+      confirmado: { label: 'Confirmada', badge: 'badge-blue' },
+      completado: { label: 'Completada', badge: 'badge-green' },
+      cancelado:  { label: 'Cancelada',  badge: 'badge-red' },
+      ausente:    { label: 'No asistió', badge: 'badge-gray' },
+    };
+
+    function fmtHora(iso) { return new Date(iso).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }); }
+
+    function actualizarVehiculos() {
+      const clienteId = document.getElementById('cliente_id').value;
+      const propios = vehiculosCache.filter(v => v.cliente_id === clienteId);
+      document.getElementById('vehiculo_id').innerHTML =
+        '<option value="">Sin vehículo</option>' +
+        propios.map(v => `<option value="${v.id}">${v.patente} · ${[v.marca, v.modelo].filter(Boolean).join(' ')}</option>`).join('');
+    }
+
+    // ---------- Formulario ----------
+    function abrirForm(cita) {
+      document.getElementById('form-card').style.display = 'block';
+      document.getElementById('form-error').textContent = '';
+      if (cita) {
+        document.getElementById('form-title').textContent = `Editar cita ${fmtNumero('CITA', cita.numero)}`;
+        document.getElementById('cita-id').value = cita.id;
+        document.getElementById('cliente_id').value = cita.cliente_id ?? '';
+        actualizarVehiculos();
+        document.getElementById('vehiculo_id').value = cita.vehiculo_id ?? '';
+        document.getElementById('trabajo_id').value = cita.trabajo_id ?? '';
+        document.getElementById('personal_id').value = cita.personal_id ?? '';
+        const d = new Date(cita.fecha_hora);
+        document.getElementById('fecha').value = d.toISOString().slice(0, 10);
+        document.getElementById('hora').value = d.toTimeString().slice(0, 5);
+        document.getElementById('duracion').value = cita.duracion_min ?? 60;
+        document.getElementById('notas').value = cita.notas ?? '';
+      } else {
+        document.getElementById('form-title').textContent = 'Nueva cita';
+        document.getElementById('cita-id').value = '';
+        document.getElementById('cliente_id').value = '';
+        document.getElementById('vehiculo_id').innerHTML = '<option value="">Sin vehículo</option>';
+        document.getElementById('trabajo_id').value = '';
+        document.getElementById('personal_id').value = '';
+        document.getElementById('fecha').value = document.getElementById('dia-actual').value || new Date().toISOString().slice(0, 10);
+        document.getElementById('hora').value = '10:00';
+        document.getElementById('duracion').value = '60';
+        document.getElementById('notas').value = '';
+      }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    document.getElementById('nueva-btn').addEventListener('click', () => abrirForm(null));
+    document.getElementById('cancelar-form-btn').addEventListener('click', () => document.getElementById('form-card').style.display = 'none');
+    document.getElementById('cliente_id').addEventListener('change', actualizarVehiculos);
+
+    document.getElementById('guardar-btn').addEventListener('click', async () => {
+      const errorEl = document.getElementById('form-error');
+      errorEl.textContent = '';
+      const fecha = document.getElementById('fecha').value;
+      const hora = document.getElementById('hora').value;
+      if (!fecha || !hora) { errorEl.textContent = 'Ingresa fecha y hora.'; return; }
+      const fechaHora = new Date(`${fecha}T${hora}:00`).toISOString();
+      const payload = {
+        cliente_id: document.getElementById('cliente_id').value || null,
+        vehiculo_id: document.getElementById('vehiculo_id').value || null,
+        trabajo_id: document.getElementById('trabajo_id').value || null,
+        personal_id: document.getElementById('personal_id').value || null,
+        fecha_hora: fechaHora,
+        duracion_min: Number(document.getElementById('duracion').value) || 60,
+        notas: document.getElementById('notas').value || null,
+      };
+      const id = document.getElementById('cita-id').value;
+      let error;
+      if (id) ({ error } = await supabaseClient.from('citas').update(payload).eq('id', id));
+      else ({ error } = await supabaseClient.from('citas').insert({ ...payload, estado: 'confirmado', origen: 'interno' }));
+      if (error) { errorEl.textContent = `Error: ${error.message} (¿ejecutaste sql/actualizacion-v10-agenda.sql?)`; return; }
+      document.getElementById('form-card').style.display = 'none';
+      document.getElementById('dia-actual').value = fecha;
+      await cargar();
+    });
+
+    // ---------- Carga ----------
+    function nombreCliente(c) {
+      if (c.clientes) return c.clientes.nombre;
+      return c.nombre_contacto || '–';
+    }
+
+    function accionesCita(c) {
+      let btns = '';
+      if (c.estado === 'pendiente') btns += `<button type="button" class="btn-secondary act" data-id="${c.id}" data-e="confirmado">Confirmar</button>`;
+      if (c.estado === 'pendiente' || c.estado === 'confirmado') {
+        btns += `<button type="button" class="btn-secondary act" data-id="${c.id}" data-e="completado">Completar</button>`;
+        btns += `<button type="button" class="btn-secondary crear-ot" data-id="${c.id}">Crear OT</button>`;
+        btns += `<button type="button" class="btn-danger act" data-id="${c.id}" data-e="cancelado">Cancelar</button>`;
+      }
+      btns += `<button type="button" class="btn-secondary editar" data-id="${c.id}">Editar</button>`;
+      return btns;
+    }
+
+    let citasDia = [];
+    function renderCitas() {
+      const tbody = document.getElementById('citas-body');
+      if (!citasDia.length) {
+        tbody.innerHTML = '<tr><td colspan="7">No hay citas este día.</td></tr>';
+      } else {
+        tbody.innerHTML = citasDia.map(c => {
+          const veh = c.vehiculos ? c.vehiculos.patente : (c.patente_contacto || '–');
+          const trab = c.trabajos ? c.trabajos.nombre : (c.descripcion || '–');
+          const mec = personalCache.find(p => p.id === c.personal_id);
+          const online = c.origen === 'online' ? ' <span class="badge badge-purple">web</span>' : '';
+          return `<tr>
+            <td><strong>${fmtHora(c.fecha_hora)}</strong></td>
+            <td>${nombreCliente(c)}${online}${c.telefono_contacto ? `<br><small style="color:var(--color-text-muted);">${c.telefono_contacto}</small>` : ''}</td>
+            <td>${veh}</td>
+            <td>${trab}</td>
+            <td>${mec ? mec.nombre : '–'}</td>
+            <td>${badgeEstado(c.estado, ESTADOS_CITA)}</td>
+            <td class="table-actions">${accionesCita(c)}</td>
+          </tr>`;
+        }).join('');
+        wireAcciones(tbody);
+      }
+    }
+
+    function wireAcciones(cont) {
+      cont.querySelectorAll('.act').forEach(b => b.addEventListener('click', async () => {
+        await supabaseClient.from('citas').update({ estado: b.dataset.e }).eq('id', b.dataset.id);
+        await cargar();
+      }));
+      cont.querySelectorAll('.editar').forEach(b => b.addEventListener('click', () => {
+        const c = [...citasDia, ...onlinePendientes].find(x => x.id === b.dataset.id);
+        if (c) abrirForm(c);
+      }));
+      cont.querySelectorAll('.crear-ot').forEach(b => b.addEventListener('click', () => crearOTdesdeCita(b.dataset.id)));
+    }
+
+    async function crearOTdesdeCita(citaId) {
+      const c = [...citasDia, ...onlinePendientes].find(x => x.id === citaId);
+      if (!c || !c.cliente_id) { alert('La cita no tiene cliente asociado.'); return; }
+      if (!confirm('¿Crear una orden de trabajo desde esta cita?')) return;
+      const { data: orden, error } = await supabaseClient.from('ordenes').insert({
+        cliente_id: c.cliente_id, vehiculo_id: c.vehiculo_id, estado: 'recepcion',
+        diagnostico: c.trabajos ? c.trabajos.nombre : (c.descripcion || c.notas), notas: c.notas,
+      }).select('id, numero').single();
+      if (error) { alert('Error: ' + error.message); return; }
+      if (c.trabajo_id) {
+        const t = trabajosCache.find(x => x.id === c.trabajo_id);
+        if (t) {
+          const config = await getTallerConfig();
+          const precio = t.precio_fijo != null ? Number(t.precio_fijo) : Number(config.valor_hora);
+          const cant = t.precio_fijo != null ? 1 : Number(t.horas_estimadas || 1);
+          await supabaseClient.from('orden_items').insert({ orden_id: orden.id, tipo: 'mano_obra', trabajo_id: t.id, descripcion: t.nombre, cantidad: cant, precio_unitario: precio, orden: 1 });
+        }
+      }
+      await supabaseClient.from('citas').update({ estado: 'completado', orden_id: orden.id }).eq('id', citaId);
+      alert(`Orden ${fmtNumero('OT', orden.numero)} creada.`);
+      window.location.href = 'ordenes.html';
+    }
+
+    let onlinePendientes = [];
+    async function cargarOnline() {
+      const { data } = await supabaseClient
+        .from('citas')
+        .select('*, clientes(nombre), vehiculos(patente), trabajos(nombre)')
+        .eq('origen', 'online').eq('estado', 'pendiente')
+        .order('fecha_hora');
+      onlinePendientes = data || [];
+      const card = document.getElementById('online-card');
+      if (!onlinePendientes.length) { card.style.display = 'none'; return; }
+      card.style.display = 'block';
+      document.getElementById('online-body').innerHTML = `<table><tbody>${onlinePendientes.map(c => `
+        <tr>
+          <td><strong>${fmtFecha(c.fecha_hora)} ${fmtHora(c.fecha_hora)}</strong></td>
+          <td>${nombreCliente(c)}${c.telefono_contacto ? ` · ${c.telefono_contacto}` : ''}</td>
+          <td>${c.trabajos ? c.trabajos.nombre : (c.descripcion || '–')}</td>
+          <td>${c.patente_contacto || (c.vehiculos ? c.vehiculos.patente : '–')}</td>
+          <td class="table-actions">
+            <button type="button" class="btn-secondary act" data-id="${c.id}" data-e="confirmado">Confirmar</button>
+            <button type="button" class="btn-danger act" data-id="${c.id}" data-e="cancelado">Rechazar</button>
+          </td>
+        </tr>`).join('')}</tbody></table>`;
+      wireAcciones(document.getElementById('online-body'));
+    }
+
+    async function cargar() {
+      const dia = document.getElementById('dia-actual').value;
+      document.getElementById('dia-titulo').textContent =
+        new Date(dia + 'T12:00:00').toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' });
+      const desde = new Date(dia + 'T00:00:00').toISOString();
+      const hasta = new Date(dia + 'T23:59:59').toISOString();
+      const { data, error } = await supabaseClient
+        .from('citas')
+        .select('*, clientes(nombre), vehiculos(patente, marca, modelo), trabajos(nombre)')
+        .gte('fecha_hora', desde).lte('fecha_hora', hasta)
+        .order('fecha_hora');
+      if (error) {
+        document.getElementById('citas-body').innerHTML = `<tr><td colspan="7">Error: ${error.message} (¿ejecutaste sql/actualizacion-v10-agenda.sql?)</td></tr>`;
+        return;
+      }
+      citasDia = data;
+      renderCitas();
+      await cargarOnline();
+    }
+
+    document.getElementById('dia-actual').addEventListener('change', cargar);
+    document.getElementById('dia-prev').addEventListener('click', () => { moverDia(-1); });
+    document.getElementById('dia-next').addEventListener('click', () => { moverDia(1); });
+    document.getElementById('dia-hoy').addEventListener('click', () => { document.getElementById('dia-actual').value = new Date().toISOString().slice(0, 10); cargar(); });
+    function moverDia(n) {
+      const d = new Date(document.getElementById('dia-actual').value + 'T12:00:00');
+      d.setDate(d.getDate() + n);
+      document.getElementById('dia-actual').value = d.toISOString().slice(0, 10);
+      cargar();
+    }
+
+    document.getElementById('link-reserva-btn').addEventListener('click', async () => {
+      const url = `${window.location.origin}/reservar.html`;
+      try { await navigator.clipboard.writeText(url); alert('Link de reserva copiado (compártelo con tus clientes):\n' + url); }
+      catch { prompt('Link de reserva para tus clientes:', url); }
+    });
+
+    (async () => {
+      const session = await initLayout('agenda');
+      if (!session) return;
+      const [clientes, vehiculos, trabajos, personal] = await Promise.all([
+        supabaseClient.from('clientes').select('id, nombre').eq('activo', true).order('nombre'),
+        supabaseClient.from('vehiculos').select('*').eq('activo', true).order('patente'),
+        supabaseClient.from('trabajos').select('*').eq('activo', true).order('nombre'),
+        supabaseClient.from('personal').select('*').eq('activo', true).order('nombre'),
+      ]);
+      clientesCache = clientes.data || [];
+      vehiculosCache = vehiculos.data || [];
+      trabajosCache = trabajos.data || [];
+      personalCache = personal.data || [];
+      document.getElementById('cliente_id').innerHTML = '<option value="">Sin cliente</option>' + clientesCache.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
+      document.getElementById('trabajo_id').innerHTML = '<option value="">Sin especificar</option>' + trabajosCache.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('');
+      document.getElementById('personal_id').innerHTML = '<option value="">Sin asignar</option>' + personalCache.map(p => `<option value="${p.id}">${p.nombre}</option>`).join('');
+      document.getElementById('dia-actual').value = new Date().toISOString().slice(0, 10);
+      await cargar();
+    })();
+  </script>
+</body>
+</html>

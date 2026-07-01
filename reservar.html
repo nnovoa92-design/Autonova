@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reservar hora · Autonova</title>
+  <link rel="stylesheet" href="assets/css/style.css" />
+  <style>
+    .slots-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 0.5rem; margin-top: 0.5rem; }
+    .slot-btn {
+      padding: 0.6rem 0.4rem; text-align: center; border: 1px solid var(--color-border);
+      border-radius: var(--radius); cursor: pointer; background: #fff; font-weight: 600; font-size: 0.9rem;
+    }
+    .slot-btn:hover { border-color: var(--color-primary); }
+    .slot-btn.sel { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+    .slot-btn.taken { opacity: 0.35; cursor: not-allowed; text-decoration: line-through; }
+    .trab-btn { display: block; width: 100%; text-align: left; margin: 0.3rem 0; background: #fff; color: var(--color-text); border: 1px solid var(--color-border); }
+    .trab-btn.sel, .trab-btn:hover { border-color: var(--color-primary); }
+    .paso { margin-top: 1rem; }
+    .paso[hidden] { display: none; }
+  </style>
+</head>
+<body class="portal-page">
+  <div class="brand-band" style="max-width:640px; width:100%; margin-bottom:1rem;">
+    <img src="assets/img/logo.png" alt="Autonova" onerror="this.style.display='none'" />
+    <div class="brand-band-text">
+      <div class="brand-band-name" id="taller-nombre">Autonova</div>
+      <div class="brand-band-sub">Reserva tu hora en el taller</div>
+    </div>
+  </div>
+
+  <div class="portal-card" id="tarjeta" style="max-width:640px;">
+    <p id="cargando">Cargando...</p>
+
+    <div id="wizard" style="display:none;">
+      <!-- Paso 1: servicio -->
+      <div class="paso" id="p-servicio">
+        <h3 style="margin-top:0;">1. ¿Qué necesitas?</h3>
+        <div id="trabajos-lista"></div>
+      </div>
+
+      <!-- Paso 2: fecha -->
+      <div class="paso" id="p-fecha" hidden>
+        <h3>2. Elige el día</h3>
+        <input type="date" id="fecha" />
+      </div>
+
+      <!-- Paso 3: hora -->
+      <div class="paso" id="p-hora" hidden>
+        <h3>3. Elige la hora</h3>
+        <div id="slots"></div>
+      </div>
+
+      <!-- Paso 4: datos -->
+      <div class="paso" id="p-datos" hidden>
+        <h3>4. Tus datos</h3>
+        <div class="form-row">
+          <div class="form-group"><label for="r-nombre">Nombre *</label><input type="text" id="r-nombre" /></div>
+          <div class="form-group"><label for="r-tel">Teléfono / WhatsApp *</label><input type="tel" id="r-tel" placeholder="+56 9 ..." /></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label for="r-patente">Patente</label><input type="text" id="r-patente" style="text-transform:uppercase;" /></div>
+        </div>
+        <div class="form-group"><label for="r-notas">Comentario (opcional)</label><input type="text" id="r-notas" /></div>
+        <button type="button" id="reservar-btn">Confirmar reserva</button>
+        <p class="error-message" id="error"></p>
+      </div>
+    </div>
+
+    <!-- Confirmación -->
+    <div id="confirmacion" style="display:none; text-align:center;">
+      <div style="font-size:3rem;">✅</div>
+      <h2>¡Reserva registrada!</h2>
+      <div id="confirm-detalle" style="text-align:left; max-width:400px; margin:1rem auto;"></div>
+      <p style="color:var(--color-text-muted);">El taller confirmará tu hora a la brevedad. Te contactaremos si hay algún cambio.</p>
+    </div>
+  </div>
+
+  <script src="assets/vendor/supabase.min.js"></script>
+  <script src="assets/js/supabaseClient.js"></script>
+  <script src="assets/js/layout.js"></script>
+  <script>
+    let INFO = null, HORARIOS = {}, SLOT_MIN = 60;
+    let selTrabajo = null, selFecha = null, selSlot = null;
+
+    function getSlots(dow) {
+      const h = HORARIOS[dow];
+      if (!h) return [];
+      const slots = [];
+      let [hh, mm] = h.desde.split(':').map(Number);
+      const [eh, em] = h.hasta.split(':').map(Number);
+      while (hh < eh || (hh === eh && mm < em)) {
+        slots.push(`${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`);
+        mm += SLOT_MIN; if (mm >= 60) { hh += Math.floor(mm / 60); mm %= 60; }
+      }
+      return slots;
+    }
+
+    function mostrarPaso(id) { document.getElementById(id).hidden = false; }
+
+    function renderTrabajos() {
+      document.getElementById('trabajos-lista').innerHTML = (INFO.trabajos || []).map(t =>
+        `<button type="button" class="btn trab-btn" data-id="${t.id}">${t.nombre}${t.precio_fijo != null ? ` — ${fmtMoneda(t.precio_fijo)}` : ''}</button>`
+      ).join('') || '<p>No hay servicios disponibles.</p>';
+      document.querySelectorAll('.trab-btn').forEach(b => b.addEventListener('click', () => {
+        selTrabajo = (INFO.trabajos || []).find(t => t.id === b.dataset.id);
+        document.querySelectorAll('.trab-btn').forEach(x => x.classList.remove('sel'));
+        b.classList.add('sel');
+        mostrarPaso('p-fecha');
+        document.getElementById('p-fecha').scrollIntoView({ behavior: 'smooth' });
+      }));
+    }
+
+    async function cargarSlots() {
+      const cont = document.getElementById('slots');
+      const fechaStr = document.getElementById('fecha').value;
+      if (!fechaStr) return;
+      selFecha = new Date(fechaStr + 'T12:00:00');
+      const dow = selFecha.getDay();
+      const slots = getSlots(dow);
+      if (!slots.length) { cont.innerHTML = '<p style="color:var(--color-text-muted);">Ese día no atendemos. Elige otro.</p>'; return; }
+
+      cont.innerHTML = 'Consultando disponibilidad...';
+      const { data: ocupados } = await supabaseClient.rpc('reservar_ocupados', { p_fecha: fechaStr });
+      const taken = ocupados || [];
+      const ahora = new Date();
+      const esHoy = fechaStr === ahora.toISOString().slice(0, 10);
+
+      let html = '<div class="slots-grid">';
+      for (const s of slots) {
+        const [sh, sm] = s.split(':').map(Number);
+        const slotTime = new Date(selFecha); slotTime.setHours(sh, sm, 0, 0);
+        const pasado = esHoy && slotTime <= ahora;
+        if (taken.includes(s) || pasado) html += `<div class="slot-btn taken">${s}</div>`;
+        else html += `<div class="slot-btn" data-slot="${s}">${s}</div>`;
+      }
+      html += '</div>';
+      cont.innerHTML = html;
+      cont.querySelectorAll('.slot-btn:not(.taken)').forEach(el => el.addEventListener('click', () => {
+        cont.querySelectorAll('.slot-btn').forEach(x => x.classList.remove('sel'));
+        el.classList.add('sel');
+        selSlot = el.dataset.slot;
+        mostrarPaso('p-datos');
+        document.getElementById('p-datos').scrollIntoView({ behavior: 'smooth' });
+      }));
+      mostrarPaso('p-hora');
+    }
+
+    document.getElementById('fecha').addEventListener('change', cargarSlots);
+
+    document.getElementById('reservar-btn').addEventListener('click', async () => {
+      const errorEl = document.getElementById('error');
+      errorEl.textContent = '';
+      const nombre = document.getElementById('r-nombre').value.trim();
+      const tel = document.getElementById('r-tel').value.trim();
+      if (!nombre || !tel) { errorEl.textContent = 'Completa nombre y teléfono.'; return; }
+      if (!selTrabajo || !selFecha || !selSlot) { errorEl.textContent = 'Elige servicio, día y hora.'; return; }
+
+      const ymd = document.getElementById('fecha').value;
+      const fechaHora = new Date(`${ymd}T${selSlot}:00`).toISOString();
+      const btn = document.getElementById('reservar-btn');
+      btn.disabled = true; btn.textContent = 'Reservando...';
+      const { data, error } = await supabaseClient.rpc('reservar_cita', {
+        p_nombre: nombre, p_telefono: tel,
+        p_patente: document.getElementById('r-patente').value.trim() || null,
+        p_fecha_hora: fechaHora, p_trabajo_id: selTrabajo.id,
+        p_notas: document.getElementById('r-notas').value.trim() || null,
+      });
+      btn.disabled = false; btn.textContent = 'Confirmar reserva';
+      if (error || !data || data.ok === false) {
+        errorEl.textContent = (data && data.error) || 'No se pudo reservar. Intenta de nuevo.';
+        if (data && data.error && data.error.includes('tomado')) cargarSlots();
+        return;
+      }
+      const fechaTxt = selFecha.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' });
+      document.getElementById('confirm-detalle').innerHTML = `
+        <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>Servicio</span><strong>${selTrabajo.nombre}</strong></div>
+        <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>Día</span><strong>${fechaTxt}</strong></div>
+        <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>Hora</span><strong>${selSlot} hrs</strong></div>
+        <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>A nombre de</span><strong>${nombre}</strong></div>`;
+      document.getElementById('wizard').style.display = 'none';
+      document.getElementById('confirmacion').style.display = 'block';
+      document.getElementById('confirmacion').scrollIntoView({ behavior: 'smooth' });
+    });
+
+    (async () => {
+      const { data, error } = await supabaseClient.rpc('reservar_info');
+      if (error || !data) {
+        document.getElementById('cargando').textContent = 'No se pudo cargar la reserva. Intenta más tarde o contacta al taller.';
+        return;
+      }
+      INFO = data;
+      if (data.taller && data.taller.nombre) {
+        document.getElementById('taller-nombre').textContent = data.taller.nombre;
+      }
+      const h = data.horarios || {};
+      SLOT_MIN = Number(h.slot_min) || 60;
+      const lv = { desde: h.apertura || '09:00', hasta: h.cierre || '18:00' };
+      HORARIOS = { 1: lv, 2: lv, 3: lv, 4: lv, 5: lv, 6: { desde: h.sab_apertura || '09:00', hasta: h.sab_cierre || '13:00' } };
+      // límites del date input: hoy a +60 días
+      const hoy = new Date();
+      const max = new Date(); max.setDate(max.getDate() + 60);
+      document.getElementById('fecha').min = hoy.toISOString().slice(0, 10);
+      document.getElementById('fecha').max = max.toISOString().slice(0, 10);
+      document.getElementById('cargando').style.display = 'none';
+      document.getElementById('wizard').style.display = 'block';
+      renderTrabajos();
+    })();
+  </script>
+</body>
+</html>
