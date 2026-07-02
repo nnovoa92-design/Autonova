@@ -59,6 +59,41 @@
               El valor hora calcula el precio de los trabajos del catálogo que no tienen precio fijo.
             </p>
 
+            <h2>Horarios de atención</h2>
+            <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
+              Se usan en la agenda y en la página de reserva online para mostrar los slots disponibles.
+            </p>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="hora_apertura">Lun–Vie apertura</label>
+                <input type="time" id="hora_apertura" />
+              </div>
+              <div class="form-group">
+                <label for="hora_cierre">Lun–Vie cierre</label>
+                <input type="time" id="hora_cierre" />
+              </div>
+              <div class="form-group">
+                <label for="sab_apertura">Sábado apertura</label>
+                <input type="time" id="sab_apertura" />
+              </div>
+              <div class="form-group">
+                <label for="sab_cierre">Sábado cierre</label>
+                <input type="time" id="sab_cierre" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="slot_min">Duración de cada slot</label>
+                <select id="slot_min">
+                  <option value="30">30 minutos</option>
+                  <option value="45">45 minutos</option>
+                  <option value="60">60 minutos (1 hora)</option>
+                  <option value="90">90 minutos</option>
+                  <option value="120">120 minutos (2 horas)</option>
+                </select>
+              </div>
+            </div>
+
             <h2>Reparto de mano de obra (opcional)</h2>
             <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
               Porcentajes manuales para repartir la mano de obra de cada orden de trabajo.
@@ -95,7 +130,7 @@
   <script src="../assets/js/supabaseClient.js"></script>
   <script src="../assets/js/layout.js"></script>
   <script>
-    const CAMPOS = ['nombre','rut','telefono','email','direccion','valor_hora','iva_pct','pct_mecanico','pct_dueno','pct_taller'];
+    const CAMPOS = ['nombre','rut','telefono','email','direccion','valor_hora','iva_pct','pct_mecanico','pct_dueno','pct_taller','hora_apertura','hora_cierre','sab_apertura','sab_cierre','slot_min'];
 
     function actualizarSuma() {
       const suma = ['pct_mecanico','pct_dueno','pct_taller']
@@ -126,7 +161,7 @@
       const payload = {};
       CAMPOS.forEach(id => {
         const v = document.getElementById(id).value;
-        payload[id] = ['valor_hora','iva_pct','pct_mecanico','pct_dueno','pct_taller'].includes(id)
+        payload[id] = ['valor_hora','iva_pct','pct_mecanico','pct_dueno','pct_taller','slot_min'].includes(id)
           ? Number(v || 0)
           : (v || null);
       });
