@@ -406,13 +406,15 @@
         .select('*, clientes(nombre), vehiculos(patente, marca, modelo), trabajos(nombre)')
         .gte('fecha_hora', desde).lte('fecha_hora', hasta)
         .order('fecha_hora');
+      citasDia = data || [];
+      renderCitas(); // siempre renderizar la grilla de slots aunque falle la query
       if (error) {
-        document.getElementById('horario-grid').innerHTML =
-          `<div class="sin-horario">Error: ${error.message}<br>(¿ejecutaste sql/actualizacion-v10-agenda.sql?)</div>`;
+        document.getElementById('horario-grid').insertAdjacentHTML('afterbegin',
+          `<div style="padding:0.5rem 0.75rem; background:#fff3cd; color:#856404; font-size:0.85rem; border-bottom:1px solid var(--color-border);">
+            ⚠ Error cargando citas: ${error.message}
+          </div>`);
         return;
       }
-      citasDia = data;
-      renderCitas();
       await cargarOnline();
     }
 
