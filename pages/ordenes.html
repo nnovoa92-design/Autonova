@@ -431,11 +431,13 @@
         grid.innerHTML = `<p class="error-message">No se pudieron listar las fotos: ${error.message}</p>`;
         return;
       }
-      if (!data || !data.length) {
+      // Filtrar para excluir carpeta de abonos (solo mostrar fotos del vehículo)
+      const fotos = (data || []).filter(f => !f.name.startsWith('abonos/'));
+      if (!fotos || !fotos.length) {
         grid.innerHTML = '<p style="color:var(--color-text-muted); font-size:0.85rem;">Sin fotos todavía.</p>';
         return;
       }
-      grid.innerHTML = data.map(f => {
+      grid.innerHTML = fotos.map(f => {
         const url = supabaseClient.storage.from('fotos-ot').getPublicUrl(`${ordenActual.id}/${f.name}`).data.publicUrl;
         return `
         <div class="foto-item">
@@ -493,11 +495,12 @@
       let voucherPath = null;
       if (metodo === 'transferencia' && voucherAboroPendiente) {
         const ext = voucherAboroPendiente.name.split('.').pop();
-        const voucherId = `${ordenActual.id}_abono_${Date.now()}.${ext}`;
+        const voucherId = `abono_${Date.now()}.${ext}`;
+        const voucherRuta = `${ordenActual.id}/abonos/${voucherId}`;
         const { error: uploadError } = await supabaseClient.storage
-          .from('fotos-ot').upload(`abonos/${voucherId}`, voucherAboroPendiente);
+          .from('fotos-ot').upload(voucherRuta, voucherAboroPendiente);
         if (uploadError) { errorEl.textContent = 'Error al subir voucher: ' + uploadError.message; return; }
-        voucherPath = `abonos/${voucherId}`;
+        voucherPath = voucherRuta;
       }
 
       const { error } = await supabaseClient.from('abonos').insert({
