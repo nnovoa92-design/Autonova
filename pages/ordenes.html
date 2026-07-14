@@ -115,6 +115,59 @@
           </table>
           <div class="totales" id="totales"></div>
 
+          <h3 style="margin-top:1.5rem;">Abonos y pagos</h3>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.5rem;">
+            Registra abonos parciales. Se calcula automáticamente el saldo pendiente.
+          </p>
+          <div class="form-row" style="align-items:end; flex-wrap:wrap;">
+            <div class="form-group">
+              <label for="abono-monto">Monto *</label>
+              <input type="number" id="abono-monto" min="0" step="1" style="max-width:120px;" />
+            </div>
+            <div class="form-group">
+              <label for="abono-fecha">Fecha *</label>
+              <input type="date" id="abono-fecha" style="max-width:140px;" />
+            </div>
+            <div class="form-group">
+              <label for="abono-hora">Hora</label>
+              <input type="time" id="abono-hora" style="max-width:110px;" />
+            </div>
+            <div class="form-group">
+              <label for="abono-metodo">Método *</label>
+              <select id="abono-metodo" style="max-width:140px;">
+                <option value="">Seleccionar...</option>
+                <option value="efectivo">Efectivo</option>
+                <option value="tarjeta_debito">Tarjeta débito</option>
+                <option value="tarjeta_credito">Tarjeta crédito</option>
+                <option value="transferencia">Transferencia</option>
+                <option value="otro">Otro</option>
+              </select>
+            </div>
+            <div class="form-group" id="grupo-voucher" style="display:none;">
+              <label class="btn btn-secondary" style="cursor:pointer; display:inline-block; padding:0.4rem 0.8rem; font-size:0.9rem;">
+                📄 Voucher
+                <input type="file" id="abono-voucher" accept="image/*,.pdf" style="display:none;" />
+              </label>
+              <span id="voucher-estado" style="font-size:0.75rem; color:var(--color-text-muted); margin-left:0.4rem;">Sin archivo</span>
+            </div>
+            <div class="form-group" style="flex:0;">
+              <button type="button" id="agregar-abono-btn">+ Agregar abono</button>
+            </div>
+          </div>
+          <p class="error-message" id="abono-error"></p>
+          <table id="abonos-table" style="display:none; width:100%; margin-top:0.75rem;">
+            <thead>
+              <tr style="border-bottom:1px solid #ddd;">
+                <th style="text-align:left; padding:0.5rem;">Fecha</th>
+                <th style="text-align:left; padding:0.5rem;">Método</th>
+                <th style="text-align:right; padding:0.5rem;">Monto</th>
+                <th style="text-align:center; padding:0.5rem;">Voucher</th>
+                <th style="text-align:center; padding:0.5rem;">Acción</th>
+              </tr>
+            </thead>
+            <tbody id="abonos-body"></tbody>
+          </table>
+
           <h3 style="margin-top:1.5rem;">Fotos del vehículo</h3>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.5rem;">
             Estado de recepción, daños previos y evidencia del trabajo realizado.
@@ -304,6 +357,7 @@
       renderHoras();
       renderAvances();
       await cargarFotos();
+      await cargarAbonos();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
@@ -399,6 +453,109 @@
       });
     }
 
+    // ---------- Abonos (pagos parciales) ----------
+    let abonosActuales = [];
+    let voucherAboroPendiente = null;
+
+    document.getElementById('abono-metodo').addEventListener('change', (e) => {
+      const mostrar = e.target.value === 'transferencia';
+      document.getElementById('grupo-voucher').style.display = mostrar ? 'block' : 'none';
+    });
+
+    document.getElementById('abono-voucher').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        document.getElementById('voucher-estado').textContent = `✓ ${file.name}`;
+        voucherAboroPendiente = file;
+      }
+    });
+
+    document.getElementById('agregar-abono-btn').addEventListener('click', async () => {
+      const monto = Number(document.getElementById('abono-monto').value);
+      const fecha = document.getElementById('abono-fecha').value;
+      const hora = document.getElementById('abono-hora').value || null;
+      const metodo = document.getElementById('abono-metodo').value;
+      const errorEl = document.getElementById('abono-error');
+      errorEl.textContent = '';
+
+      if (!monto || !fecha || !metodo) { errorEl.textContent = 'Faltan datos requeridos.'; return; }
+      if (monto <= 0) { errorEl.textContent = 'El monto debe ser mayor a 0.'; return; }
+
+      let voucherUrl = null;
+      if (metodo === 'transferencia' && voucherAboroPendiente) {
+        const fileName = `abonos/${Date.now()}_${voucherAboroPendiente.name}`;
+        const { error: uploadError } = await supabaseClient.storage
+          .from('fotos-ot').upload(`${ordenActual.id}/${fileName}`, voucherAboroPendiente);
+        if (uploadError) { errorEl.textContent = 'Error al subir voucher: ' + uploadError.message; return; }
+        voucherUrl = supabaseClient.storage.from('fotos-ot').getPublicUrl(`${ordenActual.id}/${fileName}`).data.publicUrl;
+      }
+
+      const { error } = await supabaseClient.from('abonos').insert({
+        orden_id: ordenActual.id,
+        monto,
+        metodo_pago: metodo,
+        fecha,
+        hora,
+        voucher_url: voucherUrl
+      });
+
+      if (error) { errorEl.textContent = 'Error: ' + error.message; return; }
+
+      document.getElementById('abono-monto').value = '';
+      document.getElementById('abono-fecha').value = '';
+      document.getElementById('abono-hora').value = '';
+      document.getElementById('abono-metodo').value = '';
+      document.getElementById('abono-voucher').value = '';
+      document.getElementById('voucher-estado').textContent = 'Sin archivo';
+      voucherAboroPendiente = null;
+      document.getElementById('grupo-voucher').style.display = 'none';
+
+      await abrirDetalle(ordenActual.id);
+    });
+
+    async function cargarAbonos() {
+      if (!ordenActual) return;
+      const { data, error } = await supabaseClient
+        .from('abonos')
+        .select('*')
+        .eq('orden_id', ordenActual.id)
+        .order('fecha', { ascending: false });
+
+      abonosActuales = data || [];
+      renderAbonos();
+      renderItemsDetalle(); // Recalcula totales con abonos
+    }
+
+    function renderAbonos() {
+      const table = document.getElementById('abonos-table');
+      const tbody = document.getElementById('abonos-body');
+
+      if (!abonosActuales.length) {
+        table.style.display = 'none';
+        return;
+      }
+
+      table.style.display = 'table';
+      tbody.innerHTML = abonosActuales.map(a => `
+        <tr style="border-bottom:1px solid #eee;">
+          <td style="padding:0.5rem;">${fmtFecha(a.fecha)}${a.hora ? ` ${a.hora}` : ''}</td>
+          <td style="padding:0.5rem;">${a.metodo_pago.replace('_', ' ')}</td>
+          <td style="text-align:right; padding:0.5rem;"><strong>${fmtMoneda(a.monto)}</strong></td>
+          <td style="text-align:center; padding:0.5rem;">${a.voucher_url ? `<a href="${a.voucher_url}" target="_blank">📄</a>` : '–'}</td>
+          <td style="text-align:center; padding:0.5rem;">
+            <button type="button" class="btn-danger abono-del-btn" data-id="${a.id}" style="padding:0.2rem 0.5rem;">✕</button>
+          </td>
+        </tr>`).join('');
+
+      tbody.querySelectorAll('.abono-del-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('¿Eliminar este abono?')) return;
+          await supabaseClient.from('abonos').delete().eq('id', btn.dataset.id);
+          await abrirDetalle(ordenActual.id);
+        });
+      });
+    }
+
     function cerrarDetalle() {
       ordenActual = null;
       document.getElementById('detalle-card').style.display = 'none';
@@ -429,7 +586,9 @@
       });
 
       const t = calcularTotal(items, ordenActual.con_iva !== false);
-      const pagado = (ordenActual.pagos || []).reduce((s, p) => s + Number(p.monto), 0);
+      const pagadoPagos = (ordenActual.pagos || []).reduce((s, p) => s + Number(p.monto), 0);
+      const pagadoAbonos = (ordenActual.abonos || []).reduce((s, a) => s + Number(a.monto), 0);
+      const pagado = pagadoPagos + pagadoAbonos;
 
       // Reparto de mano de obra según porcentajes manuales de la configuración
       const sumaPcts = Number(config.pct_mecanico || 0) + Number(config.pct_dueno || 0) + Number(config.pct_taller || 0);
@@ -641,7 +800,7 @@
     async function loadOrdenes() {
       const { data, error } = await supabaseClient
         .from('ordenes')
-        .select('*, clientes(nombre, telefono, email), vehiculos(patente, marca, modelo), orden_items(*), registro_horas(*), pagos(monto)')
+        .select('*, clientes(nombre, telefono, email), vehiculos(patente, marca, modelo), orden_items(*), registro_horas(*), pagos(monto), abonos(monto)')
         .order('creado_en', { ascending: false });
       if (error) {
         document.getElementById('ordenes-body').innerHTML = `<tr><td colspan="7">Error: ${error.message}</td></tr>`;
