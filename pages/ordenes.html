@@ -481,13 +481,14 @@
       if (!monto || !fecha || !metodo) { errorEl.textContent = 'Faltan datos requeridos.'; return; }
       if (monto <= 0) { errorEl.textContent = 'El monto debe ser mayor a 0.'; return; }
 
-      let voucherUrl = null;
+      let voucherPath = null;
       if (metodo === 'transferencia' && voucherAboroPendiente) {
-        const fileName = `abonos/${Date.now()}_${voucherAboroPendiente.name}`;
+        const ext = voucherAboroPendiente.name.split('.').pop();
+        const voucherId = `${ordenActual.id}_abono_${Date.now()}.${ext}`;
         const { error: uploadError } = await supabaseClient.storage
-          .from('fotos-ot').upload(`${ordenActual.id}/${fileName}`, voucherAboroPendiente);
+          .from('fotos-ot').upload(`abonos/${voucherId}`, voucherAboroPendiente);
         if (uploadError) { errorEl.textContent = 'Error al subir voucher: ' + uploadError.message; return; }
-        voucherUrl = supabaseClient.storage.from('fotos-ot').getPublicUrl(`${ordenActual.id}/${fileName}`).data.publicUrl;
+        voucherPath = `abonos/${voucherId}`;
       }
 
       const { error } = await supabaseClient.from('abonos').insert({
@@ -496,7 +497,7 @@
         metodo_pago: metodo,
         fecha,
         hora,
-        voucher_url: voucherUrl
+        voucher_url: voucherPath
       });
 
       if (error) { errorEl.textContent = 'Error: ' + error.message; return; }
@@ -536,16 +537,23 @@
       }
 
       table.style.display = 'table';
-      tbody.innerHTML = abonosActuales.map(a => `
+      tbody.innerHTML = abonosActuales.map(a => {
+        let voucherLink = '–';
+        if (a.voucher_url) {
+          const publicUrl = supabaseClient.storage.from('fotos-ot').getPublicUrl(a.voucher_url).data.publicUrl;
+          voucherLink = `<a href="${publicUrl}" target="_blank">📄</a>`;
+        }
+        return `
         <tr style="border-bottom:1px solid #eee;">
           <td style="padding:0.5rem;">${fmtFecha(a.fecha)}${a.hora ? ` ${a.hora}` : ''}</td>
           <td style="padding:0.5rem;">${a.metodo_pago.replace('_', ' ')}</td>
           <td style="text-align:right; padding:0.5rem;"><strong>${fmtMoneda(a.monto)}</strong></td>
-          <td style="text-align:center; padding:0.5rem;">${a.voucher_url ? `<a href="${a.voucher_url}" target="_blank">📄</a>` : '–'}</td>
+          <td style="text-align:center; padding:0.5rem;">${voucherLink}</td>
           <td style="text-align:center; padding:0.5rem;">
             <button type="button" class="btn-danger abono-del-btn" data-id="${a.id}" style="padding:0.2rem 0.5rem;">✕</button>
           </td>
-        </tr>`).join('');
+        </tr>`;
+      }).join('');
 
       tbody.querySelectorAll('.abono-del-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
