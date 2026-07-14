@@ -449,7 +449,8 @@
       grid.querySelectorAll('.foto-del-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
           if (!confirm('¿Eliminar esta foto?')) return;
-          await supabaseClient.storage.from('fotos-ot').remove([`${ordenActual.id}/${btn.dataset.name}`]);
+          const { error } = await supabaseClient.storage.from('fotos-ot').remove([`${ordenActual.id}/${btn.dataset.name}`]);
+          if (error) { alert('Error al eliminar: ' + error.message); return; }
           await cargarFotos();
         });
       });
