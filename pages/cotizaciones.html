@@ -494,11 +494,7 @@
           if (!c) return;
           if (!config) config = await getTallerConfig();
           construirPrintCotizacion(c);
-          const el = document.getElementById('print-area');
-          el.classList.add('visible');
-          await new Promise(resolve => setTimeout(resolve, 300));
-          descargarPDF('print-area', `Cotizacion-${fmtNumero('COT', c.numero)}`);
-          el.classList.remove('visible');
+          window.print();
         });
       });
       // Botón compartir (dropdown)

@@ -116,23 +116,27 @@ function descargarPDF(elementId, nombreArchivo) {
     innerHTML_length: el.innerHTML.length,
     offsetHeight: el.offsetHeight,
     offsetWidth: el.offsetWidth,
-    computedStyle: window.getComputedStyle(el).display
+    computedStyle: window.getComputedStyle(el).display,
+    display_important: window.getComputedStyle(el, null).getPropertyValue('display')
   });
 
   const prev = el.getAttribute('style') || '';
-  el.style.width = '800px';
-  el.style.backgroundColor = '#fff';
-  el.style.padding = '24px';
 
   html2pdf().set({
     margin: 8,
     filename: (nombreArchivo || 'documento') + '.pdf',
     image: { type: 'jpeg', quality: 0.96 },
-    html2canvas: { scale: 2, useCORS: true },
+    html2canvas: { scale: 2, useCORS: true, logging: false },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
   }).from(el).save()
-    .then(() => { el.setAttribute('style', prev); })
-    .catch((e) => { el.setAttribute('style', prev); console.error('PDF error:', e); window.print(); });
+    .then(() => {
+      setTimeout(() => { el.setAttribute('style', prev); }, 100);
+    })
+    .catch((e) => {
+      console.error('PDF error:', e);
+      setTimeout(() => { el.setAttribute('style', prev); }, 100);
+      window.print();
+    });
 }
 
 // Mes (1-12) de revisión técnica según el último dígito de la patente

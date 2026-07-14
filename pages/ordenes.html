@@ -950,11 +950,7 @@
       if (!ordenActual) return;
       if (!config) config = await getTallerConfig();
       construirPrintOrden(ordenActual);
-      const el = document.getElementById('print-area');
-      el.classList.add('visible');
-      await new Promise(resolve => setTimeout(resolve, 300));
-      descargarPDF('print-area', fmtNumero('OT', ordenActual.numero));
-      el.classList.remove('visible');
+      window.print();
     });
 
     function construirPrintOrden(o) {
