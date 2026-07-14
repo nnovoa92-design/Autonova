@@ -43,47 +43,71 @@
       const pendiente = d.estado === 'borrador' || d.estado === 'enviada';
 
       document.getElementById('contenido').innerHTML = `
-        <div class="toolbar">
-          <h2 style="margin:0;">Cotización ${fmtNumero('COT', d.numero)}</h2>
-          ${badgeEstado(d.estado, ESTADOS_COTIZACION)}
-        </div>
-        <p style="color:var(--color-text-muted); margin:0.25rem 0 1rem;">
-          ${d.cliente ? d.cliente.nombre : ''}
-          ${d.vehiculo ? ` · ${d.vehiculo.patente} (${[d.vehiculo.marca, d.vehiculo.modelo].filter(Boolean).join(' ')})` : ''}
-          · Fecha: ${fmtFecha(d.fecha)} · Válida por ${d.validez_dias} días
-        </p>
-        <table>
-          <thead><tr><th>Descripción</th><th>Cant.</th><th>P. unitario</th><th>Total</th></tr></thead>
-          <tbody>
-            ${(d.items || []).map(i => `<tr>
-              <td>${i.descripcion}</td>
-              <td>${Number(i.cantidad).toLocaleString('es-CL')}</td>
-              <td>${fmtMoneda(i.precio_unitario)}</td>
-              <td>${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td>
-            </tr>`).join('')}
-          </tbody>
-        </table>
-        <div class="totales">
-          <div class="fila"><span>Subtotal</span><span>${fmtMoneda(t.subtotal)}</span></div>
-          ${t.descuento > 0 ? `<div class="fila"><span>Descuento</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
-          <div class="fila"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
-          ${t.conIva ? `<div class="fila"><span>IVA ${t.ivaPct}%</span><span>${fmtMoneda(t.iva)}</span></div>` : '<div class="fila" style="color:var(--color-text-muted);"><span>Sin IVA</span><span>–</span></div>'}
-          <div class="fila total"><span>Total</span><span>${fmtMoneda(t.total)}</span></div>
-        </div>
-        ${d.notas ? `<p style="margin-top:1rem;"><strong>Notas:</strong> ${d.notas}</p>` : ''}
+        <div style="max-width:680px; margin:0 auto;">
+          <div style="text-align:center; margin-bottom:1.5rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+              <h2 style="margin:0;">COTIZACIÓN ${fmtNumero('COT', d.numero)}</h2>
+              ${badgeEstado(d.estado, ESTADOS_COTIZACION)}
+            </div>
+            <p style="color:var(--color-text-muted); margin:0; font-size:0.9rem;">
+              <strong>${d.cliente ? d.cliente.nombre : '–'}</strong>
+              ${d.vehiculo ? `<br>${d.vehiculo.patente} · ${[d.vehiculo.marca, d.vehiculo.modelo].filter(Boolean).join(' ')}` : ''}
+              <br><span style="font-size:0.85rem;">Emitida: ${fmtFecha(d.fecha)} · Válida por ${d.validez_dias} días</span>
+            </p>
+          </div>
 
-        ${mensajeRespuesta ? `<p style="margin-top:1rem; font-weight:700;">${mensajeRespuesta}</p>` : ''}
+          <table style="width:100%; border-collapse:collapse; margin-bottom:1.5rem;">
+            <thead>
+              <tr style="border-bottom:2px solid var(--color-primary);">
+                <th style="text-align:left; padding:0.5rem 0.5rem 0.75rem;">Descripción</th>
+                <th style="text-align:center; padding:0.5rem 0.5rem 0.75rem; width:80px;">Cant.</th>
+                <th style="text-align:right; padding:0.5rem 0.5rem 0.75rem; width:110px;">P. unitario</th>
+                <th style="text-align:right; padding:0.5rem 0.5rem 0.75rem; width:110px;">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(d.items || []).map((i, idx) => `<tr style="border-bottom:1px solid #eee; ${idx === d.items.length - 1 ? 'border-bottom:2px solid var(--color-primary);' : ''}">
+                <td style="padding:0.6rem 0.5rem;">${i.descripcion}</td>
+                <td style="text-align:center; padding:0.6rem 0.5rem;">${Number(i.cantidad).toLocaleString('es-CL')}</td>
+                <td style="text-align:right; padding:0.6rem 0.5rem;">${fmtMoneda(i.precio_unitario)}</td>
+                <td style="text-align:right; padding:0.6rem 0.5rem;"><strong>${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</strong></td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
 
-        ${pendiente && !mensajeRespuesta ? `
-        <div style="margin-top:1.5rem; display:flex; gap:0.75rem; flex-wrap:wrap;">
-          <button type="button" id="aprobar-btn">✓ Aprobar cotización</button>
-          <button type="button" id="rechazar-btn" class="btn-danger">✕ Rechazar</button>
+          <div style="max-width:300px; margin-left:auto; margin-right:0; margin-bottom:1.5rem;">
+            <div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid #eee;"><span>Subtotal</span><span>${fmtMoneda(t.subtotal)}</span></div>
+            ${t.descuento > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid #eee;"><span>Descuento (${d.descuento_pct}%)</span><span style="color:#c33;">-${fmtMoneda(t.descuento)}</span></div>` : ''}
+            <div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid #eee;"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
+            ${t.conIva ? `<div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:2px solid var(--color-primary);"><span>IVA ${t.ivaPct}%</span><span>${fmtMoneda(t.iva)}</span></div>` : ''}
+            <div style="display:flex; justify-content:space-between; padding:0.6rem 0; font-weight:700; font-size:1.1rem;"><span>TOTAL</span><span style="color:var(--color-primary);">${fmtMoneda(t.total)}</span></div>
+          </div>
+
+          ${d.notas ? `<div style="background:#f9f9f9; padding:0.75rem; border-left:3px solid var(--color-primary); margin-bottom:1.5rem;"><strong>Notas:</strong> ${d.notas}</div>` : ''}
+
+          ${mensajeRespuesta ? `
+          <div style="background:#e8f5e9; padding:1rem; border-radius:4px; color:#1b5e20; font-weight:600; text-align:center; margin-bottom:1rem;">
+            ${mensajeRespuesta}
+            ${d.estado === 'aprobada' ? `
+              <div style="margin-top:1rem; display:flex; gap:0.5rem; justify-content:center; flex-wrap:wrap;">
+                <button type="button" id="agendar-btn" onclick="window.location='${window.location.origin}/reservar.html'" style="background:#1b5e20; color:#fff; border:none; padding:0.5rem 1rem; border-radius:4px; cursor:pointer; font-size:0.9rem;">📅 Agendar cita online</button>
+                <button type="button" onclick="const txt='Mi cotización COT-${d.numero} fue aprobada. Necesito agendar una cita. ' + window.location; window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank');" style="background:#25d366; color:#fff; border:none; padding:0.5rem 1rem; border-radius:4px; cursor:pointer; font-size:0.9rem;">💬 Avisar por WhatsApp</button>
+              </div>
+            ` : ''}
+          </div>` : ''}
+
+          ${pendiente && !mensajeRespuesta ? `
+          <div style="display:flex; gap:0.75rem; flex-wrap:wrap; justify-content:center; margin-top:1.5rem;">
+            <button type="button" id="aprobar-btn" style="padding:0.75rem 1.5rem; font-size:1rem;">✓ Aprobar cotización</button>
+            <button type="button" id="rechazar-btn" class="btn-danger" style="padding:0.75rem 1.5rem; font-size:1rem;">✕ Rechazar</button>
+          </div>
+          <p class="error-message" id="respuesta-error"></p>` : ''}
+
+          ${d.taller ? `<div style="text-align:center; color:var(--color-text-muted); font-size:0.8rem; margin-top:2rem; padding-top:1rem; border-top:1px solid #eee;">
+            <p style="margin:0.25rem 0;"><strong>${d.taller.nombre}</strong></p>
+            <p style="margin:0.1rem 0; font-size:0.75rem;">${d.taller.direccion ?? ''} · ${d.taller.telefono ?? ''}</p>
+          </div>` : ''}
         </div>
-        <p class="error-message" id="respuesta-error"></p>` : ''}
-
-        ${d.taller ? `<p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:1.5rem;">
-          ${d.taller.nombre} · ${d.taller.direccion ?? ''} · ${d.taller.telefono ?? ''}
-        </p>` : ''}
       `;
 
       const aprobarBtn = document.getElementById('aprobar-btn');
