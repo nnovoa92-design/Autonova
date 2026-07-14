@@ -602,22 +602,7 @@ th {
 }
 
 /* ---------- Impresión de cotización / OT ---------- */
-.print-area {
-  display: none;
-  width: 800px;
-  background: #fff;
-  padding: 24px;
-}
-
-.print-area.visible {
-  display: block;
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: 99999;
-  opacity: 0;
-  pointer-events: none;
-}
+.print-area { display: none; }
 
 .print-brand {
   display: flex;
@@ -651,15 +636,8 @@ th {
 }
 
 @media print {
-  body * { visibility: hidden; }
-  .print-area, .print-area * { visibility: visible; }
-  .print-area {
-    display: block;
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%;
-    padding: 0 0 1.5rem;
-    background: #fff;
-    opacity: 1;
-  }
+  body { margin: 0; padding: 0; }
+  body > * { display: none !important; }
+  .print-area { display: block !important; margin: 0; padding: 0; width: 100%; }
+  .print-area > *:not(.print-brand) { padding-left: 1.5rem; padding-right: 1.5rem; }
 }
