@@ -735,9 +735,11 @@
       abrirEnlace(linkWhatsApp(tel, mensaje));
     });
 
-    document.getElementById('pdf-ot-btn').addEventListener('click', () => {
+    document.getElementById('pdf-ot-btn').addEventListener('click', async () => {
       if (!ordenActual) return;
+      if (!config) config = await getTallerConfig();
       construirPrintOrden(ordenActual);
+      await new Promise(resolve => setTimeout(resolve, 100));
       descargarPDF('print-area', fmtNumero('OT', ordenActual.numero));
     });
 

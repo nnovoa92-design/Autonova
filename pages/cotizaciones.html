@@ -23,6 +23,7 @@
           <div class="form-row">
             <div class="form-group">
               <label for="cliente_id">Cliente *</label>
+              <input type="text" id="cliente-search" placeholder="Buscar cliente..." style="margin-bottom:0.25rem; width:100%;" />
               <div class="select-con-boton">
                 <select id="cliente_id" required></select>
                 <button type="button" class="btn-secondary btn-mini" id="nuevo-cliente-btn">+ Nuevo</button>
@@ -66,6 +67,7 @@
             </div>
             <div class="form-group" id="grupo-trabajo">
               <label for="item-trabajo">Trabajo precargado</label>
+              <input type="text" id="trabajo-search" placeholder="Buscar trabajo..." style="margin-bottom:0.25rem; width:100%; display:none;" />
               <div class="select-con-boton">
                 <select id="item-trabajo"></select>
                 <button type="button" class="btn-secondary btn-mini" id="nuevo-trabajo-btn">+ Nuevo</button>
@@ -73,6 +75,7 @@
             </div>
             <div class="form-group" id="grupo-repuesto" style="display:none;">
               <label for="item-repuesto">Repuesto</label>
+              <input type="text" id="repuesto-search" placeholder="Buscar repuesto..." style="margin-bottom:0.25rem; width:100%; display:none;" />
               <div class="select-con-boton">
                 <select id="item-repuesto"></select>
                 <button type="button" class="btn-secondary btn-mini" id="nuevo-repuesto-btn">+ Nuevo</button>
@@ -266,6 +269,8 @@
       document.getElementById('grupo-trabajo').style.display = tipo === 'mano_obra' ? 'block' : 'none';
       document.getElementById('grupo-repuesto').style.display = tipo === 'repuesto' ? 'block' : 'none';
       document.getElementById('grupo-descripcion').style.display = libre ? 'block' : 'none';
+      document.getElementById('trabajo-search').style.display = tipo === 'mano_obra' ? 'block' : 'none';
+      document.getElementById('repuesto-search').style.display = tipo === 'repuesto' ? 'block' : 'none';
       // Para un trabajo del catálogo, la cantidad = N° de trabajos; el precio se calcula solo.
       document.getElementById('item-cantidad').parentElement.style.display = 'block';
       document.getElementById('item-precio').parentElement.style.display = tipo === 'mano_obra' ? 'none' : 'block';
@@ -444,12 +449,17 @@
           <td>${badgeEstado(c.estado, ESTADOS_COTIZACION)}</td>
           <td class="table-actions">
             ${editable ? `<button type="button" class="btn-secondary editar-btn" data-id="${c.id}">Editar</button>` : ''}
-            <button type="button" class="btn-secondary pdf-btn" data-id="${c.id}">PDF</button>
-            <button type="button" class="btn-secondary imprimir-btn" data-id="${c.id}">Imprimir</button>
-            <button type="button" class="btn-secondary whatsapp-btn" data-id="${c.id}">WhatsApp</button>
-            <button type="button" class="btn-secondary email-btn" data-id="${c.id}">Correo</button>
+            <button type="button" class="btn-secondary pdf-btn" data-id="${c.id}">📄 PDF</button>
+            <div class="dropdown" style="position:relative; display:inline-block;">
+              <button type="button" class="btn-secondary compartir-btn" data-id="${c.id}">📤 Compartir</button>
+              <div class="dropdown-menu" style="position:absolute; top:100%; right:0; background:#fff; border:1px solid #ddd; border-radius:4px; min-width:140px; z-index:10; display:none; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+                <button type="button" class="dropdown-item whatsapp-btn-menu" data-id="${c.id}" style="display:block; width:100%; text-align:left; padding:8px 12px; border:none; background:none; cursor:pointer; color:var(--color-text);">📱 WhatsApp</button>
+                <button type="button" class="dropdown-item email-btn-menu" data-id="${c.id}" style="display:block; width:100%; text-align:left; padding:8px 12px; border:none; background:none; cursor:pointer; color:var(--color-text); border-top:1px solid #eee;">✉️ Correo</button>
+              </div>
+            </div>
             ${c.estado !== 'convertida' ? `<button type="button" class="btn-secondary link-btn" data-id="${c.id}">Copiar link</button>` : ''}
-            ${c.estado === 'borrador' ? `<button type="button" class="estado-btn" data-id="${c.id}" data-estado="enviada">Marcar enviada</button>` : ''}
+            ${c.estado === 'borrador' ? `<button type="button" class="estado-btn" data-id="${c.id}" data-estado="enviada">Marcar enviada</button>
+              <button type="button" class="btn-danger eliminar-btn" data-id="${c.id}">Eliminar</button>` : ''}
             ${c.estado === 'enviada' ? `<button type="button" class="estado-btn" data-id="${c.id}" data-estado="aprobada">Aprobar</button>
               <button type="button" class="btn-danger estado-btn" data-id="${c.id}" data-estado="rechazada">Rechazar</button>` : ''}
             ${puedeConvertir ? `<button type="button" class="convertir-btn" data-id="${c.id}">Convertir a OT</button>` : ''}
@@ -463,23 +473,46 @@
           if (c) abrirEditor(c);
         });
       });
-      tbody.querySelectorAll('.imprimir-btn').forEach(btn => {
-        btn.addEventListener('click', () => imprimirCotizacion(btn.dataset.id));
-      });
       tbody.querySelectorAll('.pdf-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', async () => {
           const c = cotizacionesCache.find(x => x.id === btn.dataset.id);
           if (!c) return;
+          if (!config) config = await getTallerConfig(); // Asegurar que config esté cargado
           construirPrintCotizacion(c);
+          await new Promise(resolve => setTimeout(resolve, 100)); // Pequeño delay para DOM
           descargarPDF('print-area', `Cotizacion-${fmtNumero('COT', c.numero)}`);
         });
       });
-      tbody.querySelectorAll('.whatsapp-btn').forEach(btn => {
-        btn.addEventListener('click', () => enviarWhatsApp(btn.dataset.id));
+      // Botón compartir (dropdown)
+      tbody.querySelectorAll('.compartir-btn').forEach(btn => {
+        const dropdown = btn.parentElement.querySelector('.dropdown-menu');
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+        });
       });
-      tbody.querySelectorAll('.email-btn').forEach(btn => {
-        btn.addEventListener('click', () => enviarEmail(btn.dataset.id));
+
+      // Opciones del dropdown
+      tbody.querySelectorAll('.whatsapp-btn-menu').forEach(btn => {
+        btn.addEventListener('click', () => {
+          enviarWhatsApp(btn.dataset.id);
+          btn.closest('.dropdown-menu').style.display = 'none';
+        });
       });
+      tbody.querySelectorAll('.email-btn-menu').forEach(btn => {
+        btn.addEventListener('click', () => {
+          enviarEmail(btn.dataset.id);
+          btn.closest('.dropdown-menu').style.display = 'none';
+        });
+      });
+
+      // Cerrar dropdown al clickear fuera
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('.dropdown')) {
+          tbody.querySelectorAll('.dropdown-menu').forEach(m => m.style.display = 'none');
+        }
+      });
+
       tbody.querySelectorAll('.link-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
           const url = linkPublicoCotizacion(btn.dataset.id);
@@ -499,6 +532,14 @@
       });
       tbody.querySelectorAll('.convertir-btn').forEach(btn => {
         btn.addEventListener('click', () => convertirAOrden(btn.dataset.id));
+      });
+      tbody.querySelectorAll('.eliminar-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('¿Eliminar esta cotización? No se puede deshacer.')) return;
+          const { error } = await supabaseClient.from('cotizaciones').delete().eq('id', btn.dataset.id);
+          if (error) { alert('Error: ' + error.message); return; }
+          await loadCotizaciones();
+        });
       });
     }
 
@@ -672,6 +713,34 @@
         repuestosCache.map(r => `<option value="${r.id}">${r.sku ? r.sku + ' · ' : ''}${r.nombre} — ${fmtMoneda(r.precio_venta)}</option>`).join('');
       if (sel) document.getElementById('item-repuesto').value = sel;
     }
+
+    // ---------- Búsqueda rápida en dropdowns ----------
+    function setupSearch(inputId, selectId, dataArray, labelFn) {
+      const input = document.getElementById(inputId);
+      const select = document.getElementById(selectId);
+      if (!input || !select) return;
+
+      input.addEventListener('input', () => {
+        const query = input.value.toLowerCase();
+        const options = select.querySelectorAll('option');
+        options.forEach(opt => {
+          if (opt.value === '') opt.style.display = 'block';
+          else {
+            const text = labelFn(dataArray.find(d => d.id === opt.value) || {}).toLowerCase();
+            opt.style.display = text.includes(query) ? 'block' : 'none';
+          }
+        });
+      });
+
+      select.addEventListener('focus', () => { input.style.display = 'block'; input.focus(); });
+      input.addEventListener('blur', () => {
+        setTimeout(() => { if (select.value) input.style.display = 'none'; }, 100);
+      });
+    }
+
+    setupSearch('cliente-search', 'cliente_id', clientesCache, c => c.nombre);
+    setupSearch('trabajo-search', 'item-trabajo', trabajosCache, t => `${t.nombre} (${t.horas_estimadas} h)`);
+    setupSearch('repuesto-search', 'item-repuesto', repuestosCache, r => `${r.sku ? r.sku + ' · ' : ''}${r.nombre}`);
 
     // ---------- Modales "+ Nuevo" ----------
     const $backdrop = document.getElementById('modal-backdrop');
