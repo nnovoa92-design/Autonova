@@ -37,7 +37,7 @@ create table if not exists service_policy_trabajos (
 create table if not exists service_policy_repuestos (
   id uuid primary key default uuid_generate_v4(),
   policy_id uuid references service_policies(id) on delete cascade,
-  repuesto_id uuid references inventario(id) on delete cascade,
+  repuesto_id uuid references repuestos(id) on delete cascade,
   recomendado boolean default true,
   cantidad_tipica numeric(10, 2) default 1,
   orden int default 0,

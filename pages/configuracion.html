@@ -336,7 +336,7 @@
         : { data: [] };
       const selectedRepuestoIds = new Set((policyRepuestos || []).map(r => r.repuesto_id));
 
-      const { data: repuestos } = await supabaseClient.from('inventario').select('id, nombre, codigo').order('nombre').limit(50);
+      const { data: repuestos } = await supabaseClient.from('repuestos').select('id, nombre, codigo').order('nombre').limit(50);
       const repuestosEl = document.getElementById('policy-repuestos');
       repuestosEl.innerHTML = '';
       (repuestos || []).forEach(r => {
