@@ -85,6 +85,16 @@
               <label for="item-descripcion">Descripción</label>
               <input type="text" id="item-descripcion" />
             </div>
+            <div class="form-group" id="grupo-tipo-otro" style="display:none; max-width:150px;">
+              <label for="item-tipo-otro">Clasificar como</label>
+              <select id="item-tipo-otro">
+                <option value="">Otro</option>
+                <option value="repuesto">Repuesto</option>
+                <option value="trabajo">Trabajo externo</option>
+                <option value="mano_obra">Mano de obra</option>
+                <option value="insumo">Insumo</option>
+              </select>
+            </div>
             <div class="form-group" style="max-width:110px;">
               <label for="item-cantidad" id="item-cantidad-label">Horas</label>
               <input type="number" id="item-cantidad" value="1" min="0" step="0.25" />
@@ -269,6 +279,7 @@
       document.getElementById('grupo-trabajo').style.display = tipo === 'mano_obra' ? 'block' : 'none';
       document.getElementById('grupo-repuesto').style.display = tipo === 'repuesto' ? 'block' : 'none';
       document.getElementById('grupo-descripcion').style.display = libre ? 'block' : 'none';
+      document.getElementById('grupo-tipo-otro').style.display = tipo === 'otro' ? 'block' : 'none';
       document.getElementById('trabajo-search').style.display = tipo === 'mano_obra' ? 'block' : 'none';
       document.getElementById('repuesto-search').style.display = tipo === 'repuesto' ? 'block' : 'none';
       // Para un trabajo del catálogo, la cantidad = N° de trabajos; el precio se calcula solo.
@@ -316,7 +327,7 @@
 
       const cantidad = Number(document.getElementById('item-cantidad').value) || 0;
       const precio = Number(document.getElementById('item-precio').value) || 0;
-      let descripcion = '', repuesto_id = null;
+      let descripcion = '', repuesto_id = null, tipo_otro = null;
 
       if (tipo === 'repuesto') {
         const r = repuestosCache.find(x => x.id === document.getElementById('item-repuesto').value);
@@ -326,10 +337,14 @@
       } else {
         descripcion = document.getElementById('item-descripcion').value.trim();
         if (!descripcion) return;
+        if (tipo === 'otro') {
+          tipo_otro = document.getElementById('item-tipo-otro').value || 'otro';
+        }
       }
 
-      itemsActuales.push({ tipo, trabajo_id: null, repuesto_id, descripcion, cantidad, precio_unitario: precio });
+      itemsActuales.push({ tipo, trabajo_id: null, repuesto_id, descripcion, cantidad, precio_unitario: precio, tipo_otro });
       document.getElementById('item-descripcion').value = '';
+      document.getElementById('item-tipo-otro').value = '';
       renderItems();
     }
 
@@ -681,6 +696,35 @@
         ${c.notas ? `<p style="margin-top:1.5rem;"><strong>Notas:</strong> ${c.notas}</p>` : ''}
       `;
     }
+
+    // ---------- Auto-numeración en textareas ----------
+    function setupAutoList(textareaId) {
+      const textarea = document.getElementById(textareaId);
+      if (!textarea) return;
+      textarea.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        const text = textarea.value;
+        const pos = textarea.selectionStart;
+        const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
+        const line = text.substring(lineStart, pos);
+        const match = line.match(/^(\d+\.|[a-z]\.|[-•*])\s+/);
+        if (!match) return;
+        e.preventDefault();
+        const prefix = match[1];
+        let nextPrefix = '';
+        if (/^\d+\.$/.test(prefix)) {
+          nextPrefix = (parseInt(prefix) + 1) + '. ';
+        } else if (/^[a-z]\.$/.test(prefix)) {
+          const char = prefix.charCodeAt(0);
+          nextPrefix = char < 122 ? String.fromCharCode(char + 1) + '. ' : prefix + ' ';
+        } else {
+          nextPrefix = prefix + ' ';
+        }
+        textarea.value = text.substring(0, pos) + '\n' + nextPrefix + text.substring(pos);
+        textarea.selectionStart = textarea.selectionEnd = pos + 1 + nextPrefix.length;
+      });
+    }
+    setupAutoList('notas');
 
     // ---------- Carga de datos ----------
     async function loadCotizaciones() {

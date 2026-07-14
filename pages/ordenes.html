@@ -338,6 +338,36 @@
       });
     }
 
+    // ---------- Auto-numeración en textareas ----------
+    function setupAutoList(textareaId) {
+      const textarea = document.getElementById(textareaId);
+      if (!textarea) return;
+      textarea.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        const text = textarea.value;
+        const pos = textarea.selectionStart;
+        const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
+        const line = text.substring(lineStart, pos);
+        const match = line.match(/^(\d+\.|[a-z]\.|[-•*])\s+/);
+        if (!match) return;
+        e.preventDefault();
+        const prefix = match[1];
+        let nextPrefix = '';
+        if (/^\d+\.$/.test(prefix)) {
+          nextPrefix = (parseInt(prefix) + 1) + '. ';
+        } else if (/^[a-z]\.$/.test(prefix)) {
+          const char = prefix.charCodeAt(0);
+          nextPrefix = char < 122 ? String.fromCharCode(char + 1) + '. ' : prefix + ' ';
+        } else {
+          nextPrefix = prefix + ' ';
+        }
+        textarea.value = text.substring(0, pos) + '\n' + nextPrefix + text.substring(pos);
+        textarea.selectionStart = textarea.selectionEnd = pos + 1 + nextPrefix.length;
+      });
+    }
+    setupAutoList('nueva-diagnostico');
+    setupAutoList('detalle-diagnostico');
+
     // ---------- Fotos (Supabase Storage, bucket "fotos-ot") ----------
     async function cargarFotos() {
       if (!ordenActual) return;
