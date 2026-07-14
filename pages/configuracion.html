@@ -250,7 +250,7 @@
 
     async function loadPolicies() {
       // Cargar categorías con sus políticas
-      const { data: cats } = await supabaseClient.from('trabajo_categorias').select('*').order('nombre');
+      const { data: cats } = await supabaseClient.from('categorias_trabajos').select('*').order('nombre');
 
       // Cargar políticas existentes
       const { data: policies } = await supabaseClient.from('service_policies')
@@ -295,7 +295,7 @@
     }
 
     async function openPolicyModal(categoryId) {
-      const { data: cat } = await supabaseClient.from('trabajo_categorias').select('*').eq('id', categoryId).single();
+      const { data: cat } = await supabaseClient.from('categorias_trabajos').select('*').eq('id', categoryId).single();
       if (!cat) return;
 
       let policy = allPolicies.find(p => p.categoria_id === categoryId);

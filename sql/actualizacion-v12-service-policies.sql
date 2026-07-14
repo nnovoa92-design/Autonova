@@ -9,7 +9,7 @@
 -- Tabla de políticas de servicio (una por categoría de trabajo)
 create table if not exists service_policies (
   id uuid primary key default uuid_generate_v4(),
-  categoria_id uuid references trabajo_categorias(id) on delete cascade,
+  categoria_id uuid references categorias_trabajos(id) on delete cascade,
   nombre text not null,
   descripcion text,
   garantia_meses int default 0,
