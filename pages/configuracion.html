@@ -122,6 +122,73 @@
           </form>
         </div>
 
+        <div class="card">
+          <h2 style="margin-top:0;">Políticas de Servicio</h2>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
+            Define garantías, trabajos recomendados y repuestos típicos para cada categoría de servicio.
+          </p>
+          <div id="policies-list" style="display:grid; gap:1rem;">
+            <!-- Se llena dinámicamente -->
+          </div>
+        </div>
+
+        <!-- Modal para editar política -->
+        <div id="policy-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.7); z-index:1000; align-items:center; justify-content:center;">
+          <div class="card" style="max-width:600px; max-height:90vh; overflow-y:auto; width:90%;">
+            <h3 id="policy-title" style="margin-top:0;">Editar política</h3>
+            <form id="policy-form">
+              <input type="hidden" id="policy-id" />
+
+              <div class="form-group">
+                <label>Categoría de servicio</label>
+                <input type="text" id="policy-categoria" disabled style="background:#f5f5f5; cursor:not-allowed;" />
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="policy-garantia-meses">Meses de garantía</label>
+                  <input type="number" id="policy-garantia-meses" min="0" max="60" />
+                </div>
+                <div class="form-group">
+                  <label for="policy-garantia-tipo">Tipo de garantía</label>
+                  <select id="policy-garantia-tipo">
+                    <option value="ninguna">Ninguna</option>
+                    <option value="trabajo">Mano de obra</option>
+                    <option value="repuestos">Repuestos</option>
+                    <option value="ambos">Ambos (trabajo + repuestos)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="policy-tiempo-estimado">Tiempo estimado (horas)</label>
+                <input type="number" id="policy-tiempo-estimado" min="0" step="0.5" />
+              </div>
+
+              <div class="form-group">
+                <label for="policy-notas">Notas especiales</label>
+                <textarea id="policy-notas" rows="3" style="font-size:0.9rem;"></textarea>
+              </div>
+
+              <h4 style="margin-top:1.5rem; margin-bottom:0.5rem;">Trabajos recomendados</h4>
+              <div id="policy-trabajos" style="max-height:150px; overflow-y:auto; border:1px solid #ddd; padding:0.5rem; border-radius:4px; margin-bottom:1rem;">
+                <!-- Se llena dinámicamente -->
+              </div>
+
+              <h4 style="margin-top:1rem; margin-bottom:0.5rem;">Repuestos típicos</h4>
+              <div id="policy-repuestos" style="max-height:150px; overflow-y:auto; border:1px solid #ddd; padding:0.5rem; border-radius:4px; margin-bottom:1rem;">
+                <!-- Se llena dinámicamente -->
+              </div>
+
+              <div style="display:flex; gap:0.5rem; justify-content:flex-end;">
+                <button type="button" id="policy-cancel-btn" class="btn-secondary" style="padding:0.5rem 1rem;">Cancelar</button>
+                <button type="submit" style="padding:0.5rem 1rem;">Guardar política</button>
+              </div>
+              <p class="error-message" id="policy-error"></p>
+            </form>
+          </div>
+        </div>
+
       </div>
     </div>
   </div>
@@ -176,6 +243,180 @@
       okEl.textContent = 'Configuración guardada.';
     });
 
+    // ========== Políticas de Servicio ==========
+    let allTrabajos = [];
+    let allRepuestos = [];
+    let allPolicies = [];
+
+    async function loadPolicies() {
+      // Cargar categorías con sus políticas
+      const { data: cats } = await supabaseClient.from('trabajo_categorias').select('*').order('nombre');
+
+      // Cargar políticas existentes
+      const { data: policies } = await supabaseClient.from('service_policies')
+        .select('*')
+        .order('nombre');
+
+      allPolicies = policies || [];
+
+      const listEl = document.getElementById('policies-list');
+      listEl.innerHTML = '';
+
+      (cats || []).forEach(cat => {
+        const policy = allPolicies.find(p => p.categoria_id === cat.id) || {
+          id: null,
+          categoria_id: cat.id,
+          nombre: cat.nombre,
+          garantia_meses: 0,
+          garantia_tipo: 'trabajo',
+          notas: ''
+        };
+
+        const card = document.createElement('div');
+        card.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:1rem; border:1px solid #ddd; border-radius:4px; background:#fafafa;';
+        card.innerHTML = `
+          <div>
+            <strong>${cat.nombre}</strong>
+            <div style="font-size:0.85rem; color:var(--color-text-muted); margin-top:0.25rem;">
+              ${policy.garantia_meses ? `${policy.garantia_meses} meses de garantía` : 'Sin garantía configurada'}
+            </div>
+          </div>
+          <button type="button" class="edit-policy-btn" data-category-id="${cat.id}" style="padding:0.5rem 1rem;">
+            Editar
+          </button>
+        `;
+        listEl.appendChild(card);
+      });
+
+      // Event listeners para editar
+      document.querySelectorAll('.edit-policy-btn').forEach(btn => {
+        btn.addEventListener('click', () => openPolicyModal(btn.dataset.categoryId));
+      });
+    }
+
+    async function openPolicyModal(categoryId) {
+      const { data: cat } = await supabaseClient.from('trabajo_categorias').select('*').eq('id', categoryId).single();
+      if (!cat) return;
+
+      let policy = allPolicies.find(p => p.categoria_id === categoryId);
+      if (!policy) {
+        policy = { id: null, categoria_id: categoryId, nombre: cat.nombre, garantia_meses: 0, garantia_tipo: 'trabajo', tiempo_estimado_horas: null, notas: '' };
+      }
+
+      document.getElementById('policy-id').value = policy.id || '';
+      document.getElementById('policy-title').textContent = `Política: ${cat.nombre}`;
+      document.getElementById('policy-categoria').value = cat.nombre;
+      document.getElementById('policy-garantia-meses').value = policy.garantia_meses || 0;
+      document.getElementById('policy-garantia-tipo').value = policy.garantia_tipo || 'trabajo';
+      document.getElementById('policy-tiempo-estimado').value = policy.tiempo_estimado_horas || '';
+      document.getElementById('policy-notas').value = policy.notas || '';
+
+      // Cargar trabajos recomendados
+      const { data: policyTrabajos } = policy.id
+        ? await supabaseClient.from('service_policy_trabajos').select('trabajo_id').eq('policy_id', policy.id)
+        : { data: [] };
+      const selectedTrabajoIds = new Set((policyTrabajos || []).map(t => t.trabajo_id));
+
+      const { data: trabajos } = await supabaseClient.from('trabajos').select('id, nombre, categoria_id').eq('categoria_id', categoryId).order('nombre');
+      const trabajosEl = document.getElementById('policy-trabajos');
+      trabajosEl.innerHTML = '';
+      (trabajos || []).forEach(t => {
+        const checkbox = document.createElement('label');
+        checkbox.style.cssText = 'display:flex; align-items:center; gap:0.5rem; padding:0.25rem 0; cursor:pointer; font-size:0.9rem;';
+        checkbox.innerHTML = `
+          <input type="checkbox" data-trabajo-id="${t.id}" ${selectedTrabajoIds.has(t.id) ? 'checked' : ''} />
+          ${t.nombre}
+        `;
+        trabajosEl.appendChild(checkbox);
+      });
+
+      // Cargar repuestos típicos (sin filtro de categoría, todos disponibles)
+      const { data: policyRepuestos } = policy.id
+        ? await supabaseClient.from('service_policy_repuestos').select('repuesto_id').eq('policy_id', policy.id)
+        : { data: [] };
+      const selectedRepuestoIds = new Set((policyRepuestos || []).map(r => r.repuesto_id));
+
+      const { data: repuestos } = await supabaseClient.from('inventario').select('id, nombre, codigo').order('nombre').limit(50);
+      const repuestosEl = document.getElementById('policy-repuestos');
+      repuestosEl.innerHTML = '';
+      (repuestos || []).forEach(r => {
+        const checkbox = document.createElement('label');
+        checkbox.style.cssText = 'display:flex; align-items:center; gap:0.5rem; padding:0.25rem 0; cursor:pointer; font-size:0.9rem;';
+        checkbox.innerHTML = `
+          <input type="checkbox" data-repuesto-id="${r.id}" ${selectedRepuestoIds.has(r.id) ? 'checked' : ''} />
+          ${r.nombre} ${r.codigo ? `(${r.codigo})` : ''}
+        `;
+        repuestosEl.appendChild(checkbox);
+      });
+
+      document.getElementById('policy-modal').style.display = 'flex';
+    }
+
+    document.getElementById('policy-cancel-btn').addEventListener('click', () => {
+      document.getElementById('policy-modal').style.display = 'none';
+    });
+
+    document.getElementById('policy-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorEl = document.getElementById('policy-error');
+      errorEl.textContent = '';
+
+      const categoryId = document.getElementById('policy-categoria').value;
+      const categoryIdForQuery = Array.from(document.querySelectorAll('.edit-policy-btn'))
+        .find(btn => btn.textContent.includes('Editar'))?.dataset.categoryId;
+
+      const policyId = document.getElementById('policy-id').value || null;
+      const payload = {
+        categoria_id: document.getElementById('policy-categoria').parentElement.parentElement
+          .querySelector('input[disabled]').value === '' ? null : categoryId,
+        nombre: document.getElementById('policy-categoria').value,
+        garantia_meses: Number(document.getElementById('policy-garantia-meses').value) || 0,
+        garantia_tipo: document.getElementById('policy-garantia-tipo').value,
+        tiempo_estimado_horas: Number(document.getElementById('policy-tiempo-estimado').value) || null,
+        notas: document.getElementById('policy-notas').value || null
+      };
+
+      // Extraer categoria_id correctamente
+      const cat = Array.from(document.querySelectorAll('.edit-policy-btn')).find(btn => {
+        return btn.parentElement.textContent.includes(payload.nombre);
+      });
+      if (cat) payload.categoria_id = cat.dataset.categoryId;
+
+      try {
+        let savedPolicy;
+        if (policyId) {
+          await supabaseClient.from('service_policies').update(payload).eq('id', policyId);
+          savedPolicy = { ...allPolicies.find(p => p.id === policyId), ...payload };
+        } else {
+          const { data } = await supabaseClient.from('service_policies').insert([payload]).select().single();
+          savedPolicy = data;
+        }
+
+        // Guardar trabajos relacionados
+        if (savedPolicy) {
+          const selectedTrabajos = Array.from(document.querySelectorAll('[data-trabajo-id]'))
+            .filter(cb => cb.checked)
+            .map(cb => ({ policy_id: savedPolicy.id, trabajo_id: cb.dataset.trabajoId }));
+
+          const selectedRepuestos = Array.from(document.querySelectorAll('[data-repuesto-id]'))
+            .filter(cb => cb.checked)
+            .map(cb => ({ policy_id: savedPolicy.id, repuesto_id: cb.dataset.repuestoId }));
+
+          // Limpiar y reinsertar
+          await supabaseClient.from('service_policy_trabajos').delete().eq('policy_id', savedPolicy.id);
+          await supabaseClient.from('service_policy_repuestos').delete().eq('policy_id', savedPolicy.id);
+
+          if (selectedTrabajos.length) await supabaseClient.from('service_policy_trabajos').insert(selectedTrabajos);
+          if (selectedRepuestos.length) await supabaseClient.from('service_policy_repuestos').insert(selectedRepuestos);
+        }
+
+        document.getElementById('policy-modal').style.display = 'none';
+        await loadPolicies();
+      } catch (error) {
+        errorEl.textContent = `Error: ${error.message}`;
+      }
+    });
+
     (async () => {
       const session = await initLayout('configuracion');
       if (!session) return;
@@ -189,6 +430,9 @@
         if (data[id] != null) document.getElementById(id).value = data[id];
       });
       actualizarSuma();
+
+      // Cargar políticas de servicio
+      await loadPolicies();
     })();
   </script>
 </body>
