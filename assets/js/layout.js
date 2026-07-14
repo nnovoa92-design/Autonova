@@ -108,11 +108,22 @@ function abrirEnlace(url) {
 // Si la librería html2pdf no está disponible, cae a la impresión del navegador.
 function descargarPDF(elementId, nombreArchivo) {
   const el = document.getElementById(elementId);
-  if (!el) return;
+  if (!el) { console.error('Elemento no encontrado:', elementId); return; }
   if (typeof html2pdf === 'undefined') { window.print(); return; }
+
+  console.log('descargarPDF:', {
+    elementId,
+    innerHTML_length: el.innerHTML.length,
+    offsetHeight: el.offsetHeight,
+    offsetWidth: el.offsetWidth,
+    computedStyle: window.getComputedStyle(el).display
+  });
+
   const prev = el.getAttribute('style') || '';
-  // El print-area está oculto por defecto; lo mostramos fuera de pantalla para capturarlo.
-  el.style.cssText = 'display:block; position:absolute; left:-9999px; top:0; width:800px; background:#fff; padding:24px;';
+  el.style.width = '800px';
+  el.style.backgroundColor = '#fff';
+  el.style.padding = '24px';
+
   html2pdf().set({
     margin: 8,
     filename: (nombreArchivo || 'documento') + '.pdf',
@@ -121,7 +132,7 @@ function descargarPDF(elementId, nombreArchivo) {
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
   }).from(el).save()
     .then(() => { el.setAttribute('style', prev); })
-    .catch(() => { el.setAttribute('style', prev); window.print(); });
+    .catch((e) => { el.setAttribute('style', prev); console.error('PDF error:', e); window.print(); });
 }
 
 // Mes (1-12) de revisión técnica según el último dígito de la patente

@@ -492,10 +492,13 @@
         btn.addEventListener('click', async () => {
           const c = cotizacionesCache.find(x => x.id === btn.dataset.id);
           if (!c) return;
-          if (!config) config = await getTallerConfig(); // Asegurar que config esté cargado
+          if (!config) config = await getTallerConfig();
           construirPrintCotizacion(c);
-          await new Promise(resolve => setTimeout(resolve, 100)); // Pequeño delay para DOM
+          const el = document.getElementById('print-area');
+          el.classList.add('visible');
+          await new Promise(resolve => setTimeout(resolve, 300));
           descargarPDF('print-area', `Cotizacion-${fmtNumero('COT', c.numero)}`);
+          el.classList.remove('visible');
         });
       });
       // Botón compartir (dropdown)
