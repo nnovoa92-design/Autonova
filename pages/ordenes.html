@@ -457,20 +457,29 @@
     let abonosActuales = [];
     let voucherAboroPendiente = null;
 
-    document.getElementById('abono-metodo').addEventListener('change', (e) => {
-      const mostrar = e.target.value === 'transferencia';
-      document.getElementById('grupo-voucher').style.display = mostrar ? 'block' : 'none';
-    });
+    const abonoMetodoEl = document.getElementById('abono-metodo');
+    const abonoVoucherEl = document.getElementById('abono-voucher');
+    const agregarAbonoBtn = document.getElementById('agregar-abono-btn');
 
-    document.getElementById('abono-voucher').addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (file) {
-        document.getElementById('voucher-estado').textContent = `✓ ${file.name}`;
-        voucherAboroPendiente = file;
-      }
-    });
+    if (abonoMetodoEl) {
+      abonoMetodoEl.addEventListener('change', (e) => {
+        const mostrar = e.target.value === 'transferencia';
+        document.getElementById('grupo-voucher').style.display = mostrar ? 'block' : 'none';
+      });
+    }
 
-    document.getElementById('agregar-abono-btn').addEventListener('click', async () => {
+    if (abonoVoucherEl) {
+      abonoVoucherEl.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          document.getElementById('voucher-estado').textContent = `✓ ${file.name}`;
+          voucherAboroPendiente = file;
+        }
+      });
+    }
+
+    if (agregarAbonoBtn) {
+      agregarAbonoBtn.addEventListener('click', async () => {
       const monto = Number(document.getElementById('abono-monto').value);
       const fecha = document.getElementById('abono-fecha').value;
       const hora = document.getElementById('abono-hora').value || null;
@@ -512,7 +521,8 @@
       document.getElementById('grupo-voucher').style.display = 'none';
 
       await abrirDetalle(ordenActual.id);
-    });
+      });
+    }
 
     async function cargarAbonos() {
       if (!ordenActual) return;
