@@ -434,8 +434,8 @@
       });
       actualizarSuma();
 
-      // Cargar políticas de servicio
-      await loadPolicies();
+      // Cargar políticas de servicio (sin await para no bloquear)
+      loadPolicies().catch(e => console.error('Error en loadPolicies:', e));
     })();
   </script>
 </body>
