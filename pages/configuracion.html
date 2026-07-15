@@ -244,54 +244,57 @@
     });
 
     // ========== Políticas de Servicio ==========
-    let allTrabajos = [];
-    let allRepuestos = [];
     let allPolicies = [];
 
     async function loadPolicies() {
-      // Cargar categorías con sus políticas
-      const { data: cats } = await supabaseClient.from('categorias_trabajos').select('*').order('nombre');
+      try {
+        // Cargar categorías con sus políticas
+        const { data: cats, error: catsError } = await supabaseClient.from('categorias_trabajos').select('*').order('nombre');
+        if (catsError) throw catsError;
 
-      // Cargar políticas existentes
-      const { data: policies } = await supabaseClient.from('service_policies')
-        .select('*')
-        .order('nombre');
+        // Cargar políticas existentes
+        const { data: policies, error: polError } = await supabaseClient.from('service_policies').select('*');
+        if (polError) throw polError;
 
-      allPolicies = policies || [];
+        allPolicies = policies || [];
+        const listEl = document.getElementById('policies-list');
+        if (!listEl) return;
 
-      const listEl = document.getElementById('policies-list');
-      listEl.innerHTML = '';
+        listEl.innerHTML = '';
 
-      (cats || []).forEach(cat => {
-        const policy = allPolicies.find(p => p.categoria_id === cat.id) || {
-          id: null,
-          categoria_id: cat.id,
-          nombre: cat.nombre,
-          garantia_meses: 0,
-          garantia_tipo: 'trabajo',
-          notas: ''
-        };
+        (cats || []).forEach(cat => {
+          const policy = allPolicies.find(p => p.categoria_id === cat.id) || {
+            id: null,
+            categoria_id: cat.id,
+            nombre: cat.nombre,
+            garantia_meses: 0,
+            garantia_tipo: 'trabajo',
+            notas: ''
+          };
 
-        const card = document.createElement('div');
-        card.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:1rem; border:1px solid #ddd; border-radius:4px; background:#fafafa;';
-        card.innerHTML = `
-          <div>
-            <strong>${cat.nombre}</strong>
-            <div style="font-size:0.85rem; color:var(--color-text-muted); margin-top:0.25rem;">
-              ${policy.garantia_meses ? `${policy.garantia_meses} meses de garantía` : 'Sin garantía configurada'}
+          const card = document.createElement('div');
+          card.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:1rem; border:1px solid #ddd; border-radius:4px; background:#fafafa;';
+          card.innerHTML = `
+            <div>
+              <strong>${cat.nombre}</strong>
+              <div style="font-size:0.85rem; color:var(--color-text-muted); margin-top:0.25rem;">
+                ${policy.garantia_meses ? `${policy.garantia_meses} meses de garantía` : 'Sin garantía configurada'}
+              </div>
             </div>
-          </div>
-          <button type="button" class="edit-policy-btn" data-category-id="${cat.id}" style="padding:0.5rem 1rem;">
-            Editar
-          </button>
-        `;
-        listEl.appendChild(card);
-      });
+            <button type="button" class="edit-policy-btn" data-category-id="${cat.id}" style="padding:0.5rem 1rem;">
+              Editar
+            </button>
+          `;
+          listEl.appendChild(card);
+        });
 
-      // Event listeners para editar
-      document.querySelectorAll('.edit-policy-btn').forEach(btn => {
-        btn.addEventListener('click', () => openPolicyModal(btn.dataset.categoryId));
-      });
+        // Event listeners para editar
+        document.querySelectorAll('.edit-policy-btn').forEach(btn => {
+          btn.addEventListener('click', () => openPolicyModal(btn.dataset.categoryId));
+        });
+      } catch (error) {
+        console.error('Error cargando políticas:', error);
+      }
     }
 
     async function openPolicyModal(categoryId) {
