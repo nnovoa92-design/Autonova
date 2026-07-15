@@ -297,10 +297,11 @@
     function onTrabajoChange() {
       const t = trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value);
       if (!t) return;
-      document.getElementById('item-cantidad').value = t.horas_estimadas;
-      // Si tiene precio fijo, se carga como 1 ítem a precio total; si no, precio = valor hora
+      // N° de trabajos siempre es 1 (una unidad del trabajo)
+      // Las horas se multiplican automáticamente en agregarTrabajoCompleto
+      document.getElementById('item-cantidad').value = '1';
+      // Si tiene precio fijo, el precio es el total; si no, es valor hora (se multiplica por horas)
       if (t.precio_fijo != null) {
-        document.getElementById('item-cantidad').value = '1';
         document.getElementById('item-precio').value = Number(t.precio_fijo);
       } else {
         document.getElementById('item-precio').value = Number(config.valor_hora);
