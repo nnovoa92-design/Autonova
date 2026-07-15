@@ -272,19 +272,43 @@
         </tr>`;
       }).join('');
 
-      const mensajeFormal = (f) => `Hola ${(f.cliente && f.cliente.nombre) || ''}, le saluda ${config.nombre}: ${f.mensaje}. Quedamos atentos para agendar.`;
+      const generarMensaje = (tipo, cliente, vehiculo) => {
+        const nombre = cliente && cliente.nombre ? cliente.nombre.split(' ')[0] : 'Cliente';
+        const patente = vehiculo && vehiculo.patente ? vehiculo.patente : 'su vehículo';
+
+        if (tipo === 'Rev. técnica') {
+          return `Hola, ${nombre} 👋
+
+Le saluda el equipo de **${config.nombre}**. Queremos recordarle que la revisión técnica de su vehículo, patente **${patente}**, corresponde durante este mes.
+
+Para ayudarle a ahorrar tiempo y evitar esperas, contamos con el servicio de traslado y gestión de revisión técnica. Nosotros retiramos su vehículo, realizamos una inspección preventiva de los principales puntos y lo llevamos a la planta de revisión técnica.
+
+Quedamos atentos para ayudarle y coordinar una hora.`;
+        } else {
+          return `Hola, ${nombre} 👋
+
+Le saluda el equipo de **${config.nombre}**. Queremos contarle que ya están próximos a cumplirse 12 meses desde el último servicio realizado a su vehículo patente **${patente}**.
+
+Por este motivo, queremos invitarle a programar una nueva mantención preventiva, para revisar su estado general, anticiparnos a posibles fallas y ayudarle a mantenerlo seguro, confiable y en buenas condiciones.
+
+Será un gusto volver a recibirle, revisar su vehículo con dedicación y efectuar los trabajos que realmente necesite.
+
+Quedamos atentos para coordinar una hora en el día que más le acomode.`;
+        }
+      };
 
       tbody.querySelectorAll('.rec-wa').forEach(btn => btn.addEventListener('click', () => {
         const f = filas[btn.dataset.idx];
         const tel = f.cliente && f.cliente.telefono;
         if (!tel) { alert('El cliente no tiene teléfono registrado.'); return; }
-        abrirEnlace(linkWhatsApp(tel, mensajeFormal(f)));
+        abrirEnlace(linkWhatsApp(tel, generarMensaje(f.tipo, f.cliente, f.vehiculo)));
       }));
       tbody.querySelectorAll('.rec-mail').forEach(btn => btn.addEventListener('click', () => {
         const f = filas[btn.dataset.idx];
         const email = f.cliente && f.cliente.email;
         if (!email) { alert('El cliente no tiene correo registrado.'); return; }
-        abrirEnlace(linkGmail(email, `Recordatorio - ${config.nombre}`, mensajeFormal(f).replace(/: /, ':\n\n')));
+        const asunto = f.tipo === 'Rev. técnica' ? 'Recordatorio - Revisión Técnica' : 'Recordatorio - Mantención';
+        abrirEnlace(linkGmail(email, asunto, generarMensaje(f.tipo, f.cliente, f.vehiculo)));
       }));
       tbody.querySelectorAll('.rec-ok').forEach(btn => btn.addEventListener('click', async () => {
         await supabaseClient.from('recordatorios').update({ enviado: true, fecha_envio: new Date().toISOString() }).eq('id', btn.dataset.id);
