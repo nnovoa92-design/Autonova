@@ -361,7 +361,7 @@
       }
       tbody.innerHTML = itemsActuales.map((i, idx) => `
         <tr>
-          <td>${badgeItem(i.tipo)}</td>
+          <td>${badgeItem(i.tipo_otro && i.tipo === 'otro' ? i.tipo_otro : i.tipo)}</td>
           <td><input type="text" class="cell-desc" data-idx="${idx}" value="${(i.descripcion || '').replace(/"/g, '&quot;')}" style="min-width:150px;" /></td>
           <td><input type="number" class="cell-cant" data-idx="${idx}" value="${i.cantidad}" min="0" step="0.25" /></td>
           <td><input type="number" class="cell-precio" data-idx="${idx}" value="${i.precio_unitario}" min="0" step="1" /></td>
@@ -433,6 +433,7 @@
       const items = itemsActuales.map((i, idx) => ({
         cotizacion_id: cotId,
         tipo: i.tipo,
+        tipo_otro: i.tipo_otro || null,
         trabajo_id: i.trabajo_id || null,
         repuesto_id: i.repuesto_id || null,
         descripcion: i.descripcion,
