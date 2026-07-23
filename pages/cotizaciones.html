@@ -693,7 +693,7 @@
             <span>TOTAL</span><span>${fmtMoneda(t.total)}</span>
           </div>
         </div>
-        ${c.notas ? `<p style="margin-top:1.5rem;"><strong>Notas:</strong> ${c.notas}</p>` : ''}
+        ${c.notas ? `<p style="margin-top:1.5rem; white-space:pre-wrap; word-wrap:break-word;"><strong>Notas:</strong> ${c.notas}</p>` : ''}
       `;
     }
 
@@ -782,9 +782,6 @@
       });
     }
 
-    setupSearch('cliente-search', 'cliente_id', clientesCache, c => c.nombre);
-    setupSearch('trabajo-search', 'item-trabajo', trabajosCache, t => `${t.nombre} (${t.horas_estimadas} h)`);
-    setupSearch('repuesto-search', 'item-repuesto', repuestosCache, r => `${r.sku ? r.sku + ' · ' : ''}${r.nombre}`);
 
     // ---------- Modales "+ Nuevo" ----------
     const $backdrop = document.getElementById('modal-backdrop');
@@ -914,6 +911,10 @@
       poblarClientes();
       poblarTrabajos();
       poblarRepuestos();
+
+      setupSearch('cliente-search', 'cliente_id', clientesCache, c => c.nombre);
+      setupSearch('trabajo-search', 'item-trabajo', trabajosCache, t => `${t.nombre} (${t.horas_estimadas} h)`);
+      setupSearch('repuesto-search', 'item-repuesto', repuestosCache, r => `${r.sku ? r.sku + ' · ' : ''}${r.nombre}`);
 
       onTipoChange();
       await loadCotizaciones();
