@@ -233,6 +233,24 @@
       return { subtotal, subtotalMO, subtotalRepuestos, subtotalOtros, descuento, neto, iva, conIva, total: neto + iva };
     }
 
+    // Si la cotización ya fue convertida a OT, la orden es la fuente de verdad:
+    // sus ítems y pagos reflejan el trabajo real, que puede diferir de la cotización original.
+    function ordenVinculada(c) {
+      const o = (c.ordenes || [])[0];
+      return o || null;
+    }
+    function itemsEfectivos(c) {
+      const o = ordenVinculada(c);
+      return o ? (o.orden_items || []) : (c.cotizacion_items || []);
+    }
+    function pagadoOrdenVinculada(c) {
+      const o = ordenVinculada(c);
+      if (!o) return 0;
+      const pagos = (o.pagos || []).reduce((s, p) => s + Number(p.monto), 0);
+      const abonos = (o.abonos || []).reduce((s, a) => s + Number(a.monto), 0);
+      return pagos + abonos;
+    }
+
     // ---------- Editor ----------
     function abrirEditor(cot) {
       document.getElementById('editor-card').style.display = 'block';
@@ -458,7 +476,7 @@
         return;
       }
       tbody.innerHTML = lista.map(c => {
-        const t = calcularTotales(c.cotizacion_items || [], c.descuento_pct, c.con_iva !== false);
+        const t = calcularTotales(itemsEfectivos(c), c.descuento_pct, c.con_iva !== false);
         const vehiculo = c.vehiculos ? `${c.vehiculos.patente}` : '–';
         const puedeConvertir = c.estado === 'aprobada';
         const editable = c.estado !== 'convertida';
@@ -608,9 +626,9 @@
       const tel = c.clientes && c.clientes.telefono;
       if (!tel) { alert('El cliente no tiene teléfono registrado.'); return; }
 
-      const t = calcularTotales(c.cotizacion_items || [], c.descuento_pct, c.con_iva !== false);
+      const t = calcularTotales(itemsEfectivos(c), c.descuento_pct, c.con_iva !== false);
       const vehiculo = c.vehiculos ? ` para su vehículo ${c.vehiculos.patente} (${[c.vehiculos.marca, c.vehiculos.modelo].filter(Boolean).join(' ')})` : '';
-      const detalle = (c.cotizacion_items || []).map(i => `• ${i.descripcion}`).join('\n');
+      const detalle = itemsEfectivos(c).map(i => `• ${i.descripcion}`).join('\n');
       const mensaje =
         `Hola ${c.clientes.nombre}, le saluda ${config.nombre}.\n` +
         `Le enviamos la cotización ${fmtNumero('COT', c.numero)}${vehiculo}:\n${detalle}\n` +
@@ -625,9 +643,9 @@
       const email = c.clientes && c.clientes.email;
       if (!email) { alert('El cliente no tiene correo registrado.'); return; }
 
-      const t = calcularTotales(c.cotizacion_items || [], c.descuento_pct, c.con_iva !== false);
+      const t = calcularTotales(itemsEfectivos(c), c.descuento_pct, c.con_iva !== false);
       const vehiculo = c.vehiculos ? `${c.vehiculos.patente} (${[c.vehiculos.marca, c.vehiculos.modelo].filter(Boolean).join(' ')})` : 'su vehículo';
-      const detalle = (c.cotizacion_items || []).map(i => `- ${i.descripcion}: ${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}`).join('\n');
+      const detalle = itemsEfectivos(c).map(i => `- ${i.descripcion}: ${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}`).join('\n');
       const asunto = `Cotización ${fmtNumero('COT', c.numero)} - ${config.nombre}`;
       const cuerpo =
         `Hola ${c.clientes.nombre},\n\n` +
@@ -647,9 +665,13 @@
     }
 
     function construirPrintCotizacion(c) {
-      const t = calcularTotales(c.cotizacion_items || [], c.descuento_pct, c.con_iva !== false);
+      const items = itemsEfectivos(c);
+      const t = calcularTotales(items, c.descuento_pct, c.con_iva !== false);
       const cliente = c.clientes || {};
       const vehiculo = c.vehiculos;
+      const orden = ordenVinculada(c);
+      const pagado = pagadoOrdenVinculada(c);
+      const saldo = t.total - pagado;
 
       document.getElementById('print-area').innerHTML = `
         <div class="print-brand">
@@ -666,6 +688,7 @@
             <h2 style="margin:0;">COTIZACIÓN ${fmtNumero('COT', c.numero)}</h2>
             <div>Fecha: ${fmtFecha(c.fecha)}</div>
             <div>Válida por ${c.validez_dias} días</div>
+            ${orden ? `<div>Ref. ${fmtNumero('OT', orden.numero)}</div>` : ''}
           </div>
         </div>
         <p>
@@ -682,7 +705,7 @@
             </tr>
           </thead>
           <tbody>
-            ${(c.cotizacion_items || []).map(i => `
+            ${items.map(i => `
               <tr style="border-bottom:1px solid #ccc;">
                 <td style="padding:4px;">${i.descripcion}</td>
                 <td style="text-align:right; padding:4px;">${Number(i.cantidad).toLocaleString('es-CL')}</td>
@@ -706,6 +729,11 @@
             </div>
           </div>
         </div>
+        ${pagado > 0 ? `
+        <div style="margin-top:1rem; margin-left:auto; max-width:300px; background:#f6f6f6; padding:0.75rem 1rem; border-radius:6px;">
+          <div style="display:flex; justify-content:space-between;"><span>Pagado / abonado</span><span>${fmtMoneda(pagado)}</span></div>
+          <div style="display:flex; justify-content:space-between; font-weight:bold;"><span>Saldo pendiente</span><span>${fmtMoneda(saldo)}</span></div>
+        </div>` : ''}
         ${c.notas ? `<p style="margin-top:1.5rem; white-space:pre-wrap; word-wrap:break-word;"><strong>Notas:</strong> ${c.notas}</p>` : ''}
       `;
     }
@@ -743,7 +771,7 @@
     async function loadCotizaciones() {
       const { data, error } = await supabaseClient
         .from('cotizaciones')
-        .select('*, clientes(nombre, rut, telefono, email), vehiculos(patente, marca, modelo, anio), cotizacion_items(*)')
+        .select('*, clientes(nombre, rut, telefono, email), vehiculos(patente, marca, modelo, anio), cotizacion_items(*), ordenes(id, numero, estado, orden_items(*), pagos(monto), abonos(monto))')
         .order('creado_en', { ascending: false });
       if (error) {
         document.getElementById('cotizaciones-body').innerHTML = `<tr><td colspan="7">Error: ${error.message}</td></tr>`;

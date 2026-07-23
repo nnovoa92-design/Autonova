@@ -958,6 +958,10 @@
       const t = calcularTotal(items, o.con_iva !== false);
       const veh = o.vehiculos ? `${o.vehiculos.patente} · ${[o.vehiculos.marca, o.vehiculos.modelo].filter(Boolean).join(' ')}` : '';
       const estadoLabel = (ESTADOS_ORDEN[o.estado] || {}).label || o.estado;
+      const pagadoPagos = (o.pagos || []).reduce((s, p) => s + Number(p.monto), 0);
+      const pagadoAbonos = (o.abonos || []).reduce((s, a) => s + Number(a.monto), 0);
+      const pagado = pagadoPagos + pagadoAbonos;
+      const saldo = t.total - pagado;
       document.getElementById('print-area').innerHTML = `
         <div class="print-brand"><img src="../assets/img/logo.png" alt="" onerror="this.style.display='none'" /><span class="print-brand-name">${config.nombre}</span></div>
         <div class="print-header">
@@ -975,6 +979,11 @@
           ${t.conIva ? `<div style="display:flex;justify-content:space-between;"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>` : '<div style="display:flex;justify-content:space-between;"><span>Sin IVA</span><span>–</span></div>'}
           <div style="display:flex;justify-content:space-between;font-weight:bold;border-top:2px solid #000;margin-top:4px;padding-top:4px;"><span>TOTAL</span><span>${fmtMoneda(t.total)}</span></div>
         </div>
+        ${pagado > 0 ? `
+        <div style="margin-top:1rem; margin-left:auto; max-width:300px; background:#f6f6f6; padding:0.75rem 1rem; border-radius:6px;">
+          <div style="display:flex; justify-content:space-between;"><span>Pagado / abonado</span><span>${fmtMoneda(pagado)}</span></div>
+          <div style="display:flex; justify-content:space-between; font-weight:bold;"><span>Saldo pendiente</span><span>${fmtMoneda(saldo)}</span></div>
+        </div>` : ''}
         ${(o.avances && o.avances.length) ? `<h3 style="margin-top:1.5rem;">Trabajos realizados</h3>${o.avances.map(a => `<p style="margin:0.3rem 0;">• ${a.texto || ''} <span style="color:#666;">(${fmtFecha(a.fecha)})</span></p>`).join('')}` : ''}
       `;
     }
