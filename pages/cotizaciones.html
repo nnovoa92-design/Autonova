@@ -247,6 +247,31 @@
       return { subtotal, subtotalMO, subtotalRepuestos, subtotalTrabajoExterno, subtotalInsumosTaller, descuento, neto, iva, conIva, total: neto + iva };
     }
 
+    // Barra de proporción + lista con punto de color por categoría
+    const CATEGORIAS_DESGLOSE = [
+      { key: 'subtotalMO', label: 'Mano de obra', color: '#1d4ed8' },
+      { key: 'subtotalRepuestos', label: 'Repuestos', color: '#6b3fa0' },
+      { key: 'subtotalTrabajoExterno', label: 'Trabajo externo', color: '#4b5563' },
+      { key: 'subtotalInsumosTaller', label: 'Insumos de taller', color: '#92600a' },
+    ];
+    function renderDesgloseHTML(t, maxWidth) {
+      const cats = CATEGORIAS_DESGLOSE.filter(c => t[c.key] > 0);
+      if (!cats.length) return '';
+      const totalCats = cats.reduce((s, c) => s + t[c.key], 0);
+      const barra = cats.map(c => `<div style="width:${(t[c.key] / totalCats * 100).toFixed(2)}%; background:${c.color};"></div>`).join('');
+      const filas = cats.map(c => `
+        <div class="fila" style="font-size:0.85rem; color:var(--color-text-muted);">
+          <span><span class="punto" style="background:${c.color};"></span>${c.label}</span>
+          <span>${fmtMoneda(t[c.key])}</span>
+        </div>`).join('');
+      return `
+        <div class="desglose-categorias" style="max-width:${maxWidth || 320}px;">
+          <div class="titulo">Desglose por categoría</div>
+          <div class="barra">${barra}</div>
+          ${filas}
+        </div>`;
+    }
+
     // Si la cotización ya fue convertida a OT, la orden es la fuente de verdad:
     // sus ítems y pagos reflejan el trabajo real, que puede diferir de la cotización original.
     function ordenVinculada(c) {
@@ -428,16 +453,9 @@
         ${conIva ? `<div class="fila"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>` : '<div class="fila" style="color:var(--color-text-muted);"><span>Sin IVA</span><span>–</span></div>'}
         <div class="fila total"><span>Total</span><span>${fmtMoneda(t.total)}</span></div>`;
 
-      let detalleSubtotales = '';
-      if (t.subtotalMO > 0) detalleSubtotales += `<div class="fila" style="font-size:0.85rem; color:var(--color-text-muted);"><span>Mano de obra</span><span>${fmtMoneda(t.subtotalMO)}</span></div>`;
-      if (t.subtotalRepuestos > 0) detalleSubtotales += `<div class="fila" style="font-size:0.85rem; color:var(--color-text-muted);"><span>Repuestos</span><span>${fmtMoneda(t.subtotalRepuestos)}</span></div>`;
-      if (t.subtotalTrabajoExterno > 0) detalleSubtotales += `<div class="fila" style="font-size:0.85rem; color:var(--color-text-muted);"><span>Trabajo externo</span><span>${fmtMoneda(t.subtotalTrabajoExterno)}</span></div>`;
-      if (t.subtotalInsumosTaller > 0) detalleSubtotales += `<div class="fila" style="font-size:0.85rem; color:var(--color-text-muted);"><span>Insumos de taller</span><span>${fmtMoneda(t.subtotalInsumosTaller)}</span></div>`;
-      document.getElementById('desglose-categorias').innerHTML = detalleSubtotales ? `
-        <div style="margin-right:auto; max-width:320px; margin-top:0.75rem; background:var(--color-bg); border-radius:var(--radius); padding:0.6rem 0.9rem;">
-          <div style="font-size:0.72rem; text-transform:uppercase; letter-spacing:0.03em; color:var(--color-text-muted); margin-bottom:0.35rem;">Desglose por categoría</div>
-          ${detalleSubtotales}
-        </div>` : '';
+      const desglose = renderDesgloseHTML(t);
+      document.getElementById('desglose-categorias').innerHTML = desglose
+        ? `<div style="margin-right:auto; margin-top:0.75rem;">${desglose}</div>` : '';
     }
 
     async function guardarCotizacion() {
@@ -693,6 +711,7 @@
       const orden = ordenVinculada(c);
       const pagado = pagadoOrdenVinculada(c);
       const saldo = t.total - pagado;
+      const desgloseHTML = renderDesgloseHTML(t, 300);
 
       document.getElementById('print-area').innerHTML = `
         <div class="print-brand">
@@ -742,14 +761,7 @@
             <span>TOTAL</span><span>${fmtMoneda(t.total)}</span>
           </div>
         </div>
-        ${(t.subtotalMO > 0 || t.subtotalRepuestos > 0 || t.subtotalTrabajoExterno > 0 || t.subtotalInsumosTaller > 0) ? `
-        <div style="margin-top:1rem; margin-right:auto; max-width:300px; background:#f6f6f6; padding:0.75rem 1rem; border-radius:6px;">
-          <div style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.03em; color:#666; margin-bottom:0.4rem;">Desglose por categoría</div>
-          ${t.subtotalMO > 0 ? `<div style="display:flex; justify-content:space-between; font-size:0.85rem; margin:0.2rem 0;"><span>Mano de obra</span><span>${fmtMoneda(t.subtotalMO)}</span></div>` : ''}
-          ${t.subtotalRepuestos > 0 ? `<div style="display:flex; justify-content:space-between; font-size:0.85rem; margin:0.2rem 0;"><span>Repuestos</span><span>${fmtMoneda(t.subtotalRepuestos)}</span></div>` : ''}
-          ${t.subtotalTrabajoExterno > 0 ? `<div style="display:flex; justify-content:space-between; font-size:0.85rem; margin:0.2rem 0;"><span>Trabajo externo</span><span>${fmtMoneda(t.subtotalTrabajoExterno)}</span></div>` : ''}
-          ${t.subtotalInsumosTaller > 0 ? `<div style="display:flex; justify-content:space-between; font-size:0.85rem; margin:0.2rem 0;"><span>Insumos de taller</span><span>${fmtMoneda(t.subtotalInsumosTaller)}</span></div>` : ''}
-        </div>` : ''}
+        ${desgloseHTML ? `<div style="margin-top:1rem; margin-right:auto;">${desgloseHTML}</div>` : ''}
         ${pagado > 0 ? `
         <div style="margin-top:1rem; margin-left:auto; max-width:300px; background:#f6f6f6; padding:0.75rem 1rem; border-radius:6px;">
           <div style="display:flex; justify-content:space-between;"><span>Pagado / abonado</span><span>${fmtMoneda(pagado)}</span></div>

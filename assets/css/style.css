@@ -415,15 +415,16 @@ th {
 .table-actions { white-space: nowrap; }
 .table-actions button { padding: 0.3rem 0.6rem; font-size: 0.78rem; }
 
+.fila {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.25rem 0;
+}
 .totales {
   margin-left: auto;
   max-width: 320px;
   font-size: 0.9rem;
-}
-.totales .fila {
-  display: flex;
-  justify-content: space-between;
-  padding: 0.25rem 0;
 }
 .totales .fila.total {
   border-top: 2px solid var(--color-text);
@@ -431,6 +432,32 @@ th {
   font-size: 1.05rem;
   margin-top: 0.25rem;
   padding-top: 0.5rem;
+}
+.desglose-categorias {
+  background: var(--color-bg);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.9rem;
+}
+.desglose-categorias .titulo {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-muted);
+  margin-bottom: 0.5rem;
+}
+.desglose-categorias .barra {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 0.6rem;
+}
+.desglose-categorias .punto {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
 }
 
 /* ---------- Fotos de OT ---------- */

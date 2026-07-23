@@ -50,11 +50,37 @@
       return { ivaPct, subtotal, subtotalMO, subtotalRepuestos, subtotalTrabajoExterno, subtotalInsumosTaller, descuento, neto, iva, conIva, total: neto + iva };
     }
 
+    // Barra de proporción + lista con punto de color por categoría
+    const CATEGORIAS_DESGLOSE = [
+      { key: 'subtotalMO', label: 'Mano de obra', color: '#1d4ed8' },
+      { key: 'subtotalRepuestos', label: 'Repuestos', color: '#6b3fa0' },
+      { key: 'subtotalTrabajoExterno', label: 'Trabajo externo', color: '#4b5563' },
+      { key: 'subtotalInsumosTaller', label: 'Insumos de taller', color: '#92600a' },
+    ];
+    function renderDesgloseHTML(t, maxWidth) {
+      const cats = CATEGORIAS_DESGLOSE.filter(c => t[c.key] > 0);
+      if (!cats.length) return '';
+      const totalCats = cats.reduce((s, c) => s + t[c.key], 0);
+      const barra = cats.map(c => `<div style="width:${(t[c.key] / totalCats * 100).toFixed(2)}%; background:${c.color};"></div>`).join('');
+      const filas = cats.map(c => `
+        <div class="fila" style="font-size:0.85rem; color:var(--color-text-muted);">
+          <span><span class="punto" style="background:${c.color};"></span>${c.label}</span>
+          <span>${fmtMoneda(t[c.key])}</span>
+        </div>`).join('');
+      return `
+        <div class="desglose-categorias" style="max-width:${maxWidth || 320}px;">
+          <div class="titulo">Desglose por categoría</div>
+          <div class="barra">${barra}</div>
+          ${filas}
+        </div>`;
+    }
+
     function render(d, mensajeRespuesta) {
       cotData = d;
       if (d.taller && d.taller.nombre) document.getElementById('taller-nombre').textContent = d.taller.nombre;
       const t = calcular(d);
       const pendiente = d.estado === 'borrador' || d.estado === 'enviada';
+      const desgloseHTML = renderDesgloseHTML(t, 300);
 
       document.getElementById('contenido').innerHTML = `
         <div style="max-width:680px; margin:0 auto;">
@@ -96,14 +122,7 @@
             ${t.conIva ? `<div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:2px solid var(--color-primary);"><span>IVA ${t.ivaPct}%</span><span>${fmtMoneda(t.iva)}</span></div>` : ''}
             <div style="display:flex; justify-content:space-between; padding:0.6rem 0; font-weight:700; font-size:1.1rem;"><span>TOTAL</span><span style="color:var(--color-primary);">${fmtMoneda(t.total)}</span></div>
           </div>
-          ${(t.subtotalMO > 0 || t.subtotalRepuestos > 0 || t.subtotalTrabajoExterno > 0 || t.subtotalInsumosTaller > 0) ? `
-          <div style="max-width:300px; margin-right:auto; margin-left:0; margin-top:0.75rem; background:#f9f9f9; padding:0.6rem 0.9rem; border-radius:6px;">
-            <div style="font-size:0.72rem; text-transform:uppercase; letter-spacing:0.03em; color:var(--color-text-muted); margin-bottom:0.35rem;">Desglose por categoría</div>
-            ${t.subtotalMO > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.15rem 0; font-size:0.85rem; color:var(--color-text-muted);"><span>Mano de obra</span><span>${fmtMoneda(t.subtotalMO)}</span></div>` : ''}
-            ${t.subtotalRepuestos > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.15rem 0; font-size:0.85rem; color:var(--color-text-muted);"><span>Repuestos</span><span>${fmtMoneda(t.subtotalRepuestos)}</span></div>` : ''}
-            ${t.subtotalTrabajoExterno > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.15rem 0; font-size:0.85rem; color:var(--color-text-muted);"><span>Trabajo externo</span><span>${fmtMoneda(t.subtotalTrabajoExterno)}</span></div>` : ''}
-            ${t.subtotalInsumosTaller > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.15rem 0; font-size:0.85rem; color:var(--color-text-muted);"><span>Insumos de taller</span><span>${fmtMoneda(t.subtotalInsumosTaller)}</span></div>` : ''}
-          </div>` : ''}
+          ${desgloseHTML ? `<div style="margin-right:auto; margin-left:0; margin-top:0.75rem;">${desgloseHTML}</div>` : ''}
           ${d.pagado > 0 ? `
           <div style="max-width:300px; margin-left:auto; margin-right:0; margin-top:0.75rem; margin-bottom:1.5rem; background:#f9f9f9; padding:0.6rem 0.9rem; border-radius:6px;">
             <div style="display:flex; justify-content:space-between; padding:0.15rem 0;"><span>Pagado / abonado</span><span>${fmtMoneda(d.pagado)}</span></div>
