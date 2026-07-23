@@ -602,7 +602,11 @@ th {
 }
 
 /* ---------- Impresión de cotización / OT ---------- */
-.print-area { display: none; }
+.print-area {
+  display: none;
+  max-width: 100%;
+  overflow-x: hidden;
+}
 
 .print-brand {
   display: flex;
@@ -626,18 +630,70 @@ th {
   letter-spacing: 0.04em;
 }
 
-.print-area > *:not(.print-brand) { padding-left: 1.5rem; padding-right: 1.5rem; }
+.print-area > *:not(.print-brand) {
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+}
+
+.print-area p { font-size: 0.95rem; line-height: 1.4; word-break: break-word; }
+.print-area table { font-size: 0.9rem; table-layout: auto; }
+.print-area th, .print-area td { padding: 0.5rem 0.4rem; word-break: break-word; }
+.print-area table th { font-size: 0.8rem; }
+
 .print-header {
   display: flex;
   justify-content: space-between;
   border-bottom: 2px solid #000;
   padding-bottom: 0.75rem;
   margin-bottom: 1rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+@media screen and (max-width: 768px) {
+  .print-area > *:not(.print-brand) {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  .print-area p { font-size: 0.9rem; }
+  .print-area table { font-size: 0.85rem; }
+  .print-area th, .print-area td { padding: 0.4rem 0.3rem; }
+
+  /* Grid responsive para desglose por categoría */
+  .print-area > div[style*="display:grid"] {
+    grid-template-columns: 1fr !important;
+    gap: 1rem !important;
+  }
+}
+
+@media screen and (max-width: 480px) {
+  .print-area > *:not(.print-brand) {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+  .print-brand { padding: 0.6rem 0.8rem; }
+  .print-brand img { height: 45px; }
+  .print-brand .print-brand-name { font-size: 1.2rem; }
+
+  .print-area p { font-size: 0.85rem; }
+  .print-area table { font-size: 0.8rem; }
+  .print-area th, .print-area td { padding: 0.3rem 0.25rem; }
+  .print-header { flex-direction: column; gap: 0.5rem; }
 }
 
 @media print {
   body { margin: 0; padding: 0; }
   body > * { display: none !important; }
-  .print-area { display: block !important; margin: 0; padding: 0; width: 100%; }
+  .print-area {
+    display: block !important;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    max-width: 100%;
+  }
   .print-area > *:not(.print-brand) { padding-left: 1.5rem; padding-right: 1.5rem; }
+
+  /* Asegurar que las tablas se ajusten sin salirse */
+  .print-area table { page-break-inside: avoid; width: 100%; }
+  .print-area tr { page-break-inside: avoid; }
 }
