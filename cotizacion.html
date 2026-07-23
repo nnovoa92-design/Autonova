@@ -26,18 +26,28 @@
     const cotId = new URLSearchParams(window.location.search).get('id');
     let cotData = null;
 
+    function categoriaItem(i) {
+      const sub = (i.tipo === 'otro' && i.tipo_otro) ? i.tipo_otro : i.tipo;
+      if (sub === 'mano_obra') return 'mano_obra';
+      if (sub === 'repuesto' || sub === 'insumo_vehiculo') return 'repuestos';
+      if (sub === 'insumo_taller' || sub === 'insumo') return 'insumo_taller';
+      return 'trabajo_externo';
+    }
+
     function calcular(d) {
       const ivaPct = Number((d.taller && d.taller.iva_pct) ?? 19);
       const items = d.items || [];
-      const subtotalMO = items.filter(i => i.tipo === 'mano_obra').reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
-      const subtotalRepuestos = items.filter(i => i.tipo === 'repuesto').reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
-      const subtotalOtros = items.filter(i => i.tipo !== 'mano_obra' && i.tipo !== 'repuesto').reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
-      const subtotal = subtotalMO + subtotalRepuestos + subtotalOtros;
+      const sumaCat = (cat) => items.filter(i => categoriaItem(i) === cat).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
+      const subtotalMO = sumaCat('mano_obra');
+      const subtotalRepuestos = sumaCat('repuestos');
+      const subtotalTrabajoExterno = sumaCat('trabajo_externo');
+      const subtotalInsumosTaller = sumaCat('insumo_taller');
+      const subtotal = subtotalMO + subtotalRepuestos + subtotalTrabajoExterno + subtotalInsumosTaller;
       const descuento = subtotal * (Number(d.descuento_pct || 0) / 100);
       const neto = subtotal - descuento;
       const conIva = d.con_iva !== false;
       const iva = conIva ? neto * (ivaPct / 100) : 0;
-      return { ivaPct, subtotal, subtotalMO, subtotalRepuestos, subtotalOtros, descuento, neto, iva, conIva, total: neto + iva };
+      return { ivaPct, subtotal, subtotalMO, subtotalRepuestos, subtotalTrabajoExterno, subtotalInsumosTaller, descuento, neto, iva, conIva, total: neto + iva };
     }
 
     function render(d, mensajeRespuesta) {
@@ -86,12 +96,13 @@
             ${t.conIva ? `<div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:2px solid var(--color-primary);"><span>IVA ${t.ivaPct}%</span><span>${fmtMoneda(t.iva)}</span></div>` : ''}
             <div style="display:flex; justify-content:space-between; padding:0.6rem 0; font-weight:700; font-size:1.1rem;"><span>TOTAL</span><span style="color:var(--color-primary);">${fmtMoneda(t.total)}</span></div>
           </div>
-          ${(t.subtotalMO > 0 || t.subtotalRepuestos > 0 || t.subtotalOtros > 0) ? `
+          ${(t.subtotalMO > 0 || t.subtotalRepuestos > 0 || t.subtotalTrabajoExterno > 0 || t.subtotalInsumosTaller > 0) ? `
           <div style="max-width:300px; margin-right:auto; margin-left:0; margin-top:0.75rem; background:#f9f9f9; padding:0.6rem 0.9rem; border-radius:6px;">
             <div style="font-size:0.72rem; text-transform:uppercase; letter-spacing:0.03em; color:var(--color-text-muted); margin-bottom:0.35rem;">Desglose por categoría</div>
             ${t.subtotalMO > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.15rem 0; font-size:0.85rem; color:var(--color-text-muted);"><span>Mano de obra</span><span>${fmtMoneda(t.subtotalMO)}</span></div>` : ''}
             ${t.subtotalRepuestos > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.15rem 0; font-size:0.85rem; color:var(--color-text-muted);"><span>Repuestos</span><span>${fmtMoneda(t.subtotalRepuestos)}</span></div>` : ''}
-            ${t.subtotalOtros > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.15rem 0; font-size:0.85rem; color:var(--color-text-muted);"><span>Otros</span><span>${fmtMoneda(t.subtotalOtros)}</span></div>` : ''}
+            ${t.subtotalTrabajoExterno > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.15rem 0; font-size:0.85rem; color:var(--color-text-muted);"><span>Trabajo externo</span><span>${fmtMoneda(t.subtotalTrabajoExterno)}</span></div>` : ''}
+            ${t.subtotalInsumosTaller > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.15rem 0; font-size:0.85rem; color:var(--color-text-muted);"><span>Insumos de taller</span><span>${fmtMoneda(t.subtotalInsumosTaller)}</span></div>` : ''}
           </div>` : ''}
           ${d.pagado > 0 ? `
           <div style="max-width:300px; margin-left:auto; margin-right:0; margin-top:0.75rem; margin-bottom:1.5rem; background:#f9f9f9; padding:0.6rem 0.9rem; border-radius:6px;">
