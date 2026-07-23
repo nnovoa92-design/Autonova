@@ -420,7 +420,7 @@
       if (t.subtotalRepuestos > 0) detalleSubtotales += `<div class="fila" style="font-size:0.85rem; color:var(--color-text-muted);"><span>Repuestos</span><span>${fmtMoneda(t.subtotalRepuestos)}</span></div>`;
       if (t.subtotalOtros > 0) detalleSubtotales += `<div class="fila" style="font-size:0.85rem; color:var(--color-text-muted);"><span>Otros</span><span>${fmtMoneda(t.subtotalOtros)}</span></div>`;
       document.getElementById('desglose-categorias').innerHTML = detalleSubtotales ? `
-        <div style="margin-left:auto; max-width:320px; margin-top:0.75rem; background:var(--color-bg); border-radius:var(--radius); padding:0.6rem 0.9rem;">
+        <div style="margin-right:auto; max-width:320px; margin-top:0.75rem; background:var(--color-bg); border-radius:var(--radius); padding:0.6rem 0.9rem;">
           <div style="font-size:0.72rem; text-transform:uppercase; letter-spacing:0.03em; color:var(--color-text-muted); margin-bottom:0.35rem;">Desglose por categoría</div>
           ${detalleSubtotales}
         </div>` : '';
@@ -728,7 +728,7 @@
           </div>
         </div>
         ${(t.subtotalMO > 0 || t.subtotalRepuestos > 0 || t.subtotalOtros > 0) ? `
-        <div style="margin-top:1rem; margin-left:auto; max-width:300px; background:#f6f6f6; padding:0.75rem 1rem; border-radius:6px;">
+        <div style="margin-top:1rem; margin-right:auto; max-width:300px; background:#f6f6f6; padding:0.75rem 1rem; border-radius:6px;">
           <div style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.03em; color:#666; margin-bottom:0.4rem;">Desglose por categoría</div>
           ${t.subtotalMO > 0 ? `<div style="display:flex; justify-content:space-between; font-size:0.85rem; margin:0.2rem 0;"><span>Mano de obra</span><span>${fmtMoneda(t.subtotalMO)}</span></div>` : ''}
           ${t.subtotalRepuestos > 0 ? `<div style="display:flex; justify-content:space-between; font-size:0.85rem; margin:0.2rem 0;"><span>Repuestos</span><span>${fmtMoneda(t.subtotalRepuestos)}</span></div>` : ''}

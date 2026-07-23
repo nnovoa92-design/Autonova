@@ -87,7 +87,7 @@
             <div style="display:flex; justify-content:space-between; padding:0.6rem 0; font-weight:700; font-size:1.1rem;"><span>TOTAL</span><span style="color:var(--color-primary);">${fmtMoneda(t.total)}</span></div>
           </div>
           ${(t.subtotalMO > 0 || t.subtotalRepuestos > 0 || t.subtotalOtros > 0) ? `
-          <div style="max-width:300px; margin-left:auto; margin-right:0; margin-top:0.75rem; background:#f9f9f9; padding:0.6rem 0.9rem; border-radius:6px;">
+          <div style="max-width:300px; margin-right:auto; margin-left:0; margin-top:0.75rem; background:#f9f9f9; padding:0.6rem 0.9rem; border-radius:6px;">
             <div style="font-size:0.72rem; text-transform:uppercase; letter-spacing:0.03em; color:var(--color-text-muted); margin-bottom:0.35rem;">Desglose por categoría</div>
             ${t.subtotalMO > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.15rem 0; font-size:0.85rem; color:var(--color-text-muted);"><span>Mano de obra</span><span>${fmtMoneda(t.subtotalMO)}</span></div>` : ''}
             ${t.subtotalRepuestos > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.15rem 0; font-size:0.85rem; color:var(--color-text-muted);"><span>Repuestos</span><span>${fmtMoneda(t.subtotalRepuestos)}</span></div>` : ''}
