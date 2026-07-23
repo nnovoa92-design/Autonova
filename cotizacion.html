@@ -80,23 +80,21 @@
             </tbody>
           </table>
 
-          <div style="display:flex; flex-wrap:wrap; gap:1.5rem; justify-content:flex-end; margin-bottom:0.5rem;">
-            ${(t.subtotalMO > 0 || t.subtotalRepuestos > 0 || t.subtotalOtros > 0) ? `
-            <div style="min-width:170px;">
-              <div style="font-size:0.72rem; text-transform:uppercase; letter-spacing:0.03em; color:var(--color-text-muted); margin-bottom:0.4rem;">Desglose</div>
-              ${t.subtotalMO > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.2rem 0; font-size:0.85rem; color:var(--color-text-muted);"><span>Mano de obra</span><span>${fmtMoneda(t.subtotalMO)}</span></div>` : ''}
-              ${t.subtotalRepuestos > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.2rem 0; font-size:0.85rem; color:var(--color-text-muted);"><span>Repuestos</span><span>${fmtMoneda(t.subtotalRepuestos)}</span></div>` : ''}
-              ${t.subtotalOtros > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.2rem 0; font-size:0.85rem; color:var(--color-text-muted);"><span>Otros</span><span>${fmtMoneda(t.subtotalOtros)}</span></div>` : ''}
-            </div>` : ''}
-            <div style="max-width:300px; flex:1; min-width:220px;">
-              ${t.descuento > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid #eee;"><span>Descuento (${d.descuento_pct}%)</span><span style="color:#c33;">-${fmtMoneda(t.descuento)}</span></div>` : ''}
-              <div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid #eee;"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
-              ${t.conIva ? `<div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:2px solid var(--color-primary);"><span>IVA ${t.ivaPct}%</span><span>${fmtMoneda(t.iva)}</span></div>` : ''}
-              <div style="display:flex; justify-content:space-between; padding:0.6rem 0; font-weight:700; font-size:1.1rem;"><span>TOTAL</span><span style="color:var(--color-primary);">${fmtMoneda(t.total)}</span></div>
-            </div>
+          <div style="max-width:300px; margin-left:auto; margin-right:0;">
+            ${t.descuento > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid #eee;"><span>Descuento (${d.descuento_pct}%)</span><span style="color:#c33;">-${fmtMoneda(t.descuento)}</span></div>` : ''}
+            <div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid #eee;"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
+            ${t.conIva ? `<div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:2px solid var(--color-primary);"><span>IVA ${t.ivaPct}%</span><span>${fmtMoneda(t.iva)}</span></div>` : ''}
+            <div style="display:flex; justify-content:space-between; padding:0.6rem 0; font-weight:700; font-size:1.1rem;"><span>TOTAL</span><span style="color:var(--color-primary);">${fmtMoneda(t.total)}</span></div>
           </div>
+          ${(t.subtotalMO > 0 || t.subtotalRepuestos > 0 || t.subtotalOtros > 0) ? `
+          <div style="max-width:300px; margin-left:auto; margin-right:0; margin-top:0.75rem; background:#f9f9f9; padding:0.6rem 0.9rem; border-radius:6px;">
+            <div style="font-size:0.72rem; text-transform:uppercase; letter-spacing:0.03em; color:var(--color-text-muted); margin-bottom:0.35rem;">Desglose por categoría</div>
+            ${t.subtotalMO > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.15rem 0; font-size:0.85rem; color:var(--color-text-muted);"><span>Mano de obra</span><span>${fmtMoneda(t.subtotalMO)}</span></div>` : ''}
+            ${t.subtotalRepuestos > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.15rem 0; font-size:0.85rem; color:var(--color-text-muted);"><span>Repuestos</span><span>${fmtMoneda(t.subtotalRepuestos)}</span></div>` : ''}
+            ${t.subtotalOtros > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.15rem 0; font-size:0.85rem; color:var(--color-text-muted);"><span>Otros</span><span>${fmtMoneda(t.subtotalOtros)}</span></div>` : ''}
+          </div>` : ''}
           ${d.pagado > 0 ? `
-          <div style="max-width:300px; margin-left:auto; margin-right:0; margin-bottom:1.5rem; background:#f9f9f9; padding:0.6rem 0.9rem; border-radius:6px;">
+          <div style="max-width:300px; margin-left:auto; margin-right:0; margin-top:0.75rem; margin-bottom:1.5rem; background:#f9f9f9; padding:0.6rem 0.9rem; border-radius:6px;">
             <div style="display:flex; justify-content:space-between; padding:0.15rem 0;"><span>Pagado / abonado</span><span>${fmtMoneda(d.pagado)}</span></div>
             <div style="display:flex; justify-content:space-between; padding:0.15rem 0; font-weight:700;"><span>Saldo pendiente</span><span>${fmtMoneda(t.total - d.pagado)}</span></div>
           </div>` : '<div style="margin-bottom:1.5rem;"></div>'}
