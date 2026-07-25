@@ -116,6 +116,17 @@
             </div>
             <p id="suma-pcts" style="font-size:0.85rem; margin-top:0;"></p>
 
+            <h2>Políticas y términos legales</h2>
+            <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
+              Se imprimen como letra chica al final de la Cotización y la Orden de Trabajo.
+              Cubre retiro del vehículo, pertenencias, garantía general y responsabilidad legal.
+              Este es un borrador de partida; te recomendamos que un abogado lo revise antes de usarlo formalmente.
+            </p>
+            <div class="form-group">
+              <label for="politicas_generales_texto">Texto de políticas</label>
+              <textarea id="politicas_generales_texto" rows="14" style="font-family:inherit; font-size:0.85rem;"></textarea>
+            </div>
+
             <button type="submit" id="guardar-btn">Guardar configuración</button>
             <p class="error-message" id="form-error"></p>
             <p id="form-ok" style="color:#1b6e3c; font-size:0.85rem;"></p>
@@ -197,7 +208,7 @@
   <script src="../assets/js/supabaseClient.js"></script>
   <script src="../assets/js/layout.js"></script>
   <script>
-    const CAMPOS = ['nombre','rut','telefono','email','direccion','valor_hora','iva_pct','pct_mecanico','pct_dueno','pct_taller','hora_apertura','hora_cierre','sab_apertura','sab_cierre','slot_min'];
+    const CAMPOS = ['nombre','rut','telefono','email','direccion','valor_hora','iva_pct','pct_mecanico','pct_dueno','pct_taller','hora_apertura','hora_cierre','sab_apertura','sab_cierre','slot_min','politicas_generales_texto'];
 
     function actualizarSuma() {
       const suma = ['pct_mecanico','pct_dueno','pct_taller']

@@ -33,10 +33,42 @@
               <input type="number" id="nueva-km" min="0" />
             </div>
           </div>
-          <div class="form-group">
-            <label for="nueva-diagnostico">Motivo de trabajo</label>
-            <textarea id="nueva-diagnostico" rows="2"></textarea>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="nueva-diagnostico">Motivo de trabajo</label>
+              <textarea id="nueva-diagnostico" rows="2"></textarea>
+            </div>
+            <div class="form-group" style="max-width:180px;">
+              <label for="nueva-combustible">Nivel de combustible</label>
+              <select id="nueva-combustible">
+                <option value="">Sin especificar</option>
+                <option value="reserva">Reserva</option>
+                <option value="1/4">1/4</option>
+                <option value="1/2">1/2</option>
+                <option value="3/4">3/4</option>
+                <option value="lleno">Lleno</option>
+              </select>
+            </div>
           </div>
+
+          <h3>Checklist de recepción</h3>
+          <p style="color:var(--color-text-muted); font-size:0.82rem; margin-top:0;">
+            Marca lo que corresponda y agrega una nota si es necesario. Queda impreso en la OT junto con la firma del cliente.
+          </p>
+          <div id="checklist-recepcion-body"></div>
+          <button type="button" id="agregar-item-checklist-btn" class="btn-secondary btn-mini" style="margin-top:0.5rem;">+ Agregar ítem</button>
+
+          <div class="form-group" style="margin-top:1rem;">
+            <label for="nueva-pertenencias">Pertenencias declaradas (objetos visibles en el vehículo)</label>
+            <textarea id="nueva-pertenencias" rows="2" placeholder="Ej: radio portátil, documentos en guantera..."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>Firma del cliente (recepción del vehículo)</label>
+            <canvas id="firma-canvas" style="border:1px solid var(--color-border); border-radius:var(--radius); width:100%; height:150px; touch-action:none; background:#fff; display:block;"></canvas>
+            <button type="button" id="limpiar-firma-btn" class="btn-secondary btn-mini" style="margin-top:0.5rem;">Limpiar firma</button>
+          </div>
+
           <button type="button" id="crear-ot-btn">Crear orden</button>
           <button type="button" id="cancelar-nueva-btn" class="btn-secondary">Cancelar</button>
           <p class="error-message" id="nueva-error"></p>
@@ -63,6 +95,11 @@
             <label for="detalle-diagnostico">Motivo de trabajo</label>
             <textarea id="detalle-diagnostico" rows="2"></textarea>
             <button type="button" id="guardar-diagnostico-btn" class="btn-secondary" style="margin-top:0.5rem;">Guardar motivo de trabajo</button>
+          </div>
+          <div class="form-group">
+            <label for="detalle-garantia-especial">Garantía especial (opcional, aparte de la política general)</label>
+            <textarea id="detalle-garantia-especial" rows="2" placeholder="Ej: 6 meses de garantía en reparación de motor"></textarea>
+            <button type="button" id="guardar-garantia-btn" class="btn-secondary" style="margin-top:0.5rem;">Guardar garantía especial</button>
           </div>
 
           <h3>Ítems de la orden</h3>
@@ -348,6 +385,113 @@
         propios.map(v => `<option value="${v.id}">${v.patente} · ${[v.marca, v.modelo].filter(Boolean).join(' ')}</option>`).join('');
     }
 
+    // ---------- Checklist de recepción ----------
+    const CHECKLIST_ESTANDAR = [
+      'Rayones o rayaduras en la carrocería',
+      'Golpes o abolladuras',
+      'Parabrisas / vidrios',
+      'Espejos laterales',
+      'Llantas / tapas de ruedas (rines)',
+      'Antena',
+      'Focos y faros',
+      'Tapiz o interior',
+    ];
+    let checklistActual = [];
+
+    function inicializarChecklist() {
+      checklistActual = CHECKLIST_ESTANDAR.map(item => ({ item, marcado: false, nota: '' }));
+      renderChecklistRecepcion();
+    }
+
+    function renderChecklistRecepcion() {
+      const body = document.getElementById('checklist-recepcion-body');
+      body.innerHTML = checklistActual.map((c, idx) => `
+        <div class="form-row" style="align-items:center; gap:0.5rem; margin-bottom:0.4rem;">
+          <label style="display:flex; align-items:center; gap:0.4rem; flex:1; margin:0; font-size:0.9rem; color:var(--color-text);">
+            <input type="checkbox" class="check-item" data-idx="${idx}" ${c.marcado ? 'checked' : ''} style="width:auto;" />
+            <input type="text" class="check-label" data-idx="${idx}" value="${c.item.replace(/"/g, '&quot;')}" style="border:none; background:transparent; padding:0.2rem;" />
+          </label>
+          <input type="text" class="check-nota" data-idx="${idx}" value="${(c.nota || '').replace(/"/g, '&quot;')}" placeholder="Nota (opcional)" style="max-width:220px;" />
+          <button type="button" class="btn-danger quitar-check-btn" data-idx="${idx}" style="padding:0.3rem 0.6rem;">✕</button>
+        </div>`).join('');
+
+      body.querySelectorAll('.check-item').forEach(inp =>
+        inp.addEventListener('change', () => { checklistActual[inp.dataset.idx].marcado = inp.checked; }));
+      body.querySelectorAll('.check-label').forEach(inp =>
+        inp.addEventListener('input', () => { checklistActual[inp.dataset.idx].item = inp.value; }));
+      body.querySelectorAll('.check-nota').forEach(inp =>
+        inp.addEventListener('input', () => { checklistActual[inp.dataset.idx].nota = inp.value; }));
+      body.querySelectorAll('.quitar-check-btn').forEach(btn =>
+        btn.addEventListener('click', () => { checklistActual.splice(Number(btn.dataset.idx), 1); renderChecklistRecepcion(); }));
+    }
+
+    document.getElementById('agregar-item-checklist-btn').addEventListener('click', () => {
+      checklistActual.push({ item: '', marcado: false, nota: '' });
+      renderChecklistRecepcion();
+    });
+
+    // ---------- Firma digital (canvas) ----------
+    let firmaCtx = null, firmaDibujando = false, firmaTieneTrazo = false;
+
+    function initFirmaCanvas() {
+      const canvas = document.getElementById('firma-canvas');
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+      firmaCtx = canvas.getContext('2d');
+      firmaCtx.clearRect(0, 0, canvas.width, canvas.height);
+      firmaCtx.strokeStyle = '#15181e';
+      firmaCtx.lineWidth = 2;
+      firmaCtx.lineCap = 'round';
+      firmaTieneTrazo = false;
+    }
+
+    function posicionFirma(e, canvas) {
+      const rect = canvas.getBoundingClientRect();
+      const p = e.touches ? e.touches[0] : e;
+      return { x: p.clientX - rect.left, y: p.clientY - rect.top };
+    }
+
+    function setupFirmaEventos() {
+      const canvas = document.getElementById('firma-canvas');
+      const empezar = (e) => {
+        e.preventDefault();
+        firmaDibujando = true;
+        const { x, y } = posicionFirma(e, canvas);
+        firmaCtx.beginPath();
+        firmaCtx.moveTo(x, y);
+      };
+      const dibujar = (e) => {
+        if (!firmaDibujando) return;
+        e.preventDefault();
+        const { x, y } = posicionFirma(e, canvas);
+        firmaCtx.lineTo(x, y);
+        firmaCtx.stroke();
+        firmaTieneTrazo = true;
+      };
+      const terminar = () => { firmaDibujando = false; };
+      canvas.addEventListener('mousedown', empezar);
+      canvas.addEventListener('mousemove', dibujar);
+      canvas.addEventListener('mouseup', terminar);
+      canvas.addEventListener('mouseleave', terminar);
+      canvas.addEventListener('touchstart', empezar);
+      canvas.addEventListener('touchmove', dibujar);
+      canvas.addEventListener('touchend', terminar);
+    }
+    setupFirmaEventos();
+
+    document.getElementById('limpiar-firma-btn').addEventListener('click', () => {
+      const canvas = document.getElementById('firma-canvas');
+      firmaCtx.clearRect(0, 0, canvas.width, canvas.height);
+      firmaTieneTrazo = false;
+    });
+
+    function obtenerFirmaBlob() {
+      if (!firmaTieneTrazo) return Promise.resolve(null);
+      const canvas = document.getElementById('firma-canvas');
+      return new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    }
+
     async function crearOrden() {
       const errorEl = document.getElementById('nueva-error');
       errorEl.textContent = '';
@@ -359,9 +503,22 @@
         vehiculo_id: document.getElementById('nueva-vehiculo').value || null,
         km_ingreso: document.getElementById('nueva-km').value || null,
         diagnostico: document.getElementById('nueva-diagnostico').value || null,
+        nivel_combustible: document.getElementById('nueva-combustible').value || null,
+        checklist_recepcion: checklistActual.filter(c => c.item.trim()),
+        pertenencias_declaradas: document.getElementById('nueva-pertenencias').value || null,
         estado: 'recepcion',
       }).select('id').single();
       if (error) { errorEl.textContent = `Error: ${error.message}`; return; }
+
+      const firmaBlob = await obtenerFirmaBlob();
+      if (firmaBlob) {
+        const ruta = `${data.id}/firma_recepcion.png`;
+        const { error: firmaError } = await supabaseClient.storage.from('fotos-ot').upload(ruta, firmaBlob);
+        if (!firmaError) {
+          const url = supabaseClient.storage.from('fotos-ot').getPublicUrl(ruta).data.publicUrl;
+          await supabaseClient.from('ordenes').update({ firma_cliente_url: url, firma_fecha: new Date().toISOString() }).eq('id', data.id);
+        }
+      }
 
       document.getElementById('nueva-card').style.display = 'none';
       await loadOrdenes();
@@ -386,6 +543,7 @@
         ` · Ingreso: ${fmtFechaHora(o.fecha_ingreso)}` +
         (o.km_ingreso ? ` · ${Number(o.km_ingreso).toLocaleString('es-CL')} km` : '');
       document.getElementById('detalle-diagnostico').value = o.diagnostico ?? '';
+      document.getElementById('detalle-garantia-especial').value = o.garantia_especial ?? '';
 
       const estadoSel = document.getElementById('detalle-estado');
       estadoSel.innerHTML = Object.entries(ESTADOS_ORDEN)
@@ -880,6 +1038,8 @@
       document.getElementById('listado-card').style.display = 'block';
       document.getElementById('nueva-card').style.display = 'block';
       ordenActual = null;
+      inicializarChecklist();
+      initFirmaCanvas();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     });
     document.getElementById('cancelar-nueva-btn').addEventListener('click', () => {
@@ -1011,8 +1171,14 @@
           <div><div>${config.rut ?? ''}</div><div>${config.direccion ?? ''}</div><div>${config.telefono ?? ''}</div></div>
           <div style="text-align:right;"><h2 style="margin:0;">${fmtNumero('OT', o.numero)}</h2><div>Ingreso: ${fmtFecha(o.fecha_ingreso)}</div><div>Estado: ${estadoLabel}</div></div>
         </div>
-        <p><strong>Cliente:</strong> ${o.clientes ? o.clientes.nombre : '–'}<br>${veh ? `<strong>Vehículo:</strong> ${veh}` : ''}</p>
+        <p><strong>Cliente:</strong> ${o.clientes ? o.clientes.nombre : '–'}<br>${veh ? `<strong>Vehículo:</strong> ${veh}` : ''}${o.nivel_combustible ? ` · Combustible: ${o.nivel_combustible}` : ''}</p>
         ${o.diagnostico ? `<p><strong>Motivo de trabajo:</strong> ${o.diagnostico}</p>` : ''}
+        ${(o.checklist_recepcion && o.checklist_recepcion.length) ? `
+        <div style="margin:0.75rem 0;">
+          <p style="margin:0 0 0.35rem; font-weight:bold; font-size:0.9rem;">Checklist de recepción</p>
+          <p style="font-size:0.85rem; margin:0;">${o.checklist_recepcion.map(c => `${c.marcado ? '☑' : '☐'} ${c.item}${c.nota ? ` (${c.nota})` : ''}`).join(' &nbsp;·&nbsp; ')}</p>
+        </div>` : ''}
+        ${o.pertenencias_declaradas ? `<p style="font-size:0.85rem;"><strong>Pertenencias declaradas:</strong> ${o.pertenencias_declaradas}</p>` : ''}
         <table style="width:100%; border-collapse:collapse;">
           <thead><tr style="border-bottom:1px solid #000;"><th style="text-align:left;padding:4px;">Descripción</th><th style="text-align:right;padding:4px;">Cant.</th><th style="text-align:right;padding:4px;">P. unit.</th><th style="text-align:right;padding:4px;">Total</th></tr></thead>
           <tbody>${items.map(i => `<tr style="border-bottom:1px solid #ccc;"><td style="padding:4px;">${i.descripcion}</td><td style="text-align:right;padding:4px;">${Number(i.cantidad).toLocaleString('es-CL')}</td><td style="text-align:right;padding:4px;">${fmtMoneda(i.precio_unitario)}</td><td style="text-align:right;padding:4px;">${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td></tr>`).join('')}</tbody>
@@ -1028,7 +1194,18 @@
           <div style="display:flex; justify-content:space-between;"><span>Pagado / abonado</span><span>${fmtMoneda(pagado)}</span></div>
           <div style="display:flex; justify-content:space-between; font-weight:bold;"><span>Saldo pendiente</span><span>${fmtMoneda(saldo)}</span></div>
         </div>` : ''}
+        ${o.garantia_especial ? `
+        <div style="margin-top:1rem; background:#fef3c7; padding:0.75rem 1rem; border-radius:6px; border-left:3px solid #92600a;">
+          <strong>Garantía especial de este trabajo:</strong> ${o.garantia_especial}
+        </div>` : ''}
         ${(o.avances && o.avances.length) ? `<h3 style="margin-top:1.5rem;">Trabajos realizados</h3>${o.avances.map(a => `<p style="margin:0.3rem 0;">• ${a.texto || ''} <span style="color:#666;">(${fmtFecha(a.fecha)})</span></p>`).join('')}` : ''}
+        ${o.firma_cliente_url ? `
+        <div style="margin-top:1.5rem;">
+          <p style="font-size:0.85rem; margin:0 0 0.25rem;"><strong>Firma del cliente</strong> (recepción del vehículo, ${fmtFecha(o.firma_fecha)}):</p>
+          <img src="${o.firma_cliente_url}" alt="Firma del cliente" style="max-width:260px; border:1px solid #ccc; border-radius:6px; background:#fff;" />
+        </div>` : ''}
+        ${config.politicas_generales_texto ? `
+        <div style="margin-top:2rem; padding-top:0.75rem; border-top:1px solid #ccc; font-size:0.7rem; color:#666; white-space:pre-wrap;">${config.politicas_generales_texto}</div>` : ''}
       `;
     }
 
@@ -1088,6 +1265,13 @@
       await supabaseClient.from('ordenes')
         .update({ diagnostico: document.getElementById('detalle-diagnostico').value || null })
         .eq('id', ordenActual.id);
+    });
+
+    document.getElementById('guardar-garantia-btn').addEventListener('click', async () => {
+      if (!ordenActual) return;
+      const valor = document.getElementById('detalle-garantia-especial').value || null;
+      await supabaseClient.from('ordenes').update({ garantia_especial: valor }).eq('id', ordenActual.id);
+      ordenActual.garantia_especial = valor;
     });
 
     (async () => {

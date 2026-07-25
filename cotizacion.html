@@ -130,6 +130,7 @@
           </div>` : '<div style="margin-bottom:1.5rem;"></div>'}
 
           ${d.notas ? `<div style="background:#f9f9f9; padding:0.75rem; border-left:3px solid var(--color-primary); margin-bottom:1.5rem;"><strong>Notas:</strong> ${d.notas}</div>` : ''}
+          ${d.garantia_especial ? `<div style="background:#fef3c7; padding:0.75rem; border-left:3px solid #92600a; margin-bottom:1.5rem;"><strong>Garantía especial de este trabajo:</strong> ${d.garantia_especial}</div>` : ''}
 
           ${mensajeRespuesta ? `
           <div style="background:#e8f5e9; padding:1rem; border-radius:4px; color:#1b5e20; font-weight:600; text-align:center; margin-bottom:1rem;">
@@ -153,6 +154,8 @@
             <p style="margin:0.25rem 0;"><strong>${d.taller.nombre}</strong></p>
             <p style="margin:0.1rem 0; font-size:0.75rem;">${d.taller.direccion ?? ''} · ${d.taller.telefono ?? ''}</p>
           </div>` : ''}
+          ${(d.taller && d.taller.politicas_generales_texto) ? `
+          <div style="margin-top:1.5rem; padding-top:0.75rem; border-top:1px solid #eee; font-size:0.7rem; color:#999; white-space:pre-wrap;">${d.taller.politicas_generales_texto}</div>` : ''}
         </div>
       `;
 

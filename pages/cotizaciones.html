@@ -768,6 +768,8 @@
           <div style="display:flex; justify-content:space-between; font-weight:bold;"><span>Saldo pendiente</span><span>${fmtMoneda(saldo)}</span></div>
         </div>` : ''}
         ${c.notas ? `<p style="margin-top:1.5rem; white-space:pre-wrap; word-wrap:break-word;"><strong>Notas:</strong> ${c.notas}</p>` : ''}
+        ${config.politicas_generales_texto ? `
+        <div style="margin-top:2rem; padding-top:0.75rem; border-top:1px solid #ccc; font-size:0.7rem; color:#666; white-space:pre-wrap;">${config.politicas_generales_texto}</div>` : ''}
       `;
     }
 
