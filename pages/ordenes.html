@@ -351,6 +351,20 @@
       return { neto, iva, conIva, total: neto + iva, subtotalMO, subtotalRepuestos, subtotalTrabajoExterno, subtotalInsumosTaller };
     }
 
+    // Cobro automático por bodegaje: días transcurridos desde que se marcó
+    // "Listo" (menos los días de gracia), multiplicados por el valor diario.
+    // Se congela en la fecha de entrega si ya fue retirado.
+    function calcularBodegaje(o) {
+      if (!o.fecha_listo) return { dias: 0, monto: 0 };
+      const gracia = Number(config.bodegaje_dias_gracia ?? 2);
+      const montoDia = Number(config.bodegaje_monto_dia ?? 3500);
+      const desde = new Date(o.fecha_listo);
+      const hasta = (o.estado === 'entregado' && o.fecha_entrega) ? new Date(o.fecha_entrega) : new Date();
+      const diasTranscurridos = Math.floor((hasta - desde) / 86400000);
+      const dias = Math.max(0, diasTranscurridos - gracia);
+      return { dias, monto: dias * montoDia };
+    }
+
     // Barra de proporción + lista con punto de color por categoría
     const CATEGORIAS_DESGLOSE = [
       { key: 'subtotalMO', label: 'Mano de obra', color: '#1d4ed8' },
@@ -811,6 +825,7 @@
       const pagadoPagos = (ordenActual.pagos || []).reduce((s, p) => s + Number(p.monto), 0);
       const pagadoAbonos = (ordenActual.abonos || []).reduce((s, a) => s + Number(a.monto), 0);
       const pagado = pagadoPagos + pagadoAbonos;
+      const bodegaje = calcularBodegaje(ordenActual);
 
       // Reparto de mano de obra según porcentajes manuales de la configuración
       const sumaPcts = Number(config.pct_mecanico || 0) + Number(config.pct_dueno || 0) + Number(config.pct_taller || 0);
@@ -829,8 +844,9 @@
         <div class="fila"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
         ${t.conIva ? `<div class="fila"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>` : '<div class="fila" style="color:var(--color-text-muted);"><span>Sin IVA</span><span>–</span></div>'}
         <div class="fila total"><span>Total</span><span>${fmtMoneda(t.total)}</span></div>
+        ${bodegaje.monto > 0 ? `<div class="fila" style="color:#92600a;"><span>Bodegaje (${bodegaje.dias} día${bodegaje.dias === 1 ? '' : 's'})</span><span>${fmtMoneda(bodegaje.monto)}</span></div>` : ''}
         <div class="fila"><span>Pagado</span><span>${fmtMoneda(pagado)}</span></div>
-        <div class="fila"><span>Saldo</span><span>${fmtMoneda(t.total - pagado)}</span></div>
+        <div class="fila total"><span>Saldo</span><span>${fmtMoneda(t.total + bodegaje.monto - pagado)}</span></div>
         ${repartoHtml}`;
     }
 
@@ -1071,6 +1087,9 @@
       const estado = e.target.value;
       const payload = { estado };
       if (estado === 'entregado') payload.fecha_entrega = new Date().toISOString();
+      // Cada vez que se marca "Listo" se reinicia el conteo de días de gracia
+      // antes del cobro de bodegaje (nueva notificación de retiro al cliente).
+      if (estado === 'listo') payload.fecha_listo = new Date().toISOString();
       await supabaseClient.from('ordenes').update(payload).eq('id', ordenActual.id);
       await abrirDetalle(ordenActual.id);
     });
@@ -1163,7 +1182,8 @@
       const pagadoPagos = (o.pagos || []).reduce((s, p) => s + Number(p.monto), 0);
       const pagadoAbonos = (o.abonos || []).reduce((s, a) => s + Number(a.monto), 0);
       const pagado = pagadoPagos + pagadoAbonos;
-      const saldo = t.total - pagado;
+      const bodegaje = calcularBodegaje(o);
+      const saldo = t.total + bodegaje.monto - pagado;
       const desgloseHTML = renderDesgloseHTML(t, 300);
       document.getElementById('print-area').innerHTML = `
         <div class="print-brand"><img src="../assets/img/logo.png" alt="" onerror="this.style.display='none'" /><span class="print-brand-name">${config.nombre}</span></div>
@@ -1189,8 +1209,9 @@
           <div style="display:flex;justify-content:space-between;font-weight:bold;border-top:2px solid #000;margin-top:4px;padding-top:4px;"><span>TOTAL</span><span>${fmtMoneda(t.total)}</span></div>
         </div>
         ${desgloseHTML ? `<div style="margin-top:1rem; margin-right:auto;">${desgloseHTML}</div>` : ''}
-        ${pagado > 0 ? `
+        ${(pagado > 0 || bodegaje.monto > 0) ? `
         <div style="margin-top:1rem; margin-left:auto; max-width:300px; background:#f6f6f6; padding:0.75rem 1rem; border-radius:6px;">
+          ${bodegaje.monto > 0 ? `<div style="display:flex; justify-content:space-between; color:#92600a;"><span>Bodegaje (${bodegaje.dias} día${bodegaje.dias === 1 ? '' : 's'})</span><span>${fmtMoneda(bodegaje.monto)}</span></div>` : ''}
           <div style="display:flex; justify-content:space-between;"><span>Pagado / abonado</span><span>${fmtMoneda(pagado)}</span></div>
           <div style="display:flex; justify-content:space-between; font-weight:bold;"><span>Saldo pendiente</span><span>${fmtMoneda(saldo)}</span></div>
         </div>` : ''}

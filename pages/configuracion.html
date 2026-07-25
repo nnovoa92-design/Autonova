@@ -116,6 +116,22 @@
             </div>
             <p id="suma-pcts" style="font-size:0.85rem; margin-top:0;"></p>
 
+            <h2>Bodegaje por no retiro</h2>
+            <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
+              Al marcar una OT como "Listo", se guarda la fecha. Pasados los días de gracia sin que
+              el cliente retire el vehículo, se suma automáticamente el cobro por día al saldo de esa OT.
+            </p>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="bodegaje_dias_gracia">Días de gracia</label>
+                <input type="number" id="bodegaje_dias_gracia" min="0" step="1" />
+              </div>
+              <div class="form-group">
+                <label for="bodegaje_monto_dia">Cobro por día ($)</label>
+                <input type="number" id="bodegaje_monto_dia" min="0" step="1" />
+              </div>
+            </div>
+
             <h2>Políticas y términos legales</h2>
             <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
               Se imprimen como letra chica al final de la Cotización y la Orden de Trabajo.
@@ -208,7 +224,7 @@
   <script src="../assets/js/supabaseClient.js"></script>
   <script src="../assets/js/layout.js"></script>
   <script>
-    const CAMPOS = ['nombre','rut','telefono','email','direccion','valor_hora','iva_pct','pct_mecanico','pct_dueno','pct_taller','hora_apertura','hora_cierre','sab_apertura','sab_cierre','slot_min','politicas_generales_texto'];
+    const CAMPOS = ['nombre','rut','telefono','email','direccion','valor_hora','iva_pct','pct_mecanico','pct_dueno','pct_taller','hora_apertura','hora_cierre','sab_apertura','sab_cierre','slot_min','politicas_generales_texto','bodegaje_dias_gracia','bodegaje_monto_dia'];
 
     function actualizarSuma() {
       const suma = ['pct_mecanico','pct_dueno','pct_taller']
@@ -239,7 +255,7 @@
       const payload = {};
       CAMPOS.forEach(id => {
         const v = document.getElementById(id).value;
-        payload[id] = ['valor_hora','iva_pct','pct_mecanico','pct_dueno','pct_taller','slot_min'].includes(id)
+        payload[id] = ['valor_hora','iva_pct','pct_mecanico','pct_dueno','pct_taller','slot_min','bodegaje_dias_gracia','bodegaje_monto_dia'].includes(id)
           ? Number(v || 0)
           : (v || null);
       });
