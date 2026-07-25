@@ -143,6 +143,63 @@
               <textarea id="politicas_generales_texto" rows="14" style="font-family:inherit; font-size:0.85rem;"></textarea>
             </div>
 
+            <h3>Cláusulas por categoría de servicio</h3>
+            <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
+              Se agregan automáticamente a la cotización/OT solo cuando incluye un trabajo de esa categoría
+              (Inspección o Revisión Técnica en el Catálogo de trabajos).
+            </p>
+            <div class="form-group">
+              <label for="politica_inspeccion_texto">Categoría "Inspección"</label>
+              <textarea id="politica_inspeccion_texto" rows="4" style="font-family:inherit; font-size:0.85rem;"></textarea>
+            </div>
+            <div class="form-group">
+              <label for="politica_revision_tecnica_texto">Categoría "Revisión Técnica"</label>
+              <textarea id="politica_revision_tecnica_texto" rows="6" style="font-family:inherit; font-size:0.85rem;"></textarea>
+            </div>
+
+            <h2>Plantillas de mensajes de WhatsApp</h2>
+            <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
+              Usa estos textos entre llaves donde corresponda — la app los reemplaza al enviar:
+              <code>{nombre}</code> <code>{taller}</code> <code>{fecha}</code> <code>{hora}</code> <code>{servicio}</code>
+              <code>{patente}</code> <code>{direccion}</code>. En los mensajes de cita también puedes usar
+              <code>{precio_linea}</code>, <code>{tiempo_linea}</code> y <code>{modalidad_linea}</code> (se arman solos
+              según si hay cotización enlazada, tiempo estimado y modalidad de la cita).
+            </p>
+            <div class="form-group">
+              <label for="msg_confirmacion_cita">Confirmación de cita</label>
+              <textarea id="msg_confirmacion_cita" rows="10" style="font-family:inherit; font-size:0.85rem;"></textarea>
+            </div>
+            <div class="form-group">
+              <label for="msg_recordatorio_cita">Recordatorio de cita (día anterior)</label>
+              <textarea id="msg_recordatorio_cita" rows="10" style="font-family:inherit; font-size:0.85rem;"></textarea>
+            </div>
+            <div class="form-group">
+              <label for="msg_recordatorio_mantencion">Recordatorio de mantención</label>
+              <textarea id="msg_recordatorio_mantencion" rows="8" style="font-family:inherit; font-size:0.85rem;"></textarea>
+            </div>
+            <div class="form-group">
+              <label for="msg_recordatorio_revision_tecnica">Recordatorio de revisión técnica</label>
+              <textarea id="msg_recordatorio_revision_tecnica" rows="8" style="font-family:inherit; font-size:0.85rem;"></textarea>
+            </div>
+
+            <h3>Líneas de modalidad (dentro de los mensajes de cita)</h3>
+            <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
+              Reemplazan <code>{modalidad_linea}</code> según cómo se atienda esa cita. Usa <code>{direccion}</code>
+              en retiro/terreno — si la cita no tiene dirección cargada, se reemplaza por defecto pidiendo que la confirmen.
+            </p>
+            <div class="form-group">
+              <label for="msg_modalidad_taller">En el taller</label>
+              <input type="text" id="msg_modalidad_taller" />
+            </div>
+            <div class="form-group">
+              <label for="msg_modalidad_retiro">Retiro a domicilio</label>
+              <input type="text" id="msg_modalidad_retiro" />
+            </div>
+            <div class="form-group">
+              <label for="msg_modalidad_terreno">Trabajo en terreno</label>
+              <input type="text" id="msg_modalidad_terreno" />
+            </div>
+
             <button type="submit" id="guardar-btn">Guardar configuración</button>
             <p class="error-message" id="form-error"></p>
             <p id="form-ok" style="color:#1b6e3c; font-size:0.85rem;"></p>
@@ -224,7 +281,7 @@
   <script src="../assets/js/supabaseClient.js"></script>
   <script src="../assets/js/layout.js"></script>
   <script>
-    const CAMPOS = ['nombre','rut','telefono','email','direccion','valor_hora','iva_pct','pct_mecanico','pct_dueno','pct_taller','hora_apertura','hora_cierre','sab_apertura','sab_cierre','slot_min','politicas_generales_texto','bodegaje_dias_gracia','bodegaje_monto_dia'];
+    const CAMPOS = ['nombre','rut','telefono','email','direccion','valor_hora','iva_pct','pct_mecanico','pct_dueno','pct_taller','hora_apertura','hora_cierre','sab_apertura','sab_cierre','slot_min','politicas_generales_texto','bodegaje_dias_gracia','bodegaje_monto_dia','politica_inspeccion_texto','politica_revision_tecnica_texto','msg_confirmacion_cita','msg_recordatorio_cita','msg_recordatorio_mantencion','msg_recordatorio_revision_tecnica','msg_modalidad_taller','msg_modalidad_retiro','msg_modalidad_terreno'];
 
     function actualizarSuma() {
       const suma = ['pct_mecanico','pct_dueno','pct_taller']

@@ -114,19 +114,35 @@
   <script src="../assets/js/supabaseClient.js"></script>
   <script src="../assets/js/layout.js"></script>
   <script>
-    // Instrucción de llegada según cómo se entrega el servicio (mismo criterio que Agenda).
+    // Reemplaza {token} en una plantilla configurable con los valores dados (mismo criterio que Agenda).
+    function renderPlantilla(plantilla, valores) {
+      const texto = plantilla.replace(/\{(\w+)\}/g, (m, key) => (valores[key] != null ? valores[key] : ''));
+      return texto.replace(/\n{3,}/g, '\n\n');
+    }
+
+    function lineaPrecio(precio) {
+      return precio != null
+        ? `• Presupuesto de referencia: ${fmtMoneda(precio)} (de su cotización aprobada). Si en la revisión encontramos algo adicional, se lo avisamos antes de hacerlo — nunca le cobramos sin su autorización.`
+        : '• Le confirmaremos el valor una vez evaluado el vehículo. Nunca le cobramos algo sin avisarle antes.';
+    }
+
+    function lineaTiempo(tiempo) {
+      return tiempo ? `• Tiempo estimado: ${tiempo}. Un imprevisto (ej. un repuesto que no llegó del proveedor, o un hallazgo adicional) puede extender el plazo — si pasa, le avisamos apenas lo sepamos.` : '';
+    }
+
+    // Instrucción de llegada según cómo se entrega el servicio (editable en
+    // Configuración → Plantillas de mensajes, mismo criterio que Agenda).
     function lineaModalidad(modalidad, direccion) {
+      const dir = direccion || 'la dirección que nos confirme por este medio';
+      let texto;
       if (modalidad === 'retiro') {
-        return direccion
-          ? `Pasaremos a retirar su vehículo a la hora acordada en ${direccion}. Tenga las llaves y el padrón a mano.`
-          : 'Pasaremos a retirar su vehículo a la hora acordada — por favor confírmenos la dirección por este medio. Tenga las llaves y el padrón a mano.';
+        texto = renderPlantilla(tallerHorarios.msg_modalidad_retiro || 'Pasaremos a retirar su vehículo a la hora acordada en {direccion}. Tenga las llaves y el padrón a mano.', { direccion: dir });
+      } else if (modalidad === 'terreno') {
+        texto = renderPlantilla(tallerHorarios.msg_modalidad_terreno || 'Un mecánico llegará a la hora acordada a {direccion}. Le pedimos que el vehículo esté accesible y tenga las llaves a mano.', { direccion: dir });
+      } else {
+        texto = tallerHorarios.msg_modalidad_taller || 'Le recomendamos llegar 5 minutos antes y traer su cédula.';
       }
-      if (modalidad === 'terreno') {
-        return direccion
-          ? `Un mecánico llegará a la hora acordada a ${direccion}. Le pedimos que el vehículo esté accesible y tenga las llaves a mano.`
-          : 'Un mecánico llegará a la hora acordada a su ubicación — por favor confírmenos la dirección por este medio. Le pedimos que el vehículo esté accesible y tenga las llaves a mano.';
-      }
-      return 'Le recomendamos llegar 5 minutos antes y traer su cédula.';
+      return `• ${texto}`;
     }
 
     function fmtDuracion(horas) {
@@ -151,7 +167,7 @@
         if (cot) {
           const subtotal = (cot.cotizacion_items || []).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
           const neto = subtotal * (1 - Number(cot.descuento_pct || 0) / 100);
-          const iva = cot.con_iva !== false ? neto * Number(cfgIvaPct || 19) / 100 : 0;
+          const iva = cot.con_iva !== false ? neto * Number(tallerHorarios.iva_pct || 19) / 100 : 0;
           return neto + iva;
         }
       }
@@ -167,10 +183,16 @@
       if (!data) return null;
       const subtotal = (data.cotizacion_items || []).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
       const neto = subtotal * (1 - Number(data.descuento_pct || 0) / 100);
-      const iva = data.con_iva !== false ? neto * Number(cfgIvaPct || 19) / 100 : 0;
+      const iva = data.con_iva !== false ? neto * Number(tallerHorarios.iva_pct || 19) / 100 : 0;
       return neto + iva;
     }
-    let cfgIvaPct = 19;
+    let tallerHorarios = null;
+
+    // Se usan solo si Configuración → Plantillas de mensajes está vacío
+    // (ej. antes de correr la migración v26).
+    const DEFAULT_MSG_RECORDATORIO = 'Hola, {nombre},\n\nLe saluda el equipo de {taller}. Este es un recordatorio de su cita:\n\nFecha: mañana a las {hora}\nServicio: {servicio}\n\nLo que puede esperar:\n{precio_linea}\n{tiempo_linea}\n{modalidad_linea}\n\nGracias por confiar en nosotros. ¡Nos vemos mañana!';
+    const DEFAULT_MSG_MANTENCION = 'Hola, {nombre}\n\nLe saluda el equipo de {taller}. Queremos contarle que ya están próximos a cumplirse 12 meses desde el último servicio realizado a su vehículo patente {patente}.\n\nPor este motivo, queremos invitarle a programar una nueva mantención preventiva, para revisar su estado general, anticiparnos a posibles fallas y ayudarle a mantenerlo seguro, confiable y en buenas condiciones.\n\nSerá un gusto volver a recibirle, revisar su vehículo con dedicación y efectuar los trabajos que realmente necesite.\n\nQuedamos atentos para coordinar una hora en el día que más le acomode.';
+    const DEFAULT_MSG_REVISION_TECNICA = 'Hola, {nombre}\n\nLe saluda el equipo de {taller}. Queremos recordarle que la revisión técnica de su vehículo, patente {patente}, corresponde durante este mes.\n\nPara ayudarle a ahorrar tiempo y evitar esperas, contamos con el servicio de traslado y gestión de revisión técnica. Nosotros retiramos su vehículo, realizamos una inspección preventiva de los principales puntos y lo llevamos a la planta de revisión técnica.\n\nQuedamos atentos para ayudarle y coordinar una hora.';
 
     (async () => {
       const session = await initLayout('dashboard');
@@ -270,7 +292,7 @@
 
     async function cargarRecordatorios() {
       const config = await getTallerConfig();
-      cfgIvaPct = config.iva_pct;
+      tallerHorarios = config;
       const tbody = document.getElementById('recordatorios-body');
       const hoy = new Date();
       const finMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).toISOString().slice(0, 10);
@@ -362,39 +384,23 @@
         const patente = f.vehiculo && f.vehiculo.patente ? f.vehiculo.patente : 'su vehículo';
 
         if (f.tipo === 'Rev. técnica') {
-          return `Hola, ${nombre},
-
-Le saluda el equipo de **${config.nombre}**. Queremos recordarle que la revisión técnica de su vehículo, patente **${patente}**, corresponde durante este mes.
-
-Para ayudarle a ahorrar tiempo y evitar esperas, contamos con el servicio de traslado y gestión de revisión técnica. Nosotros retiramos su vehículo, realizamos una inspección preventiva de los principales puntos y lo llevamos a la planta de revisión técnica.
-
-Quedamos atentos para ayudarle y coordinar una hora.`;
+          return renderPlantilla(config.msg_recordatorio_revision_tecnica || DEFAULT_MSG_REVISION_TECNICA, {
+            nombre, taller: config.nombre, patente,
+          });
         } else if (f.tipo === 'Cita mañana') {
-          const lineas = [
-            `Hola, ${nombre},`, '',
-            `Le saluda el equipo de **${config.nombre}**. Este es un recordatorio de su cita:`, '',
-            `Fecha: mañana a las **${f.hora}**`,
-            `Servicio: ${f.servicio || 'Servicio agendado'}${f.vehiculo ? ` — vehículo ${patente}` : ''}`, '',
-            'Lo que puede esperar:',
-          ];
-          lineas.push(f.precioEstimado != null
-            ? `• Presupuesto de referencia: **${fmtMoneda(f.precioEstimado)}** (de su cotización aprobada). Si en la revisión encontramos algo adicional, se lo avisamos antes de hacerlo — nunca le cobramos sin su autorización.`
-            : '• Le confirmaremos el valor una vez evaluado el vehículo. Nunca le cobramos algo sin avisarle antes.');
-          if (f.tiempoEstimado) {
-            lineas.push(`• Tiempo estimado: ${f.tiempoEstimado}. Un imprevisto (ej. un repuesto que no llegó del proveedor, o un hallazgo adicional) puede extender el plazo — si pasa, le avisamos apenas lo sepamos.`);
-          }
-          lineas.push(`• ${lineaModalidad(f.modalidad, f.direccion)}`, '', 'Gracias por confiar en nosotros. ¡Nos vemos mañana!');
-          return lineas.join('\n');
+          return renderPlantilla(config.msg_recordatorio_cita || DEFAULT_MSG_RECORDATORIO, {
+            nombre,
+            taller: config.nombre,
+            hora: f.hora,
+            servicio: `${f.servicio || 'Servicio agendado'}${f.vehiculo ? ` — vehículo ${patente}` : ''}`,
+            precio_linea: lineaPrecio(f.precioEstimado),
+            tiempo_linea: lineaTiempo(f.tiempoEstimado),
+            modalidad_linea: lineaModalidad(f.modalidad, f.direccion),
+          });
         } else {
-          return `Hola, ${nombre},
-
-Le saluda el equipo de **${config.nombre}**. Queremos contarle que ya están próximos a cumplirse 12 meses desde el último servicio realizado a su vehículo patente **${patente}**.
-
-Por este motivo, queremos invitarle a programar una nueva mantención preventiva, para revisar su estado general, anticiparnos a posibles fallas y ayudarle a mantenerlo seguro, confiable y en buenas condiciones.
-
-Será un gusto volver a recibirle, revisar su vehículo con dedicación y efectuar los trabajos que realmente necesite.
-
-Quedamos atentos para coordinar una hora en el día que más le acomode.`;
+          return renderPlantilla(config.msg_recordatorio_mantencion || DEFAULT_MSG_MANTENCION, {
+            nombre, taller: config.nombre, patente,
+          });
         }
       };
 

@@ -322,21 +322,37 @@
       return c.trabajos ? c.trabajos.nombre : (c.descripcion || '');
     }
 
-    // Instrucción de llegada según cómo se entrega el servicio: no tiene
-    // sentido pedir "llegue antes" si vamos nosotros a buscar el vehículo
-    // o el trabajo se hace en la ubicación del cliente.
+    // Reemplaza {token} en una plantilla configurable con los valores dados.
+    function renderPlantilla(plantilla, valores) {
+      const texto = plantilla.replace(/\{(\w+)\}/g, (m, key) => (valores[key] != null ? valores[key] : ''));
+      return texto.replace(/\n{3,}/g, '\n\n');
+    }
+
+    function lineaPrecio(precio) {
+      return precio != null
+        ? `• Presupuesto de referencia: ${fmtMoneda(precio)} (de su cotización aprobada). Si en la revisión encontramos algo adicional, se lo avisamos antes de hacerlo — nunca le cobramos sin su autorización.`
+        : '• Le confirmaremos el valor una vez evaluado el vehículo. Nunca le cobramos algo sin avisarle antes.';
+    }
+
+    function lineaTiempo(tiempo) {
+      return tiempo ? `• Tiempo estimado: ${tiempo}. Un imprevisto (ej. un repuesto que no llegó del proveedor, o un hallazgo adicional) puede extender el plazo — si pasa, le avisamos apenas lo sepamos.` : '';
+    }
+
+    // Instrucción de llegada según cómo se entrega el servicio (editable en
+    // Configuración → Plantillas de mensajes): no tiene sentido pedir
+    // "llegue antes" si vamos nosotros a buscar el vehículo o el trabajo
+    // se hace en la ubicación del cliente.
     function lineaModalidad(modalidad, direccion) {
+      const dir = direccion || 'la dirección que nos confirme por este medio';
+      let texto;
       if (modalidad === 'retiro') {
-        return direccion
-          ? `Pasaremos a retirar su vehículo a la hora acordada en ${direccion}. Tenga las llaves y el padrón a mano.`
-          : 'Pasaremos a retirar su vehículo a la hora acordada — por favor confírmenos la dirección por este medio. Tenga las llaves y el padrón a mano.';
+        texto = renderPlantilla(tallerHorarios.msg_modalidad_retiro || 'Pasaremos a retirar su vehículo a la hora acordada en {direccion}. Tenga las llaves y el padrón a mano.', { direccion: dir });
+      } else if (modalidad === 'terreno') {
+        texto = renderPlantilla(tallerHorarios.msg_modalidad_terreno || 'Un mecánico llegará a la hora acordada a {direccion}. Le pedimos que el vehículo esté accesible y tenga las llaves a mano.', { direccion: dir });
+      } else {
+        texto = tallerHorarios.msg_modalidad_taller || 'Le recomendamos llegar 5 minutos antes y traer su cédula.';
       }
-      if (modalidad === 'terreno') {
-        return direccion
-          ? `Un mecánico llegará a la hora acordada a ${direccion}. Le pedimos que el vehículo esté accesible y tenga las llaves a mano.`
-          : 'Un mecánico llegará a la hora acordada a su ubicación — por favor confírmenos la dirección por este medio. Le pedimos que el vehículo esté accesible y tenga las llaves a mano.';
-      }
-      return 'Le recomendamos llegar 5 minutos antes y traer su cédula.';
+      return `• ${texto}`;
     }
 
     function fmtDuracion(horas) {
@@ -374,55 +390,44 @@
       return neto + iva;
     }
 
+    // Se usan solo si Configuración → Plantillas de mensajes está vacío
+    // (ej. antes de correr la migración v26).
+    const DEFAULT_MSG_CONFIRMACION = 'Hola, {nombre},\n\nLe saluda el equipo de {taller}. Confirmamos su cita:\n\nFecha: {fecha} a las {hora}\nServicio: {servicio}\n\nLo que puede esperar:\n{precio_linea}\n{tiempo_linea}\n{modalidad_linea}\n\nCualquier cambio, avísenos con tiempo. ¡Le esperamos!';
+    const DEFAULT_MSG_RECORDATORIO = 'Hola, {nombre},\n\nLe saluda el equipo de {taller}. Este es un recordatorio de su cita:\n\nFecha: mañana a las {hora}\nServicio: {servicio}\n\nLo que puede esperar:\n{precio_linea}\n{tiempo_linea}\n{modalidad_linea}\n\nGracias por confiar en nosotros. ¡Nos vemos mañana!';
+
     // Mensaje de confirmación (al crear/confirmar la cita): misma
     // transparencia de precio y tiempo que el recordatorio, pero con la
-    // fecha completa en vez de "mañana".
+    // fecha completa en vez de "mañana". Plantilla editable en Configuración.
     async function mensajeConfirmacionCita(c) {
-      const nombre = nombreCliente(c);
-      const serv = servicioCita(c);
       const precio = await buscarPrecioEstimado(c);
       const tiempo = c.trabajos && c.trabajos.horas_estimadas ? fmtDuracion(c.trabajos.horas_estimadas) : '';
-
-      const lineas = [
-        `Hola, ${nombre},`, '',
-        `Le saluda el equipo de ${tallerHorarios.nombre}. Confirmamos su cita:`, '',
-        `Fecha: ${fmtFecha(c.fecha_hora)} a las ${fmtHora(c.fecha_hora)}`,
-        `Servicio: ${serv || 'Servicio agendado'}`, '',
-        'Lo que puede esperar:',
-      ];
-      lineas.push(precio != null
-        ? `• Presupuesto de referencia: ${fmtMoneda(precio)} (de su cotización aprobada). Si en la revisión encontramos algo adicional, se lo avisamos antes de hacerlo — nunca le cobramos sin su autorización.`
-        : '• Le confirmaremos el valor una vez evaluado el vehículo. Nunca le cobramos algo sin avisarle antes.');
-      if (tiempo) {
-        lineas.push(`• Tiempo estimado: ${tiempo}. Un imprevisto (ej. un repuesto que no llegó del proveedor, o un hallazgo adicional) puede extender el plazo — si pasa, le avisamos apenas lo sepamos.`);
-      }
-      lineas.push(`• ${lineaModalidad(c.modalidad, c.direccion)}`, '', 'Cualquier cambio, avísenos con tiempo. ¡Le esperamos!');
-      return lineas.join('\n');
+      return renderPlantilla(tallerHorarios.msg_confirmacion_cita || DEFAULT_MSG_CONFIRMACION, {
+        nombre: nombreCliente(c),
+        taller: tallerHorarios.nombre,
+        fecha: fmtFecha(c.fecha_hora),
+        hora: fmtHora(c.fecha_hora),
+        servicio: servicioCita(c) || 'Servicio agendado',
+        precio_linea: lineaPrecio(precio),
+        tiempo_linea: lineaTiempo(tiempo),
+        modalidad_linea: lineaModalidad(c.modalidad, c.direccion),
+      });
     }
 
     // Mensaje de recordatorio (día anterior): transparente con precio y tiempo
     // estimados, dejando claro que no se cobra nada extra sin avisar antes.
+    // Plantilla editable en Configuración.
     async function mensajeRecordatorioCita(c) {
-      const nombre = nombreCliente(c);
-      const serv = servicioCita(c);
       const precio = await buscarPrecioEstimado(c);
       const tiempo = c.trabajos && c.trabajos.horas_estimadas ? fmtDuracion(c.trabajos.horas_estimadas) : '';
-
-      const lineas = [
-        `Hola, ${nombre},`, '',
-        `Le saluda el equipo de ${tallerHorarios.nombre}. Este es un recordatorio de su cita:`, '',
-        `Fecha: mañana a las ${fmtHora(c.fecha_hora)}`,
-        `Servicio: ${serv || 'Servicio agendado'}`, '',
-        'Lo que puede esperar:',
-      ];
-      lineas.push(precio != null
-        ? `• Presupuesto de referencia: ${fmtMoneda(precio)} (de su cotización aprobada). Si en la revisión encontramos algo adicional, se lo avisamos antes de hacerlo — nunca le cobramos sin su autorización.`
-        : '• Le confirmaremos el valor una vez evaluado el vehículo. Nunca le cobramos algo sin avisarle antes.');
-      if (tiempo) {
-        lineas.push(`• Tiempo estimado: ${tiempo}. Un imprevisto (ej. un repuesto que no llegó del proveedor, o un hallazgo adicional) puede extender el plazo — si pasa, le avisamos apenas lo sepamos.`);
-      }
-      lineas.push(`• ${lineaModalidad(c.modalidad, c.direccion)}`, '', 'Gracias por confiar en nosotros. ¡Nos vemos mañana!');
-      return lineas.join('\n');
+      return renderPlantilla(tallerHorarios.msg_recordatorio_cita || DEFAULT_MSG_RECORDATORIO, {
+        nombre: nombreCliente(c),
+        taller: tallerHorarios.nombre,
+        hora: fmtHora(c.fecha_hora),
+        servicio: servicioCita(c) || 'Servicio agendado',
+        precio_linea: lineaPrecio(precio),
+        tiempo_linea: lineaTiempo(tiempo),
+        modalidad_linea: lineaModalidad(c.modalidad, c.direccion),
+      });
     }
 
     function avisarWhatsAppCita(c, mensaje) {
