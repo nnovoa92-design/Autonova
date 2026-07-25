@@ -52,6 +52,12 @@
           <div id="online-body"></div>
         </div>
 
+        <!-- Recordatorios de citas para mañana -->
+        <div class="card" id="manana-card" style="display:none; border-top:3px solid var(--color-primary);">
+          <h2 style="margin-top:0;">📅 Citas de mañana — recordar por WhatsApp</h2>
+          <div id="manana-body"></div>
+        </div>
+
         <!-- Formulario nueva cita -->
         <div class="card" id="form-card" style="display:none;">
           <h2 id="form-title" style="margin-top:0;">Nueva cita</h2>
@@ -232,6 +238,32 @@
       return c.nombre_contacto || '–';
     }
 
+    function telefonoCita(c) {
+      return (c.clientes && c.clientes.telefono) || c.telefono_contacto || '';
+    }
+
+    function servicioCita(c) {
+      return c.trabajos ? c.trabajos.nombre : (c.descripcion || '');
+    }
+
+    function mensajeConfirmacionCita(c) {
+      const nombre = nombreCliente(c);
+      const serv = servicioCita(c);
+      return `Hola ${nombre} 👋\n\nLe saluda ${tallerHorarios.nombre}. Confirmamos su cita para el ${fmtFecha(c.fecha_hora)} a las ${fmtHora(c.fecha_hora)}${serv ? ` (${serv})` : ''}.\n\nCualquier cambio, avísenos con tiempo. ¡Le esperamos!`;
+    }
+
+    function mensajeRecordatorioCita(c) {
+      const nombre = nombreCliente(c);
+      const serv = servicioCita(c);
+      return `Hola ${nombre} 👋\n\nLe recordamos su cita de mañana ${fmtFecha(c.fecha_hora)} a las ${fmtHora(c.fecha_hora)} en ${tallerHorarios.nombre}${serv ? ` (${serv})` : ''}.\n\n¡Le esperamos!`;
+    }
+
+    function avisarWhatsAppCita(c, mensaje) {
+      const tel = telefonoCita(c);
+      if (!tel) { alert('Esta cita no tiene teléfono registrado.'); return; }
+      abrirEnlace(linkWhatsApp(tel, mensaje));
+    }
+
     function accionesCita(c) {
       let btns = '';
       if (c.estado === 'pendiente')
@@ -241,6 +273,7 @@
         btns += `<button type="button" class="btn-secondary btn-mini crear-ot" data-id="${c.id}">Crear OT</button>`;
         btns += `<button type="button" class="btn-danger btn-mini act" data-id="${c.id}" data-e="cancelado">Cancelar</button>`;
       }
+      btns += `<button type="button" class="btn-secondary btn-mini avisar-wa" data-id="${c.id}">Avisar por WhatsApp</button>`;
       btns += `<button type="button" class="btn-secondary btn-mini editar" data-id="${c.id}">Editar</button>`;
       btns += `<button type="button" class="btn-danger btn-mini eliminar" data-id="${c.id}">Eliminar</button>`;
       return btns;
@@ -338,8 +371,17 @@
 
     function wireAcciones(cont) {
       cont.querySelectorAll('.act').forEach(b => b.addEventListener('click', async () => {
+        const c = [...citasDia, ...onlinePendientes].find(x => x.id === b.dataset.id);
         await supabaseClient.from('citas').update({ estado: b.dataset.e }).eq('id', b.dataset.id);
+        // Al confirmar, se abre WhatsApp automáticamente con el mensaje de confirmación listo para enviar.
+        if (b.dataset.e === 'confirmado' && c && telefonoCita(c)) {
+          avisarWhatsAppCita(c, mensajeConfirmacionCita(c));
+        }
         await cargar();
+      }));
+      cont.querySelectorAll('.avisar-wa').forEach(b => b.addEventListener('click', () => {
+        const c = [...citasDia, ...onlinePendientes].find(x => x.id === b.dataset.id);
+        if (c) avisarWhatsAppCita(c, mensajeConfirmacionCita(c));
       }));
       cont.querySelectorAll('.editar').forEach(b => b.addEventListener('click', () => {
         const c = [...citasDia, ...onlinePendientes].find(x => x.id === b.dataset.id);
@@ -381,7 +423,7 @@
     async function cargarOnline() {
       const { data } = await supabaseClient
         .from('citas')
-        .select('*, clientes(nombre), vehiculos(patente), trabajos(nombre)')
+        .select('*, clientes(nombre, telefono), vehiculos(patente), trabajos(nombre)')
         .eq('origen', 'online').eq('estado', 'pendiente')
         .order('fecha_hora');
       onlinePendientes = data || [];
@@ -397,9 +439,47 @@
           <td class="table-actions">
             <button type="button" class="btn-secondary act" data-id="${c.id}" data-e="confirmado">Confirmar</button>
             <button type="button" class="btn-danger act" data-id="${c.id}" data-e="cancelado">Rechazar</button>
+            <button type="button" class="btn-secondary reenviar-wa" data-id="${c.id}">📤 Reenviar</button>
           </td>
         </tr>`).join('')}</tbody></table>`;
       wireAcciones(document.getElementById('online-body'));
+      document.getElementById('online-body').querySelectorAll('.reenviar-wa').forEach(b => b.addEventListener('click', () => {
+        const c = onlinePendientes.find(x => x.id === b.dataset.id);
+        if (!c) return;
+        const texto = `Nueva reserva online: ${nombreCliente(c)} · ${fmtFecha(c.fecha_hora)} ${fmtHora(c.fecha_hora)} · ${servicioCita(c) || 'sin servicio especificado'}${c.patente_contacto || (c.vehiculos ? c.vehiculos.patente : '') ? ` · ${c.patente_contacto || c.vehiculos.patente}` : ''}. Revisar en la agenda de Autonova.`;
+        abrirEnlace('https://wa.me/?text=' + encodeURIComponent(texto));
+      }));
+    }
+
+    // Citas de mañana pendientes de recordar al cliente por WhatsApp
+    let mananaPendientes = [];
+    async function cargarManana() {
+      const manana = new Date(new Date().toISOString().slice(0, 10) + 'T12:00:00');
+      manana.setDate(manana.getDate() + 1);
+      const dia = manana.toISOString().slice(0, 10);
+      const { data } = await supabaseClient
+        .from('citas')
+        .select('*, clientes(nombre, telefono), vehiculos(patente), trabajos(nombre)')
+        .gte('fecha_hora', `${dia}T00:00:00`).lte('fecha_hora', `${dia}T23:59:59`)
+        .in('estado', ['pendiente', 'confirmado'])
+        .order('fecha_hora');
+      mananaPendientes = data || [];
+      const card = document.getElementById('manana-card');
+      if (!mananaPendientes.length) { card.style.display = 'none'; return; }
+      card.style.display = 'block';
+      document.getElementById('manana-body').innerHTML = `<table><tbody>${mananaPendientes.map(c => `
+        <tr>
+          <td><strong>${fmtHora(c.fecha_hora)}</strong></td>
+          <td>${nombreCliente(c)}${telefonoCita(c) ? ` · ${telefonoCita(c)}` : ' · sin teléfono'}</td>
+          <td>${servicioCita(c) || '–'}</td>
+          <td class="table-actions">
+            <button type="button" class="btn-secondary recordar-wa" data-id="${c.id}" ${telefonoCita(c) ? '' : 'disabled'}>Recordar por WhatsApp</button>
+          </td>
+        </tr>`).join('')}</tbody></table>`;
+      document.getElementById('manana-body').querySelectorAll('.recordar-wa').forEach(b => b.addEventListener('click', () => {
+        const c = mananaPendientes.find(x => x.id === b.dataset.id);
+        if (c) avisarWhatsAppCita(c, mensajeRecordatorioCita(c));
+      }));
     }
 
     async function cargar() {
@@ -410,7 +490,7 @@
       const hasta = new Date(dia + 'T23:59:59').toISOString();
       const { data, error } = await supabaseClient
         .from('citas')
-        .select('*, clientes(nombre), vehiculos(patente, marca, modelo), trabajos(nombre)')
+        .select('*, clientes(nombre, telefono), vehiculos(patente, marca, modelo), trabajos(nombre)')
         .gte('fecha_hora', desde).lte('fecha_hora', hasta)
         .order('fecha_hora');
       citasDia = data || [];
@@ -423,6 +503,7 @@
         return;
       }
       await cargarOnline();
+      await cargarManana();
     }
 
     document.getElementById('dia-actual').addEventListener('change', cargar);
