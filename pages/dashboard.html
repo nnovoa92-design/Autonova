@@ -114,6 +114,44 @@
   <script src="../assets/js/supabaseClient.js"></script>
   <script src="../assets/js/layout.js"></script>
   <script>
+    // Instrucción de llegada según cómo se entrega el servicio (mismo criterio que Agenda).
+    function lineaModalidad(modalidad) {
+      if (modalidad === 'retiro') return 'Pasaremos a retirar su vehículo a la hora acordada. Tenga las llaves y el padrón a mano.';
+      if (modalidad === 'terreno') return 'Un mecánico llegará a su ubicación a la hora acordada. Le pedimos que el vehículo esté accesible y tenga las llaves a mano.';
+      return 'Le recomendamos llegar 5 minutos antes y traer su cédula.';
+    }
+
+    function fmtDuracion(horas) {
+      const h = Number(horas);
+      if (!h) return '';
+      if (h < 1) return `${Math.round(h * 60)} minutos`;
+      const enteras = Math.floor(h);
+      const resto = h - enteras;
+      if (resto >= 0.4 && resto <= 0.6) return `${enteras} hora${enteras !== 1 ? 's' : ''} y media`;
+      if (Number.isInteger(h)) return `${h} hora${h !== 1 ? 's' : ''}`;
+      return `${h} horas`;
+    }
+
+    // Busca la cotización aprobada/enviada más reciente del cliente (y del
+    // mismo vehículo, si la cita tiene uno) para dar un precio de referencia.
+    async function buscarPrecioEstimado(c) {
+      if (!c.cliente_id) return null;
+      let query = supabaseClient.from('cotizaciones')
+        .select('descuento_pct, con_iva, cotizacion_items(cantidad, precio_unitario)')
+        .eq('cliente_id', c.cliente_id)
+        .in('estado', ['aprobada', 'enviada'])
+        .order('creado_en', { ascending: false })
+        .limit(1);
+      if (c.vehiculo_id) query = query.eq('vehiculo_id', c.vehiculo_id);
+      const { data } = await query.maybeSingle();
+      if (!data) return null;
+      const subtotal = (data.cotizacion_items || []).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
+      const neto = subtotal * (1 - Number(data.descuento_pct || 0) / 100);
+      const iva = data.con_iva !== false ? neto * Number(cfgIvaPct || 19) / 100 : 0;
+      return neto + iva;
+    }
+    let cfgIvaPct = 19;
+
     (async () => {
       const session = await initLayout('dashboard');
       if (!session) return;
@@ -212,6 +250,7 @@
 
     async function cargarRecordatorios() {
       const config = await getTallerConfig();
+      cfgIvaPct = config.iva_pct;
       const tbody = document.getElementById('recordatorios-body');
       const hoy = new Date();
       const finMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).toISOString().slice(0, 10);
@@ -256,11 +295,11 @@
       const diaManana = mananaDate.toISOString().slice(0, 10);
       const { data: citasManana } = await supabaseClient
         .from('citas')
-        .select('fecha_hora, descripcion, telefono_contacto, nombre_contacto, clientes(nombre, telefono, email), vehiculos(patente, marca, modelo), trabajos(nombre)')
+        .select('cliente_id, vehiculo_id, fecha_hora, modalidad, descripcion, telefono_contacto, nombre_contacto, clientes(nombre, telefono, email), vehiculos(patente, marca, modelo), trabajos(nombre, horas_estimadas)')
         .gte('fecha_hora', `${diaManana}T00:00:00`).lte('fecha_hora', `${diaManana}T23:59:59`)
         .in('estado', ['pendiente', 'confirmado'])
         .order('fecha_hora');
-      (citasManana || []).forEach(c => {
+      for (const c of (citasManana || [])) {
         const horaCita = new Date(c.fecha_hora);
         const hora = `${String(horaCita.getHours()).padStart(2,'0')}:${String(horaCita.getMinutes()).padStart(2,'0')}`;
         filas.push({
@@ -269,8 +308,11 @@
           vehiculo: c.vehiculos,
           aviso: `Mañana ${hora}`, recordatorioId: null,
           hora, servicio: c.trabajos ? c.trabajos.nombre : (c.descripcion || ''),
+          modalidad: c.modalidad || 'taller',
+          precioEstimado: await buscarPrecioEstimado(c),
+          tiempoEstimado: c.trabajos && c.trabajos.horas_estimadas ? fmtDuracion(c.trabajos.horas_estimadas) : '',
         });
-      });
+      }
 
       document.getElementById('recordatorios-resumen').textContent = `${filas.length} pendientes`;
       if (!filas.length) {
@@ -307,11 +349,21 @@ Para ayudarle a ahorrar tiempo y evitar esperas, contamos con el servicio de tra
 
 Quedamos atentos para ayudarle y coordinar una hora.`;
         } else if (f.tipo === 'Cita mañana') {
-          return `Hola, ${nombre} 👋
-
-Le saluda el equipo de **${config.nombre}**. Le recordamos su cita de mañana a las **${f.hora}**${f.servicio ? ` (${f.servicio})` : ''}${f.vehiculo ? ` para su vehículo **${patente}**` : ''}.
-
-¡Le esperamos!`;
+          const lineas = [
+            `Hola, ${nombre} 👋`, '',
+            `Le saluda el equipo de **${config.nombre}**. Este es un recordatorio de su cita:`, '',
+            `🗓️ Mañana a las **${f.hora}**`,
+            `🔧 ${f.servicio || 'Servicio agendado'}${f.vehiculo ? ` — vehículo ${patente}` : ''}`, '',
+            'Lo que puede esperar:',
+          ];
+          lineas.push(f.precioEstimado != null
+            ? `• Presupuesto de referencia: **${fmtMoneda(f.precioEstimado)}** (de su cotización aprobada). Si en la revisión encontramos algo adicional, se lo avisamos antes de hacerlo — nunca le cobramos sin su autorización.`
+            : '• Le confirmaremos el valor una vez evaluado el vehículo. Nunca le cobramos algo sin avisarle antes.');
+          if (f.tiempoEstimado) {
+            lineas.push(`• Tiempo estimado: ${f.tiempoEstimado}. Un imprevisto (ej. un repuesto que no llegó del proveedor, o un hallazgo adicional) puede extender el plazo — si pasa, le avisamos apenas lo sepamos.`);
+          }
+          lineas.push(`• ${lineaModalidad(f.modalidad)}`, '', 'Gracias por confiar en nosotros. ¡Nos vemos mañana!');
+          return lineas.join('\n');
         } else {
           return `Hola, ${nombre} 👋
 

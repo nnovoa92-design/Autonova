@@ -94,9 +94,19 @@
               <input type="number" id="duracion" min="15" step="15" value="60" />
             </div>
           </div>
-          <div class="form-group">
-            <label for="notas">Notas</label>
-            <input type="text" id="notas" />
+          <div class="form-row">
+            <div class="form-group">
+              <label for="modalidad">Modalidad de atención</label>
+              <select id="modalidad">
+                <option value="taller">En el taller (cliente llega)</option>
+                <option value="retiro">Retiro a domicilio</option>
+                <option value="terreno">Trabajo en terreno</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex:2;">
+              <label for="notas">Notas</label>
+              <input type="text" id="notas" />
+            </div>
           </div>
           <button type="button" id="guardar-btn">Guardar cita</button>
           <button type="button" id="cancelar-form-btn" class="btn-secondary">Cancelar</button>
@@ -186,6 +196,7 @@
         document.getElementById('fecha').value = d.toISOString().slice(0, 10);
         document.getElementById('hora').value = fmtHora(cita.fecha_hora);
         document.getElementById('duracion').value = cita.duracion_min ?? 60;
+        document.getElementById('modalidad').value = cita.modalidad || 'taller';
         document.getElementById('notas').value = cita.notas ?? '';
       } else {
         document.getElementById('form-title').textContent = 'Nueva cita';
@@ -197,6 +208,7 @@
         document.getElementById('fecha').value = document.getElementById('dia-actual').value || new Date().toISOString().slice(0, 10);
         document.getElementById('hora').value = '10:00';
         document.getElementById('duracion').value = String((tallerHorarios && tallerHorarios.slot_min) || 60);
+        document.getElementById('modalidad').value = 'taller';
         document.getElementById('notas').value = '';
       }
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -220,6 +232,7 @@
         personal_id: document.getElementById('personal_id').value || null,
         fecha_hora: fechaHora,
         duracion_min: Number(document.getElementById('duracion').value) || 60,
+        modalidad: document.getElementById('modalidad').value || 'taller',
         notas: document.getElementById('notas').value || null,
       };
       const id = document.getElementById('cita-id').value;
@@ -246,16 +259,74 @@
       return c.trabajos ? c.trabajos.nombre : (c.descripcion || '');
     }
 
+    // Instrucción de llegada según cómo se entrega el servicio: no tiene
+    // sentido pedir "llegue antes" si vamos nosotros a buscar el vehículo
+    // o el trabajo se hace en la ubicación del cliente.
+    function lineaModalidad(modalidad) {
+      if (modalidad === 'retiro') return 'Pasaremos a retirar su vehículo a la hora acordada. Tenga las llaves y el padrón a mano.';
+      if (modalidad === 'terreno') return 'Un mecánico llegará a su ubicación a la hora acordada. Le pedimos que el vehículo esté accesible y tenga las llaves a mano.';
+      return 'Le recomendamos llegar 5 minutos antes y traer su cédula.';
+    }
+
+    function fmtDuracion(horas) {
+      const h = Number(horas);
+      if (!h) return '';
+      if (h < 1) return `${Math.round(h * 60)} minutos`;
+      const enteras = Math.floor(h);
+      const resto = h - enteras;
+      if (resto >= 0.4 && resto <= 0.6) return `${enteras} hora${enteras !== 1 ? 's' : ''} y media`;
+      if (Number.isInteger(h)) return `${h} hora${h !== 1 ? 's' : ''}`;
+      return `${h} horas`;
+    }
+
+    // Busca la cotización aprobada/enviada más reciente del cliente (y del
+    // mismo vehículo, si la cita tiene uno) para dar un precio de referencia.
+    async function buscarPrecioEstimado(c) {
+      if (!c.cliente_id) return null;
+      let query = supabaseClient.from('cotizaciones')
+        .select('descuento_pct, con_iva, cotizacion_items(cantidad, precio_unitario)')
+        .eq('cliente_id', c.cliente_id)
+        .in('estado', ['aprobada', 'enviada'])
+        .order('creado_en', { ascending: false })
+        .limit(1);
+      if (c.vehiculo_id) query = query.eq('vehiculo_id', c.vehiculo_id);
+      const { data } = await query.maybeSingle();
+      if (!data) return null;
+      const subtotal = (data.cotizacion_items || []).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
+      const neto = subtotal * (1 - Number(data.descuento_pct || 0) / 100);
+      const iva = data.con_iva !== false ? neto * Number(tallerHorarios.iva_pct || 19) / 100 : 0;
+      return neto + iva;
+    }
+
     function mensajeConfirmacionCita(c) {
       const nombre = nombreCliente(c);
       const serv = servicioCita(c);
-      return `Hola ${nombre} 👋\n\nLe saluda ${tallerHorarios.nombre}. Confirmamos su cita para el ${fmtFecha(c.fecha_hora)} a las ${fmtHora(c.fecha_hora)}${serv ? ` (${serv})` : ''}.\n\nCualquier cambio, avísenos con tiempo. ¡Le esperamos!`;
+      return `Hola ${nombre} 👋\n\nLe saluda ${tallerHorarios.nombre}. Confirmamos su cita para el ${fmtFecha(c.fecha_hora)} a las ${fmtHora(c.fecha_hora)}${serv ? ` (${serv})` : ''}.\n\n${lineaModalidad(c.modalidad)}\n\nCualquier cambio, avísenos con tiempo. ¡Le esperamos!`;
     }
 
-    function mensajeRecordatorioCita(c) {
+    // Mensaje de recordatorio (día anterior): transparente con precio y tiempo
+    // estimados, dejando claro que no se cobra nada extra sin avisar antes.
+    async function mensajeRecordatorioCita(c) {
       const nombre = nombreCliente(c);
       const serv = servicioCita(c);
-      return `Hola ${nombre} 👋\n\nLe recordamos su cita de mañana ${fmtFecha(c.fecha_hora)} a las ${fmtHora(c.fecha_hora)} en ${tallerHorarios.nombre}${serv ? ` (${serv})` : ''}.\n\n¡Le esperamos!`;
+      const precio = await buscarPrecioEstimado(c);
+      const tiempo = c.trabajos && c.trabajos.horas_estimadas ? fmtDuracion(c.trabajos.horas_estimadas) : '';
+
+      const lineas = [
+        `Hola, ${nombre} 👋`, '',
+        `Le saluda el equipo de ${tallerHorarios.nombre}. Este es un recordatorio de su cita:`, '',
+        `🗓️ Mañana a las ${fmtHora(c.fecha_hora)}`,
+        `🔧 ${serv || 'Servicio agendado'}`, '',
+        'Lo que puede esperar:',
+      ];
+      lineas.push(precio != null
+        ? `• Presupuesto de referencia: ${fmtMoneda(precio)} (de su cotización aprobada). Si en la revisión encontramos algo adicional, se lo avisamos antes de hacerlo — nunca le cobramos sin su autorización.`
+        : '• Le confirmaremos el valor una vez evaluado el vehículo. Nunca le cobramos algo sin avisarle antes.');
+      if (tiempo) {
+        lineas.push(`• Tiempo estimado: ${tiempo}. Un imprevisto (ej. un repuesto que no llegó del proveedor, o un hallazgo adicional) puede extender el plazo — si pasa, le avisamos apenas lo sepamos.`);
+      }
+      lineas.push(`• ${lineaModalidad(c.modalidad)}`, '', 'Gracias por confiar en nosotros. ¡Nos vemos mañana!');
+      return lineas.join('\n');
     }
 
     function avisarWhatsAppCita(c, mensaje) {
@@ -423,7 +494,7 @@
     async function cargarOnline() {
       const { data } = await supabaseClient
         .from('citas')
-        .select('*, clientes(nombre, telefono), vehiculos(patente), trabajos(nombre)')
+        .select('*, clientes(nombre, telefono), vehiculos(patente), trabajos(nombre, horas_estimadas)')
         .eq('origen', 'online').eq('estado', 'pendiente')
         .order('fecha_hora');
       onlinePendientes = data || [];
@@ -459,7 +530,7 @@
       const dia = manana.toISOString().slice(0, 10);
       const { data } = await supabaseClient
         .from('citas')
-        .select('*, clientes(nombre, telefono), vehiculos(patente), trabajos(nombre)')
+        .select('*, clientes(nombre, telefono), vehiculos(patente), trabajos(nombre, horas_estimadas)')
         .gte('fecha_hora', `${dia}T00:00:00`).lte('fecha_hora', `${dia}T23:59:59`)
         .in('estado', ['pendiente', 'confirmado'])
         .order('fecha_hora');
@@ -476,9 +547,9 @@
             <button type="button" class="btn-secondary recordar-wa" data-id="${c.id}" ${telefonoCita(c) ? '' : 'disabled'}>Recordar por WhatsApp</button>
           </td>
         </tr>`).join('')}</tbody></table>`;
-      document.getElementById('manana-body').querySelectorAll('.recordar-wa').forEach(b => b.addEventListener('click', () => {
+      document.getElementById('manana-body').querySelectorAll('.recordar-wa').forEach(b => b.addEventListener('click', async () => {
         const c = mananaPendientes.find(x => x.id === b.dataset.id);
-        if (c) avisarWhatsAppCita(c, mensajeRecordatorioCita(c));
+        if (c) avisarWhatsAppCita(c, await mensajeRecordatorioCita(c));
       }));
     }
 
@@ -490,7 +561,7 @@
       const hasta = new Date(dia + 'T23:59:59').toISOString();
       const { data, error } = await supabaseClient
         .from('citas')
-        .select('*, clientes(nombre, telefono), vehiculos(patente, marca, modelo), trabajos(nombre)')
+        .select('*, clientes(nombre, telefono), vehiculos(patente, marca, modelo), trabajos(nombre, horas_estimadas)')
         .gte('fecha_hora', desde).lte('fecha_hora', hasta)
         .order('fecha_hora');
       citasDia = data || [];
