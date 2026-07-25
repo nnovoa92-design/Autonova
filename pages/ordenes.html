@@ -1427,7 +1427,12 @@
 
     document.getElementById('sugerir-garantia-btn').addEventListener('click', () => {
       if (!ordenActual) return;
-      document.getElementById('detalle-garantia-especial').value = sugerirGarantia(ordenActual);
+      const sugerencia = sugerirGarantia(ordenActual);
+      if (!sugerencia) {
+        alert('No hay garantía especial que sugerir: ninguna de las categorías de esta OT tiene "Meses de garantía" configurado (o está en 0) en Configuración → Políticas de Servicio.\n\nMientras eso esté vacío, se aplica solo la garantía general de 3 meses (ya impresa en la OT). Configura ahí las categorías que quieras diferenciar.');
+        return;
+      }
+      document.getElementById('detalle-garantia-especial').value = sugerencia;
     });
 
     (async () => {
