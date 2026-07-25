@@ -374,10 +374,30 @@
       return neto + iva;
     }
 
-    function mensajeConfirmacionCita(c) {
+    // Mensaje de confirmación (al crear/confirmar la cita): misma
+    // transparencia de precio y tiempo que el recordatorio, pero con la
+    // fecha completa en vez de "mañana".
+    async function mensajeConfirmacionCita(c) {
       const nombre = nombreCliente(c);
       const serv = servicioCita(c);
-      return `Hola ${nombre},\n\nLe saluda ${tallerHorarios.nombre}. Confirmamos su cita para el ${fmtFecha(c.fecha_hora)} a las ${fmtHora(c.fecha_hora)}${serv ? ` (${serv})` : ''}.\n\n${lineaModalidad(c.modalidad, c.direccion)}\n\nCualquier cambio, avísenos con tiempo. ¡Le esperamos!`;
+      const precio = await buscarPrecioEstimado(c);
+      const tiempo = c.trabajos && c.trabajos.horas_estimadas ? fmtDuracion(c.trabajos.horas_estimadas) : '';
+
+      const lineas = [
+        `Hola, ${nombre},`, '',
+        `Le saluda el equipo de ${tallerHorarios.nombre}. Confirmamos su cita:`, '',
+        `Fecha: ${fmtFecha(c.fecha_hora)} a las ${fmtHora(c.fecha_hora)}`,
+        `Servicio: ${serv || 'Servicio agendado'}`, '',
+        'Lo que puede esperar:',
+      ];
+      lineas.push(precio != null
+        ? `• Presupuesto de referencia: ${fmtMoneda(precio)} (de su cotización aprobada). Si en la revisión encontramos algo adicional, se lo avisamos antes de hacerlo — nunca le cobramos sin su autorización.`
+        : '• Le confirmaremos el valor una vez evaluado el vehículo. Nunca le cobramos algo sin avisarle antes.');
+      if (tiempo) {
+        lineas.push(`• Tiempo estimado: ${tiempo}. Un imprevisto (ej. un repuesto que no llegó del proveedor, o un hallazgo adicional) puede extender el plazo — si pasa, le avisamos apenas lo sepamos.`);
+      }
+      lineas.push(`• ${lineaModalidad(c.modalidad, c.direccion)}`, '', 'Cualquier cambio, avísenos con tiempo. ¡Le esperamos!');
+      return lineas.join('\n');
     }
 
     // Mensaje de recordatorio (día anterior): transparente con precio y tiempo
@@ -553,13 +573,13 @@
         await supabaseClient.from('citas').update({ estado: b.dataset.e }).eq('id', b.dataset.id);
         // Al confirmar, se abre WhatsApp automáticamente con el mensaje de confirmación listo para enviar.
         if (b.dataset.e === 'confirmado' && c && telefonoCita(c)) {
-          avisarWhatsAppCita(c, mensajeConfirmacionCita(c));
+          avisarWhatsAppCita(c, await mensajeConfirmacionCita(c));
         }
         await cargar();
       }));
-      cont.querySelectorAll('.avisar-wa').forEach(b => b.addEventListener('click', () => {
+      cont.querySelectorAll('.avisar-wa').forEach(b => b.addEventListener('click', async () => {
         const c = [...citasDia, ...onlinePendientes].find(x => x.id === b.dataset.id);
-        if (c) avisarWhatsAppCita(c, mensajeConfirmacionCita(c));
+        if (c) avisarWhatsAppCita(c, await mensajeConfirmacionCita(c));
       }));
       cont.querySelectorAll('.editar').forEach(b => b.addEventListener('click', () => {
         const c = [...citasDia, ...onlinePendientes].find(x => x.id === b.dataset.id);
