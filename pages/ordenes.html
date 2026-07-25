@@ -87,6 +87,7 @@
               <button type="button" id="pdf-ot-btn" class="btn-secondary">PDF</button>
               <button type="button" id="whatsapp-ot-btn" class="btn-secondary">Avisar por WhatsApp</button>
               <button type="button" id="email-ot-btn" class="btn-secondary">Avisar por correo</button>
+              <button type="button" id="expediente-btn" class="btn-secondary" title="Documento interno completo, con todo el respaldo, para uso judicial si fuese necesario">📁 Expediente</button>
               <button type="button" id="cerrar-detalle-btn" class="btn-secondary">Volver al listado</button>
             </div>
           </div>
@@ -523,6 +524,8 @@
         estado: 'recepcion',
       }).select('id').single();
       if (error) { errorEl.textContent = `Error: ${error.message}`; return; }
+
+      await supabaseClient.from('ordenes_historial').insert({ orden_id: data.id, estado_anterior: null, estado_nuevo: 'recepcion' });
 
       const firmaBlob = await obtenerFirmaBlob();
       if (firmaBlob) {
@@ -1038,7 +1041,7 @@
     async function loadOrdenes() {
       const { data, error } = await supabaseClient
         .from('ordenes')
-        .select('*, clientes(nombre, telefono, email), vehiculos(patente, marca, modelo), orden_items(*), registro_horas(*), pagos(monto), abonos(monto)')
+        .select('*, clientes(nombre, telefono, email, rut), vehiculos(patente, marca, modelo, anio), orden_items(*), registro_horas(*), pagos(*), abonos(*), ordenes_historial(*)')
         .order('creado_en', { ascending: false });
       if (error) {
         document.getElementById('ordenes-body').innerHTML = `<tr><td colspan="7">Error: ${error.message}</td></tr>`;
@@ -1084,6 +1087,7 @@
 
     document.getElementById('detalle-estado').addEventListener('change', async (e) => {
       if (!ordenActual) return;
+      const estadoAnterior = ordenActual.estado;
       const estado = e.target.value;
       const payload = { estado };
       if (estado === 'entregado') payload.fecha_entrega = new Date().toISOString();
@@ -1091,6 +1095,9 @@
       // antes del cobro de bodegaje (nueva notificación de retiro al cliente).
       if (estado === 'listo') payload.fecha_listo = new Date().toISOString();
       await supabaseClient.from('ordenes').update(payload).eq('id', ordenActual.id);
+      if (estado !== estadoAnterior) {
+        await supabaseClient.from('ordenes_historial').insert({ orden_id: ordenActual.id, estado_anterior: estadoAnterior, estado_nuevo: estado });
+      }
       await abrirDetalle(ordenActual.id);
     });
 
@@ -1229,6 +1236,96 @@
         <div style="margin-top:2rem; padding-top:0.75rem; border-top:1px solid #ccc; font-size:0.7rem; color:#666; white-space:pre-wrap;">${config.politicas_generales_texto}</div>` : ''}
       `;
     }
+
+    // ---------- Expediente completo (interno, respaldo judicial) ----------
+    async function construirExpediente(o) {
+      const items = o.orden_items || [];
+      const t = calcularTotal(items, o.con_iva !== false);
+      const bodegaje = calcularBodegaje(o);
+      const pagadoPagos = (o.pagos || []).reduce((s, p) => s + Number(p.monto), 0);
+      const pagadoAbonos = (o.abonos || []).reduce((s, a) => s + Number(a.monto), 0);
+      const pagado = pagadoPagos + pagadoAbonos;
+      const veh = o.vehiculos ? `${o.vehiculos.patente} · ${[o.vehiculos.marca, o.vehiculos.modelo, o.vehiculos.anio].filter(Boolean).join(' ')}` : '–';
+      const cli = o.clientes || {};
+
+      const { data: archivos } = await supabaseClient.storage.from('fotos-ot').list(o.id, { limit: 100 });
+      const fotos = (archivos || []).filter(f => !f.name.startsWith('abonos') && f.name !== 'firma_recepcion.png');
+
+      const historial = (o.ordenes_historial || []).slice().sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+      const pagosTimeline = [
+        ...(o.pagos || []).map(p => ({ fecha: p.fecha || p.creado_en, texto: `Pago registrado: ${fmtMoneda(p.monto)} (${(METODOS_PAGO[p.metodo_pago] || p.metodo_pago || '')})` })),
+        ...(o.abonos || []).map(a => ({ fecha: a.fecha, texto: `Abono registrado: ${fmtMoneda(a.monto)} (${(a.metodo_pago || '').replace('_', ' ')})` })),
+      ];
+      const timelineCompleta = [
+        ...historial.map(h => ({ fecha: h.fecha, texto: `Estado: ${h.estado_anterior ? `${(ESTADOS_ORDEN[h.estado_anterior] || {}).label || h.estado_anterior} → ` : ''}${(ESTADOS_ORDEN[h.estado_nuevo] || {}).label || h.estado_nuevo}` })),
+        ...pagosTimeline,
+        ...(o.firma_fecha ? [{ fecha: o.firma_fecha, texto: 'Firma digital de recepción registrada' }] : []),
+      ].sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+
+      document.getElementById('print-area').innerHTML = `
+        <div class="print-brand"><img src="../assets/img/logo.png" alt="" onerror="this.style.display='none'" /><span class="print-brand-name">${config.nombre}</span></div>
+        <h2 style="margin:1rem 1.5rem 0;">Expediente completo — ${fmtNumero('OT', o.numero)}</h2>
+        <p style="margin:0 1.5rem; color:#666; font-size:0.8rem;">Documento interno generado el ${fmtFechaHora(new Date().toISOString())}. No es el documento entregado al cliente.</p>
+
+        <h3 style="margin-top:1.5rem;">Cliente</h3>
+        <p>${cli.nombre || '–'} ${cli.rut ? `· RUT ${cli.rut}` : ''}<br>${cli.telefono || ''} ${cli.email ? `· ${cli.email}` : ''}</p>
+
+        <h3>Vehículo</h3>
+        <p>${veh}${o.km_ingreso ? ` · ${Number(o.km_ingreso).toLocaleString('es-CL')} km al ingreso` : ''}${o.nivel_combustible ? ` · Combustible: ${o.nivel_combustible}` : ''}</p>
+
+        <h3>Fechas clave</h3>
+        <p>Ingreso: ${fmtFechaHora(o.fecha_ingreso)}<br>${o.fecha_listo ? `Listo para retiro: ${fmtFechaHora(o.fecha_listo)}<br>` : ''}${o.fecha_entrega ? `Entrega: ${fmtFechaHora(o.fecha_entrega)}` : 'Aún no entregado'}</p>
+
+        ${o.diagnostico ? `<h3>Motivo de trabajo</h3><p>${o.diagnostico}</p>` : ''}
+        ${o.garantia_especial ? `<h3>Garantía especial</h3><p>${o.garantia_especial}</p>` : ''}
+
+        <h3>Checklist de recepción</h3>
+        ${(o.checklist_recepcion && o.checklist_recepcion.length) ? `
+        <ul style="font-size:0.85rem;">${o.checklist_recepcion.map(c => `<li>${c.marcado ? '☑' : '☐'} ${c.item}${c.nota ? ` — ${c.nota}` : ''}</li>`).join('')}</ul>` : '<p style="color:#666;">Sin checklist registrado.</p>'}
+        ${o.pertenencias_declaradas ? `<p><strong>Pertenencias declaradas:</strong> ${o.pertenencias_declaradas}</p>` : ''}
+
+        <h3>Ítems de la orden</h3>
+        <table style="width:100%; border-collapse:collapse;">
+          <thead><tr style="border-bottom:1px solid #000;"><th style="text-align:left;padding:4px;">Descripción</th><th style="text-align:right;padding:4px;">Cant.</th><th style="text-align:right;padding:4px;">P. unit.</th><th style="text-align:right;padding:4px;">Total</th></tr></thead>
+          <tbody>${items.map(i => `<tr style="border-bottom:1px solid #ccc;"><td style="padding:4px;">${i.descripcion}</td><td style="text-align:right;padding:4px;">${Number(i.cantidad).toLocaleString('es-CL')}</td><td style="text-align:right;padding:4px;">${fmtMoneda(i.precio_unitario)}</td><td style="text-align:right;padding:4px;">${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td></tr>`).join('')}</tbody>
+        </table>
+        <p style="text-align:right; margin-top:0.5rem;">
+          Neto: ${fmtMoneda(t.neto)} · IVA: ${fmtMoneda(t.iva)} · Total: ${fmtMoneda(t.total)}
+          ${bodegaje.monto > 0 ? ` · Bodegaje (${bodegaje.dias} días): ${fmtMoneda(bodegaje.monto)}` : ''}
+          · Pagado: ${fmtMoneda(pagado)} · <strong>Saldo: ${fmtMoneda(t.total + bodegaje.monto - pagado)}</strong>
+        </p>
+
+        ${o.firma_cliente_url ? `
+        <h3>Firma del cliente</h3>
+        <p style="font-size:0.85rem;">Registrada el ${fmtFechaHora(o.firma_fecha)}</p>
+        <img src="${o.firma_cliente_url}" alt="Firma del cliente" style="max-width:260px; border:1px solid #ccc; border-radius:6px; background:#fff;" />` : ''}
+
+        <h3 style="margin-top:1.5rem;">Línea de tiempo</h3>
+        ${timelineCompleta.length ? `<ul style="font-size:0.85rem;">${timelineCompleta.map(e => `<li>${fmtFechaHora(e.fecha)} — ${e.texto}</li>`).join('')}</ul>` : '<p style="color:#666;">Sin eventos registrados.</p>'}
+
+        <h3 style="margin-top:1.5rem;">Fotografías del vehículo</h3>
+        ${fotos.length ? `
+        <div style="display:flex; flex-wrap:wrap; gap:0.5rem;">
+          ${fotos.map(f => `<img src="${supabaseClient.storage.from('fotos-ot').getPublicUrl(`${o.id}/${f.name}`).data.publicUrl}" style="width:160px; height:120px; object-fit:cover; border:1px solid #ccc; border-radius:6px;" />`).join('')}
+        </div>` : '<p style="color:#666;">Sin fotografías registradas.</p>'}
+
+        ${o.notas ? `<h3 style="margin-top:1.5rem;">Notas internas</h3><p>${o.notas}</p>` : ''}
+
+        ${config.politicas_generales_texto ? `
+        <h3 style="margin-top:1.5rem;">Políticas generales vigentes al generar este expediente</h3>
+        <div style="font-size:0.75rem; color:#666; white-space:pre-wrap;">${config.politicas_generales_texto}</div>` : ''}
+
+        <p style="margin-top:2rem; padding-top:0.75rem; border-top:1px solid #ccc; font-size:0.7rem; color:#999;">
+          Documento generado automáticamente por el sistema Autonova el ${fmtFechaHora(new Date().toISOString())}.
+        </p>
+      `;
+    }
+
+    document.getElementById('expediente-btn').addEventListener('click', async () => {
+      if (!ordenActual) return;
+      await construirExpediente(ordenActual);
+      window.print();
+    });
 
     document.getElementById('email-ot-btn').addEventListener('click', () => {
       if (!ordenActual) return;
