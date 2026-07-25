@@ -99,8 +99,12 @@
           </div>
           <div class="form-group">
             <label for="detalle-garantia-especial">Garantía especial (opcional, aparte de la política general)</label>
+            <p style="color:var(--color-text-muted); font-size:0.8rem; margin:0 0 0.35rem;">
+              Se sugiere sola según la Política de Servicio de cada categoría de trabajo incluida en la OT. Solo confirma o ajusta.
+            </p>
             <textarea id="detalle-garantia-especial" rows="2" placeholder="Ej: 6 meses de garantía en reparación de motor"></textarea>
             <button type="button" id="guardar-garantia-btn" class="btn-secondary" style="margin-top:0.5rem;">Guardar garantía especial</button>
+            <button type="button" id="sugerir-garantia-btn" class="btn-secondary" style="margin-top:0.5rem;">↻ Sugerir según política</button>
           </div>
 
           <h3>Ítems de la orden</h3>
@@ -323,6 +327,7 @@
   <script src="../assets/js/layout.js"></script>
   <script>
     let clientesCache = [], vehiculosCache = [], trabajosCache = [], repuestosCache = [], personalCache = [];
+    let categoriasCache = [], policiesCache = [];
     let ordenesCache = [];
     let ordenActual = null;
     let config = null;
@@ -364,6 +369,32 @@
       const diasTranscurridos = Math.floor((hasta - desde) / 86400000);
       const dias = Math.max(0, diasTranscurridos - gracia);
       return { dias, monto: dias * montoDia };
+    }
+
+    // Sugiere el texto de "Garantía especial" según la Política de Servicio
+    // ya definida para cada categoría de los trabajos incluidos en la OT
+    // (Configuración → Políticas de Servicio). El usuario solo confirma o ajusta.
+    const GARANTIA_TIPO_LABEL = { ninguna: 'sin garantía', trabajo: 'mano de obra', repuestos: 'repuestos', ambos: 'mano de obra y repuestos' };
+
+    function sugerirGarantia(o) {
+      const items = o.orden_items || [];
+      const categoriaIds = new Set();
+      items.filter(i => i.tipo === 'mano_obra' && i.trabajo_id).forEach(i => {
+        const trabajo = trabajosCache.find(t => t.id === i.trabajo_id);
+        if (trabajo && trabajo.categoria_id) categoriaIds.add(trabajo.categoria_id);
+      });
+
+      const lineas = [];
+      categoriaIds.forEach(catId => {
+        const politica = policiesCache.find(p => p.categoria_id === catId);
+        if (!politica || !politica.garantia_meses) return;
+        const categoria = categoriasCache.find(c => c.id === catId);
+        const tipoLabel = GARANTIA_TIPO_LABEL[politica.garantia_tipo] || politica.garantia_tipo;
+        let linea = `${categoria ? categoria.nombre : 'Servicio'}: ${politica.garantia_meses} meses de garantía (${tipoLabel})`;
+        if (politica.notas) linea += ` — ${politica.notas}`;
+        lineas.push(linea);
+      });
+      return lineas.join('\n');
     }
 
     // Barra de proporción + lista con punto de color por categoría
@@ -560,7 +591,9 @@
         ` · Ingreso: ${fmtFechaHora(o.fecha_ingreso)}` +
         (o.km_ingreso ? ` · ${Number(o.km_ingreso).toLocaleString('es-CL')} km` : '');
       document.getElementById('detalle-diagnostico').value = o.diagnostico ?? '';
-      document.getElementById('detalle-garantia-especial').value = o.garantia_especial ?? '';
+      // Si no hay garantía especial guardada, se sugiere según la Política de
+      // Servicio de cada categoría presente en la OT; el usuario la confirma o ajusta.
+      document.getElementById('detalle-garantia-especial').value = o.garantia_especial ?? sugerirGarantia(o);
 
       const estadoSel = document.getElementById('detalle-estado');
       estadoSel.innerHTML = Object.entries(ESTADOS_ORDEN)
@@ -1392,23 +1425,32 @@
       ordenActual.garantia_especial = valor;
     });
 
+    document.getElementById('sugerir-garantia-btn').addEventListener('click', () => {
+      if (!ordenActual) return;
+      document.getElementById('detalle-garantia-especial').value = sugerirGarantia(ordenActual);
+    });
+
     (async () => {
       const session = await initLayout('ordenes');
       if (!session) return;
       config = await getTallerConfig();
 
-      const [clientes, vehiculos, trabajos, repuestos, personal] = await Promise.all([
+      const [clientes, vehiculos, trabajos, repuestos, personal, categorias, policies] = await Promise.all([
         supabaseClient.from('clientes').select('id, nombre').eq('activo', true).order('nombre'),
         supabaseClient.from('vehiculos').select('*').eq('activo', true).order('patente'),
         supabaseClient.from('trabajos').select('*').eq('activo', true).order('nombre'),
         supabaseClient.from('repuestos').select('*').eq('activo', true).order('nombre'),
         supabaseClient.from('personal').select('*').eq('activo', true).order('nombre'),
+        supabaseClient.from('categorias_trabajos').select('*'),
+        supabaseClient.from('service_policies').select('*').eq('activo', true),
       ]);
       clientesCache = clientes.data || [];
       vehiculosCache = vehiculos.data || [];
       trabajosCache = trabajos.data || [];
       repuestosCache = repuestos.data || [];
       personalCache = personal.data || [];
+      categoriasCache = categorias.data || [];
+      policiesCache = policies.data || [];
 
       document.getElementById('nueva-cliente').innerHTML =
         '<option value="">Seleccionar cliente...</option>' +
