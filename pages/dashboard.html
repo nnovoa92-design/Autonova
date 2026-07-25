@@ -115,9 +115,17 @@
   <script src="../assets/js/layout.js"></script>
   <script>
     // Instrucción de llegada según cómo se entrega el servicio (mismo criterio que Agenda).
-    function lineaModalidad(modalidad) {
-      if (modalidad === 'retiro') return 'Pasaremos a retirar su vehículo a la hora acordada. Tenga las llaves y el padrón a mano.';
-      if (modalidad === 'terreno') return 'Un mecánico llegará a su ubicación a la hora acordada. Le pedimos que el vehículo esté accesible y tenga las llaves a mano.';
+    function lineaModalidad(modalidad, direccion) {
+      if (modalidad === 'retiro') {
+        return direccion
+          ? `Pasaremos a retirar su vehículo a la hora acordada en ${direccion}. Tenga las llaves y el padrón a mano.`
+          : 'Pasaremos a retirar su vehículo a la hora acordada — por favor confírmenos la dirección por este medio. Tenga las llaves y el padrón a mano.';
+      }
+      if (modalidad === 'terreno') {
+        return direccion
+          ? `Un mecánico llegará a la hora acordada a ${direccion}. Le pedimos que el vehículo esté accesible y tenga las llaves a mano.`
+          : 'Un mecánico llegará a la hora acordada a su ubicación — por favor confírmenos la dirección por este medio. Le pedimos que el vehículo esté accesible y tenga las llaves a mano.';
+      }
       return 'Le recomendamos llegar 5 minutos antes y traer su cédula.';
     }
 
@@ -307,7 +315,7 @@
       const diaManana = mananaDate.toISOString().slice(0, 10);
       const { data: citasManana } = await supabaseClient
         .from('citas')
-        .select('cliente_id, vehiculo_id, cotizacion_id, fecha_hora, modalidad, descripcion, telefono_contacto, nombre_contacto, clientes(nombre, telefono, email), vehiculos(patente, marca, modelo), trabajos(nombre, horas_estimadas)')
+        .select('cliente_id, vehiculo_id, cotizacion_id, fecha_hora, modalidad, direccion, descripcion, telefono_contacto, nombre_contacto, clientes(nombre, telefono, email), vehiculos(patente, marca, modelo), trabajos(nombre, horas_estimadas)')
         .gte('fecha_hora', `${diaManana}T00:00:00`).lte('fecha_hora', `${diaManana}T23:59:59`)
         .in('estado', ['pendiente', 'confirmado'])
         .order('fecha_hora');
@@ -321,6 +329,7 @@
           aviso: `Mañana ${hora}`, recordatorioId: null,
           hora, servicio: c.trabajos ? c.trabajos.nombre : (c.descripcion || ''),
           modalidad: c.modalidad || 'taller',
+          direccion: c.direccion || '',
           precioEstimado: await buscarPrecioEstimado(c),
           tiempoEstimado: c.trabajos && c.trabajos.horas_estimadas ? fmtDuracion(c.trabajos.horas_estimadas) : '',
         });
@@ -374,7 +383,7 @@ Quedamos atentos para ayudarle y coordinar una hora.`;
           if (f.tiempoEstimado) {
             lineas.push(`• Tiempo estimado: ${f.tiempoEstimado}. Un imprevisto (ej. un repuesto que no llegó del proveedor, o un hallazgo adicional) puede extender el plazo — si pasa, le avisamos apenas lo sepamos.`);
           }
-          lineas.push(`• ${lineaModalidad(f.modalidad)}`, '', 'Gracias por confiar en nosotros. ¡Nos vemos mañana!');
+          lineas.push(`• ${lineaModalidad(f.modalidad, f.direccion)}`, '', 'Gracias por confiar en nosotros. ¡Nos vemos mañana!');
           return lineas.join('\n');
         } else {
           return `Hola, ${nombre} \u{1F44B}

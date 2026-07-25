@@ -117,10 +117,14 @@
                 <option value="terreno">Trabajo en terreno</option>
               </select>
             </div>
-            <div class="form-group" style="flex:2;">
-              <label for="notas">Notas</label>
-              <input type="text" id="notas" />
+            <div class="form-group" id="grupo-direccion" style="flex:2; display:none;">
+              <label for="direccion">Dirección de retiro/atención</label>
+              <input type="text" id="direccion" placeholder="Se prellena con la dirección del cliente, si tiene" />
             </div>
+          </div>
+          <div class="form-group">
+            <label for="notas">Notas</label>
+            <input type="text" id="notas" />
           </div>
           <button type="button" id="guardar-btn">Guardar cita</button>
           <button type="button" id="cancelar-form-btn" class="btn-secondary">Cancelar</button>
@@ -215,6 +219,21 @@
         propias.map(c => `<option value="${c.id}">${fmtNumero('COT', c.numero)} · ${fmtMoneda(calcularTotalCotizacion(c))} · ${(ESTADOS_COTIZACION[c.estado] || {}).label || c.estado}</option>`).join('');
     }
 
+    // La dirección solo importa si vamos nosotros (retiro/terreno); se
+    // pre-llena con la del cliente pero queda libre para ajustarla.
+    function actualizarVisibilidadDireccion() {
+      const modalidad = document.getElementById('modalidad').value;
+      document.getElementById('grupo-direccion').style.display = modalidad === 'taller' ? 'none' : 'block';
+    }
+
+    function prellenarDireccion() {
+      const clienteId = document.getElementById('cliente_id').value;
+      const cliente = clientesCache.find(c => c.id === clienteId);
+      if (cliente && cliente.direccion && !document.getElementById('direccion').value) {
+        document.getElementById('direccion').value = cliente.direccion;
+      }
+    }
+
     // ---------- Formulario ----------
     function abrirForm(cita) {
       document.getElementById('form-card').style.display = 'block';
@@ -234,6 +253,7 @@
         document.getElementById('hora').value = fmtHora(cita.fecha_hora);
         document.getElementById('duracion').value = cita.duracion_min ?? 60;
         document.getElementById('modalidad').value = cita.modalidad || 'taller';
+        document.getElementById('direccion').value = cita.direccion ?? '';
         document.getElementById('notas').value = cita.notas ?? '';
       } else {
         document.getElementById('form-title').textContent = 'Nueva cita';
@@ -247,14 +267,17 @@
         document.getElementById('hora').value = '10:00';
         document.getElementById('duracion').value = String((tallerHorarios && tallerHorarios.slot_min) || 60);
         document.getElementById('modalidad').value = 'taller';
+        document.getElementById('direccion').value = '';
         document.getElementById('notas').value = '';
       }
+      actualizarVisibilidadDireccion();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     document.getElementById('nueva-btn').addEventListener('click', () => abrirForm(null));
     document.getElementById('cancelar-form-btn').addEventListener('click', () => document.getElementById('form-card').style.display = 'none');
-    document.getElementById('cliente_id').addEventListener('change', () => { actualizarVehiculos(); actualizarCotizaciones(); });
+    document.getElementById('cliente_id').addEventListener('change', () => { actualizarVehiculos(); actualizarCotizaciones(); prellenarDireccion(); });
+    document.getElementById('modalidad').addEventListener('change', () => { actualizarVisibilidadDireccion(); prellenarDireccion(); });
 
     document.getElementById('guardar-btn').addEventListener('click', async () => {
       const errorEl = document.getElementById('form-error');
@@ -272,6 +295,7 @@
         fecha_hora: fechaHora,
         duracion_min: Number(document.getElementById('duracion').value) || 60,
         modalidad: document.getElementById('modalidad').value || 'taller',
+        direccion: document.getElementById('direccion').value || null,
         notas: document.getElementById('notas').value || null,
       };
       const id = document.getElementById('cita-id').value;
@@ -301,9 +325,17 @@
     // Instrucción de llegada según cómo se entrega el servicio: no tiene
     // sentido pedir "llegue antes" si vamos nosotros a buscar el vehículo
     // o el trabajo se hace en la ubicación del cliente.
-    function lineaModalidad(modalidad) {
-      if (modalidad === 'retiro') return 'Pasaremos a retirar su vehículo a la hora acordada. Tenga las llaves y el padrón a mano.';
-      if (modalidad === 'terreno') return 'Un mecánico llegará a su ubicación a la hora acordada. Le pedimos que el vehículo esté accesible y tenga las llaves a mano.';
+    function lineaModalidad(modalidad, direccion) {
+      if (modalidad === 'retiro') {
+        return direccion
+          ? `Pasaremos a retirar su vehículo a la hora acordada en ${direccion}. Tenga las llaves y el padrón a mano.`
+          : 'Pasaremos a retirar su vehículo a la hora acordada — por favor confírmenos la dirección por este medio. Tenga las llaves y el padrón a mano.';
+      }
+      if (modalidad === 'terreno') {
+        return direccion
+          ? `Un mecánico llegará a la hora acordada a ${direccion}. Le pedimos que el vehículo esté accesible y tenga las llaves a mano.`
+          : 'Un mecánico llegará a la hora acordada a su ubicación — por favor confírmenos la dirección por este medio. Le pedimos que el vehículo esté accesible y tenga las llaves a mano.';
+      }
       return 'Le recomendamos llegar 5 minutos antes y traer su cédula.';
     }
 
@@ -345,7 +377,7 @@
     function mensajeConfirmacionCita(c) {
       const nombre = nombreCliente(c);
       const serv = servicioCita(c);
-      return `Hola ${nombre} \u{1F44B}\n\nLe saluda ${tallerHorarios.nombre}. Confirmamos su cita para el ${fmtFecha(c.fecha_hora)} a las ${fmtHora(c.fecha_hora)}${serv ? ` (${serv})` : ''}.\n\n${lineaModalidad(c.modalidad)}\n\nCualquier cambio, avísenos con tiempo. ¡Le esperamos!`;
+      return `Hola ${nombre} \u{1F44B}\n\nLe saluda ${tallerHorarios.nombre}. Confirmamos su cita para el ${fmtFecha(c.fecha_hora)} a las ${fmtHora(c.fecha_hora)}${serv ? ` (${serv})` : ''}.\n\n${lineaModalidad(c.modalidad, c.direccion)}\n\nCualquier cambio, avísenos con tiempo. ¡Le esperamos!`;
     }
 
     // Mensaje de recordatorio (día anterior): transparente con precio y tiempo
@@ -369,7 +401,7 @@
       if (tiempo) {
         lineas.push(`• Tiempo estimado: ${tiempo}. Un imprevisto (ej. un repuesto que no llegó del proveedor, o un hallazgo adicional) puede extender el plazo — si pasa, le avisamos apenas lo sepamos.`);
       }
-      lineas.push(`• ${lineaModalidad(c.modalidad)}`, '', 'Gracias por confiar en nosotros. ¡Nos vemos mañana!');
+      lineas.push(`• ${lineaModalidad(c.modalidad, c.direccion)}`, '', 'Gracias por confiar en nosotros. ¡Nos vemos mañana!');
       return lineas.join('\n');
     }
 
@@ -675,7 +707,7 @@
       const session = await initLayout('agenda');
       if (!session) return;
       const [clientes, vehiculos, trabajos, personal, cotizaciones, config] = await Promise.all([
-        supabaseClient.from('clientes').select('id, nombre').eq('activo', true).order('nombre'),
+        supabaseClient.from('clientes').select('id, nombre, direccion').eq('activo', true).order('nombre'),
         supabaseClient.from('vehiculos').select('*').eq('activo', true).order('patente'),
         supabaseClient.from('trabajos').select('*').eq('activo', true).order('nombre'),
         supabaseClient.from('personal').select('*').eq('activo', true).order('nombre'),
