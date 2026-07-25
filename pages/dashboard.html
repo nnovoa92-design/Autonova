@@ -43,11 +43,11 @@
 
         <div class="card">
           <div class="toolbar">
-            <h2 style="margin:0;">Recordatorios del mes</h2>
+            <h2 style="margin:0;">Recordatorios</h2>
             <span class="badge badge-yellow" id="recordatorios-resumen"></span>
           </div>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.5rem;">
-            Mantenciones por avisar y vehículos con revisión técnica este mes. Envía con un clic.
+            Mantenciones y revisión técnica del mes, más citas de agenda para mañana. Envía con un clic.
           </p>
           <table>
             <thead>
@@ -250,9 +250,31 @@
         }
       });
 
-      document.getElementById('recordatorios-resumen').textContent = `${filas.length} este mes`;
+      // 3) Citas de agenda para mañana (mismo listado que en Agenda)
+      const mananaDate = new Date(hoy.toISOString().slice(0, 10) + 'T12:00:00');
+      mananaDate.setDate(mananaDate.getDate() + 1);
+      const diaManana = mananaDate.toISOString().slice(0, 10);
+      const { data: citasManana } = await supabaseClient
+        .from('citas')
+        .select('fecha_hora, descripcion, telefono_contacto, nombre_contacto, clientes(nombre, telefono, email), vehiculos(patente, marca, modelo), trabajos(nombre)')
+        .gte('fecha_hora', `${diaManana}T00:00:00`).lte('fecha_hora', `${diaManana}T23:59:59`)
+        .in('estado', ['pendiente', 'confirmado'])
+        .order('fecha_hora');
+      (citasManana || []).forEach(c => {
+        const horaCita = new Date(c.fecha_hora);
+        const hora = `${String(horaCita.getHours()).padStart(2,'0')}:${String(horaCita.getMinutes()).padStart(2,'0')}`;
+        filas.push({
+          tipo: 'Cita mañana', badge: 'badge-purple',
+          cliente: c.clientes || { nombre: c.nombre_contacto, telefono: c.telefono_contacto },
+          vehiculo: c.vehiculos,
+          aviso: `Mañana ${hora}`, recordatorioId: null,
+          hora, servicio: c.trabajos ? c.trabajos.nombre : (c.descripcion || ''),
+        });
+      });
+
+      document.getElementById('recordatorios-resumen').textContent = `${filas.length} pendientes`;
       if (!filas.length) {
-        tbody.innerHTML = '<tr><td colspan="5">No hay recordatorios este mes.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5">No hay recordatorios pendientes.</td></tr>';
         return;
       }
 
@@ -272,11 +294,11 @@
         </tr>`;
       }).join('');
 
-      const generarMensaje = (tipo, cliente, vehiculo) => {
-        const nombre = cliente && cliente.nombre ? cliente.nombre.split(' ')[0] : 'Cliente';
-        const patente = vehiculo && vehiculo.patente ? vehiculo.patente : 'su vehículo';
+      const generarMensaje = (f) => {
+        const nombre = f.cliente && f.cliente.nombre ? f.cliente.nombre.split(' ')[0] : 'Cliente';
+        const patente = f.vehiculo && f.vehiculo.patente ? f.vehiculo.patente : 'su vehículo';
 
-        if (tipo === 'Rev. técnica') {
+        if (f.tipo === 'Rev. técnica') {
           return `Hola, ${nombre} 👋
 
 Le saluda el equipo de **${config.nombre}**. Queremos recordarle que la revisión técnica de su vehículo, patente **${patente}**, corresponde durante este mes.
@@ -284,6 +306,12 @@ Le saluda el equipo de **${config.nombre}**. Queremos recordarle que la revisió
 Para ayudarle a ahorrar tiempo y evitar esperas, contamos con el servicio de traslado y gestión de revisión técnica. Nosotros retiramos su vehículo, realizamos una inspección preventiva de los principales puntos y lo llevamos a la planta de revisión técnica.
 
 Quedamos atentos para ayudarle y coordinar una hora.`;
+        } else if (f.tipo === 'Cita mañana') {
+          return `Hola, ${nombre} 👋
+
+Le saluda el equipo de **${config.nombre}**. Le recordamos su cita de mañana a las **${f.hora}**${f.servicio ? ` (${f.servicio})` : ''}${f.vehiculo ? ` para su vehículo **${patente}**` : ''}.
+
+¡Le esperamos!`;
         } else {
           return `Hola, ${nombre} 👋
 
@@ -297,18 +325,23 @@ Quedamos atentos para coordinar una hora en el día que más le acomode.`;
         }
       };
 
+      const asuntoCorreo = (tipo) => {
+        if (tipo === 'Rev. técnica') return 'Recordatorio - Revisión Técnica';
+        if (tipo === 'Cita mañana') return 'Recordatorio - Cita de mañana';
+        return 'Recordatorio - Mantención';
+      };
+
       tbody.querySelectorAll('.rec-wa').forEach(btn => btn.addEventListener('click', () => {
         const f = filas[btn.dataset.idx];
         const tel = f.cliente && f.cliente.telefono;
         if (!tel) { alert('El cliente no tiene teléfono registrado.'); return; }
-        abrirEnlace(linkWhatsApp(tel, generarMensaje(f.tipo, f.cliente, f.vehiculo)));
+        abrirEnlace(linkWhatsApp(tel, generarMensaje(f)));
       }));
       tbody.querySelectorAll('.rec-mail').forEach(btn => btn.addEventListener('click', () => {
         const f = filas[btn.dataset.idx];
         const email = f.cliente && f.cliente.email;
         if (!email) { alert('El cliente no tiene correo registrado.'); return; }
-        const asunto = f.tipo === 'Rev. técnica' ? 'Recordatorio - Revisión Técnica' : 'Recordatorio - Mantención';
-        abrirEnlace(linkGmail(email, asunto, generarMensaje(f.tipo, f.cliente, f.vehiculo)));
+        abrirEnlace(linkGmail(email, asuntoCorreo(f.tipo), generarMensaje(f)));
       }));
       tbody.querySelectorAll('.rec-ok').forEach(btn => btn.addEventListener('click', async () => {
         await supabaseClient.from('recordatorios').update({ enviado: true, fecha_envio: new Date().toISOString() }).eq('id', btn.dataset.id);
