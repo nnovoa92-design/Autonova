@@ -400,6 +400,22 @@
       return lineas.join('\n');
     }
 
+    // Cláusulas específicas (Inspección, Revisión Técnica/PRT) que se
+    // agregan solo si la OT incluye un trabajo de esa categoría.
+    function textoPoliticasEspeciales(items) {
+      const nombres = new Set();
+      items.filter(i => i.tipo === 'mano_obra' && i.trabajo_id).forEach(i => {
+        const trabajo = trabajosCache.find(t => t.id === i.trabajo_id);
+        if (!trabajo || !trabajo.categoria_id) return;
+        const cat = categoriasCache.find(c => c.id === trabajo.categoria_id);
+        if (cat) nombres.add(cat.nombre);
+      });
+      const bloques = [];
+      if (nombres.has('Inspección') && config.politica_inspeccion_texto) bloques.push(config.politica_inspeccion_texto);
+      if (nombres.has('Revisión Técnica') && config.politica_revision_tecnica_texto) bloques.push(config.politica_revision_tecnica_texto);
+      return bloques.join('\n\n');
+    }
+
     // Barra de proporción + lista con punto de color por categoría
     const CATEGORIAS_DESGLOSE = [
       { key: 'subtotalMO', label: 'Mano de obra', color: '#1d4ed8' },
@@ -1228,6 +1244,7 @@
       const bodegaje = calcularBodegaje(o);
       const saldo = t.total + bodegaje.monto - pagado;
       const desgloseHTML = renderDesgloseHTML(t, 300);
+      const politicasEspeciales = textoPoliticasEspeciales(items);
       document.getElementById('print-area').innerHTML = `
         <div class="print-brand"><img src="../assets/img/logo.png" alt="" onerror="this.style.display='none'" /><span class="print-brand-name">${config.nombre}</span></div>
         <div class="print-header">
@@ -1268,6 +1285,8 @@
           <p style="font-size:0.85rem; margin:0 0 0.25rem;"><strong>Firma del cliente</strong> (recepción del vehículo, ${fmtFecha(o.firma_fecha)}):</p>
           <img src="${o.firma_cliente_url}" alt="Firma del cliente" style="max-width:260px; border:1px solid #ccc; border-radius:6px; background:#fff;" />
         </div>` : ''}
+        ${politicasEspeciales ? `
+        <div style="margin-top:1.5rem; background:#fef3c7; padding:0.75rem 1rem; border-radius:6px; font-size:0.78rem; white-space:pre-wrap;">${politicasEspeciales}</div>` : ''}
         ${config.politicas_generales_texto ? `
         <div style="margin-top:2rem; padding-top:0.75rem; border-top:1px solid #ccc; font-size:0.7rem; color:#666; white-space:pre-wrap;">${config.politicas_generales_texto}</div>` : ''}
       `;
@@ -1283,6 +1302,7 @@
       const pagado = pagadoPagos + pagadoAbonos;
       const veh = o.vehiculos ? `${o.vehiculos.patente} · ${[o.vehiculos.marca, o.vehiculos.modelo, o.vehiculos.anio].filter(Boolean).join(' ')}` : '–';
       const cli = o.clientes || {};
+      const politicasEspeciales = textoPoliticasEspeciales(items);
 
       const { data: archivos } = await supabaseClient.storage.from('fotos-ot').list(o.id, { limit: 100 });
       const fotos = (archivos || []).filter(f => !f.name.startsWith('abonos') && f.name !== 'firma_recepcion.png');
@@ -1346,6 +1366,10 @@
         </div>` : '<p style="color:#666;">Sin fotografías registradas.</p>'}
 
         ${o.notas ? `<h3 style="margin-top:1.5rem;">Notas internas</h3><p>${o.notas}</p>` : ''}
+
+        ${politicasEspeciales ? `
+        <h3 style="margin-top:1.5rem;">Políticas específicas aplicables</h3>
+        <div style="font-size:0.75rem; color:#666; white-space:pre-wrap;">${politicasEspeciales}</div>` : ''}
 
         ${config.politicas_generales_texto ? `
         <h3 style="margin-top:1.5rem;">Políticas generales vigentes al generar este expediente</h3>

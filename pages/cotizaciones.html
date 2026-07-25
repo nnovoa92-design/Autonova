@@ -190,7 +190,7 @@
   <script src="../assets/js/supabaseClient.js"></script>
   <script src="../assets/js/layout.js"></script>
   <script>
-    let clientesCache = [], vehiculosCache = [], trabajosCache = [], repuestosCache = [];
+    let clientesCache = [], vehiculosCache = [], trabajosCache = [], repuestosCache = [], categoriasCache = [];
     let cotizacionesCache = [], itemsActuales = [];
     let config = null;
 
@@ -262,6 +262,29 @@
       const subtotalTrabajoExterno = subtotalTrabajoExternoBruto * factorDescuento;
       const subtotalInsumosTaller = subtotalInsumosTallerBruto * factorDescuento;
       return { subtotal, subtotalMO, subtotalRepuestos, subtotalTrabajoExterno, subtotalInsumosTaller, descuento, neto, iva, conIva, total: neto + iva };
+    }
+
+    // Nombres de categorías de servicio (Frenos, Inspección, etc.) presentes
+    // entre los ítems de mano de obra, cruzando trabajo_id → categoria_id.
+    function categoriasDeServicioPresentes(items) {
+      const nombres = new Set();
+      items.filter(i => i.tipo === 'mano_obra' && i.trabajo_id).forEach(i => {
+        const trabajo = trabajosCache.find(t => t.id === i.trabajo_id);
+        if (!trabajo || !trabajo.categoria_id) return;
+        const cat = categoriasCache.find(c => c.id === trabajo.categoria_id);
+        if (cat) nombres.add(cat.nombre);
+      });
+      return nombres;
+    }
+
+    // Cláusulas específicas (Inspección, Revisión Técnica/PRT) que se
+    // agregan solo si la cotización/OT incluye un trabajo de esa categoría.
+    function textoPoliticasEspeciales(items) {
+      const categorias = categoriasDeServicioPresentes(items);
+      const bloques = [];
+      if (categorias.has('Inspección') && config.politica_inspeccion_texto) bloques.push(config.politica_inspeccion_texto);
+      if (categorias.has('Revisión Técnica') && config.politica_revision_tecnica_texto) bloques.push(config.politica_revision_tecnica_texto);
+      return bloques.join('\n\n');
     }
 
     // Barra de proporción + lista con punto de color por categoría
@@ -742,6 +765,7 @@
       const pagado = pagadoOrdenVinculada(c);
       const saldo = t.total - pagado;
       const desgloseHTML = renderDesgloseHTML(t, 300);
+      const politicasEspeciales = textoPoliticasEspeciales(items);
 
       document.getElementById('print-area').innerHTML = `
         <div class="print-brand">
@@ -798,6 +822,8 @@
           <div style="display:flex; justify-content:space-between; font-weight:bold;"><span>Saldo pendiente</span><span>${fmtMoneda(saldo)}</span></div>
         </div>` : ''}
         ${c.notas ? `<p style="margin-top:1.5rem; white-space:pre-wrap; word-wrap:break-word;"><strong>Notas:</strong> ${c.notas}</p>` : ''}
+        ${politicasEspeciales ? `
+        <div style="margin-top:1.5rem; background:#fef3c7; padding:0.75rem 1rem; border-radius:6px; font-size:0.78rem; white-space:pre-wrap;">${politicasEspeciales}</div>` : ''}
         ${config.politicas_generales_texto ? `
         <div style="margin-top:2rem; padding-top:0.75rem; border-top:1px solid #ccc; font-size:0.7rem; color:#666; white-space:pre-wrap;">${config.politicas_generales_texto}</div>` : ''}
       `;
@@ -1003,16 +1029,18 @@
       if (!session) return;
       config = await getTallerConfig();
 
-      const [clientes, vehiculos, trabajos, repuestos] = await Promise.all([
+      const [clientes, vehiculos, trabajos, repuestos, categorias] = await Promise.all([
         supabaseClient.from('clientes').select('id, nombre, rut, telefono, email').eq('activo', true).order('nombre'),
         supabaseClient.from('vehiculos').select('*').eq('activo', true).order('patente'),
         supabaseClient.from('trabajos').select('*').eq('activo', true).order('nombre'),
         supabaseClient.from('repuestos').select('*').eq('activo', true).order('nombre'),
+        supabaseClient.from('categorias_trabajos').select('*'),
       ]);
       clientesCache = clientes.data || [];
       vehiculosCache = vehiculos.data || [];
       trabajosCache = trabajos.data || [];
       repuestosCache = repuestos.data || [];
+      categoriasCache = categorias.data || [];
 
       poblarClientes();
       poblarTrabajos();

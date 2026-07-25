@@ -80,12 +80,24 @@
         </div>`;
     }
 
+    // Cláusulas específicas (Inspección, Revisión Técnica/PRT) que se
+    // agregan solo si la cotización incluye un trabajo de esa categoría.
+    function politicasEspecialesTexto(d) {
+      const categorias = new Set((d.items || []).map(i => i.categoria).filter(Boolean));
+      const taller = d.taller || {};
+      const bloques = [];
+      if (categorias.has('Inspección') && taller.politica_inspeccion_texto) bloques.push(taller.politica_inspeccion_texto);
+      if (categorias.has('Revisión Técnica') && taller.politica_revision_tecnica_texto) bloques.push(taller.politica_revision_tecnica_texto);
+      return bloques.join('\n\n');
+    }
+
     function render(d, mensajeRespuesta) {
       cotData = d;
       if (d.taller && d.taller.nombre) document.getElementById('taller-nombre').textContent = d.taller.nombre;
       const t = calcular(d);
       const pendiente = d.estado === 'borrador' || d.estado === 'enviada';
       const desgloseHTML = renderDesgloseHTML(t, 300);
+      const politicasEspeciales = politicasEspecialesTexto(d);
 
       document.getElementById('contenido').innerHTML = `
         <div style="max-width:680px; margin:0 auto;">
@@ -159,6 +171,8 @@
             <p style="margin:0.25rem 0;"><strong>${d.taller.nombre}</strong></p>
             <p style="margin:0.1rem 0; font-size:0.75rem;">${d.taller.direccion ?? ''} · ${d.taller.telefono ?? ''}</p>
           </div>` : ''}
+          ${politicasEspeciales ? `
+          <div style="margin-top:1.5rem; background:#fef3c7; padding:0.75rem 1rem; border-radius:6px; font-size:0.78rem; white-space:pre-wrap;">${politicasEspeciales}</div>` : ''}
           ${(d.taller && d.taller.politicas_generales_texto) ? `
           <div style="margin-top:1.5rem; padding-top:0.75rem; border-top:1px solid #eee; font-size:0.7rem; color:#999; white-space:pre-wrap;">${d.taller.politicas_generales_texto}</div>` : ''}
         </div>
