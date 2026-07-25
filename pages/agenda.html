@@ -242,6 +242,7 @@
         btns += `<button type="button" class="btn-danger btn-mini act" data-id="${c.id}" data-e="cancelado">Cancelar</button>`;
       }
       btns += `<button type="button" class="btn-secondary btn-mini editar" data-id="${c.id}">Editar</button>`;
+      btns += `<button type="button" class="btn-danger btn-mini eliminar" data-id="${c.id}">Eliminar</button>`;
       return btns;
     }
 
@@ -345,6 +346,12 @@
         if (c) abrirForm(c);
       }));
       cont.querySelectorAll('.crear-ot').forEach(b => b.addEventListener('click', () => crearOTdesdeCita(b.dataset.id)));
+      cont.querySelectorAll('.eliminar').forEach(b => b.addEventListener('click', async () => {
+        if (!confirm('¿Eliminar esta cita? No se puede deshacer.')) return;
+        const { error } = await supabaseClient.from('citas').delete().eq('id', b.dataset.id);
+        if (error) { alert('Error: ' + error.message); return; }
+        await cargar();
+      }));
     }
 
     async function crearOTdesdeCita(citaId) {
