@@ -26,6 +26,11 @@
     .cita-card { flex: 1; min-width: 0; }
     .cita-info { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; font-size: 0.9rem; }
     .cita-actions { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.3rem; }
+    .cita-continua {
+      font-size: 0.8rem; font-style: italic; color: var(--color-text-muted);
+      padding: 0.25rem 0.6rem; background: rgba(0,0,0,0.035); border-radius: var(--radius);
+    }
+    .agregar-mas-btn { flex-shrink: 0; }
     .sin-horario { padding: 2rem; text-align: center; color: var(--color-text-muted); }
     @media (max-width: 600px) {
       .slot-hora { width: 52px; font-size: 0.75rem; }
@@ -150,6 +155,12 @@
     function fmtHora(iso) {
       const d = new Date(iso);
       return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    }
+
+    // Hora de término de una cita según su duración (para mostrar cuánto ocupa el bloque).
+    function fmtHoraFin(c) {
+      const fin = new Date(new Date(c.fecha_hora).getTime() + (Number(c.duracion_min) || 60) * 60000);
+      return `${String(fin.getHours()).padStart(2,'0')}:${String(fin.getMinutes()).padStart(2,'0')}`;
     }
 
     // Calcula los slots del día según horarios del taller.
@@ -368,18 +379,25 @@
       </div>`;
     }
 
-    function slotRow(slot, citas) {
-      if (citas.length) {
+    function slotRow(slot, citas, continua) {
+      const ocupado = citas.length || (continua && continua.length);
+      if (!ocupado) {
         return `<div class="horario-slot">
           <div class="slot-hora">${slot}</div>
-          <div class="slot-content">${citas.map(renderCitaCard).join('')}</div>
+          <div class="slot-content slot-libre" data-slot="${slot}">
+            <span style="flex:1; color:var(--color-text-muted); font-size:0.85rem;">Disponible</span>
+            <span class="add-hint">+ Agregar</span>
+          </div>
         </div>`;
       }
+      const citasHtml = citas.map(renderCitaCard).join('');
+      const continuaHtml = (continua || []).map(c =>
+        `<div class="cita-continua">↳ ${nombreCliente(c)} (ocupado hasta las ${fmtHoraFin(c)})</div>`).join('');
       return `<div class="horario-slot">
         <div class="slot-hora">${slot}</div>
-        <div class="slot-content slot-libre" data-slot="${slot}">
-          <span style="flex:1; color:var(--color-text-muted); font-size:0.85rem;">Disponible</span>
-          <span class="add-hint">+ Agregar</span>
+        <div class="slot-content">
+          ${citasHtml}${continuaHtml}
+          <button type="button" class="btn-secondary btn-mini agregar-mas-btn" data-slot="${slot}">+ Agregar</button>
         </div>
       </div>`;
     }
@@ -408,6 +426,22 @@
         (citasPorSlot[k] = citasPorSlot[k] || []).push(c);
       });
 
+      // Marcar los bloques siguientes que una cita larga sigue ocupando
+      // (ej. una cita de 120 min con bloques de 60 min ocupa 2 filas).
+      const slotMinDia = Number(tallerHorarios && tallerHorarios.slot_min) || 60;
+      const continuaciones = {};
+      citasDia.forEach(c => {
+        const inicioIdx = slots.indexOf(fmtHora(c.fecha_hora));
+        if (inicioIdx === -1) return;
+        const span = Math.max(1, Math.ceil((Number(c.duracion_min) || 60) / slotMinDia));
+        for (let i = 1; i < span; i++) {
+          const idx = inicioIdx + i;
+          if (idx >= slots.length) break;
+          const k = slots[idx];
+          (continuaciones[k] = continuaciones[k] || []).push(c);
+        }
+      });
+
       // Citas registradas fuera del horario calculado
       const slotSet = new Set(slots);
       const fuera = citasDia.filter(c => !slotSet.has(fmtHora(c.fecha_hora)));
@@ -418,7 +452,7 @@
           Revisa <a href="configuracion.html">Configuración → Horarios</a>.</div>`;
       } else {
         for (const slot of slots) {
-          html += slotRow(slot, citasPorSlot[slot] || []);
+          html += slotRow(slot, citasPorSlot[slot] || [], continuaciones[slot] || []);
         }
       }
 
@@ -434,6 +468,14 @@
         el.addEventListener('click', () => {
           abrirForm(null);
           document.getElementById('hora').value = el.dataset.slot;
+        });
+      });
+
+      // "+ Agregar" en un bloque que ya tiene cita(s) → permite otro compromiso a la misma hora
+      grid.querySelectorAll('.agregar-mas-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          abrirForm(null);
+          document.getElementById('hora').value = btn.dataset.slot;
         });
       });
 
