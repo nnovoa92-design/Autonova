@@ -362,7 +362,7 @@
         const patente = f.vehiculo && f.vehiculo.patente ? f.vehiculo.patente : 'su vehículo';
 
         if (f.tipo === 'Rev. técnica') {
-          return `Hola, ${nombre} \u{1F44B}
+          return `Hola, ${nombre},
 
 Le saluda el equipo de **${config.nombre}**. Queremos recordarle que la revisión técnica de su vehículo, patente **${patente}**, corresponde durante este mes.
 
@@ -371,10 +371,10 @@ Para ayudarle a ahorrar tiempo y evitar esperas, contamos con el servicio de tra
 Quedamos atentos para ayudarle y coordinar una hora.`;
         } else if (f.tipo === 'Cita mañana') {
           const lineas = [
-            `Hola, ${nombre} \u{1F44B}`, '',
+            `Hola, ${nombre},`, '',
             `Le saluda el equipo de **${config.nombre}**. Este es un recordatorio de su cita:`, '',
-            `\u{1F5D3}\u{FE0F} Mañana a las **${f.hora}**`,
-            `\u{1F527} ${f.servicio || 'Servicio agendado'}${f.vehiculo ? ` — vehículo ${patente}` : ''}`, '',
+            `Fecha: mañana a las **${f.hora}**`,
+            `Servicio: ${f.servicio || 'Servicio agendado'}${f.vehiculo ? ` — vehículo ${patente}` : ''}`, '',
             'Lo que puede esperar:',
           ];
           lineas.push(f.precioEstimado != null
@@ -386,7 +386,7 @@ Quedamos atentos para ayudarle y coordinar una hora.`;
           lineas.push(`• ${lineaModalidad(f.modalidad, f.direccion)}`, '', 'Gracias por confiar en nosotros. ¡Nos vemos mañana!');
           return lineas.join('\n');
         } else {
-          return `Hola, ${nombre} \u{1F44B}
+          return `Hola, ${nombre},
 
 Le saluda el equipo de **${config.nombre}**. Queremos contarle que ya están próximos a cumplirse 12 meses desde el último servicio realizado a su vehículo patente **${patente}**.
 

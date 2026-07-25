@@ -212,6 +212,16 @@
       const moPrecio = t.precio_fijo != null ? Number(t.precio_fijo) : Number(config.valor_hora);
       const moCantidad = (t.precio_fijo != null ? 1 : Number(t.horas_estimadas || 0)) * n;
       itemsActuales.push({ tipo: 'mano_obra', trabajo_id: t.id, repuesto_id: null, descripcion: t.nombre + sufijo, cantidad: moCantidad, precio_unitario: moPrecio });
+      // La descripción larga del trabajo (qué incluye, etc.) siempre queda
+      // registrada en Notas, para que el cliente vea el detalle de la
+      // mano de obra y no solo el nombre corto del ítem en la tabla.
+      if (t.descripcion) {
+        const notasEl = document.getElementById('notas');
+        const linea = `${t.nombre}: ${t.descripcion}`;
+        if (!notasEl.value.includes(linea)) {
+          notasEl.value = notasEl.value ? `${notasEl.value}\n${linea}` : linea;
+        }
+      }
       (t.insumos || []).forEach(ins => {
         const m = matchInventario(ins.descripcion);
         itemsActuales.push({ tipo: ins.categoria || 'otro', trabajo_id: null, repuesto_id: m.repuesto_id, descripcion: ins.descripcion, cantidad: n, precio_unitario: m.precio });
@@ -236,14 +246,21 @@
 
     function calcularTotales(items, descuentoPct, conIva = true) {
       const sumaCat = (cat) => items.filter(i => categoriaItem(i) === cat).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
-      const subtotalMO = sumaCat('mano_obra');
-      const subtotalRepuestos = sumaCat('repuestos');
-      const subtotalTrabajoExterno = sumaCat('trabajo_externo');
-      const subtotalInsumosTaller = sumaCat('insumo_taller');
-      const subtotal = subtotalMO + subtotalRepuestos + subtotalTrabajoExterno + subtotalInsumosTaller;
+      const subtotalMOBruto = sumaCat('mano_obra');
+      const subtotalRepuestosBruto = sumaCat('repuestos');
+      const subtotalTrabajoExternoBruto = sumaCat('trabajo_externo');
+      const subtotalInsumosTallerBruto = sumaCat('insumo_taller');
+      const subtotal = subtotalMOBruto + subtotalRepuestosBruto + subtotalTrabajoExternoBruto + subtotalInsumosTallerBruto;
       const descuento = subtotal * (Number(descuentoPct || 0) / 100);
       const neto = subtotal - descuento;
       const iva = conIva ? neto * (Number(config.iva_pct) / 100) : 0;
+      // El desglose por categoría muestra los montos ya con el descuento
+      // aplicado proporcionalmente, para que sumen lo mismo que el Neto.
+      const factorDescuento = subtotal > 0 ? neto / subtotal : 1;
+      const subtotalMO = subtotalMOBruto * factorDescuento;
+      const subtotalRepuestos = subtotalRepuestosBruto * factorDescuento;
+      const subtotalTrabajoExterno = subtotalTrabajoExternoBruto * factorDescuento;
+      const subtotalInsumosTaller = subtotalInsumosTallerBruto * factorDescuento;
       return { subtotal, subtotalMO, subtotalRepuestos, subtotalTrabajoExterno, subtotalInsumosTaller, descuento, neto, iva, conIva, total: neto + iva };
     }
 
@@ -529,14 +546,15 @@
           <td class="table-actions">
             ${editable ? `<button type="button" class="btn-secondary editar-btn" data-id="${c.id}">Editar</button>` : ''}
             <button type="button" class="btn-secondary pdf-btn" data-id="${c.id}">📄 PDF</button>
+            <button type="button" class="btn-secondary agendar-btn" data-id="${c.id}">📅 Agendar</button>
             <div class="dropdown" style="position:relative; display:inline-block;">
               <button type="button" class="btn-secondary compartir-btn" data-id="${c.id}">📤 Compartir</button>
               <div class="dropdown-menu" style="position:absolute; top:100%; right:0; background:#fff; border:1px solid #ddd; border-radius:4px; min-width:140px; z-index:10; display:none; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
                 <button type="button" class="dropdown-item whatsapp-btn-menu" data-id="${c.id}" style="display:block; width:100%; text-align:left; padding:8px 12px; border:none; background:none; cursor:pointer; color:var(--color-text);">📱 WhatsApp</button>
                 <button type="button" class="dropdown-item email-btn-menu" data-id="${c.id}" style="display:block; width:100%; text-align:left; padding:8px 12px; border:none; background:none; cursor:pointer; color:var(--color-text); border-top:1px solid #eee;">✉️ Correo</button>
+                ${c.estado !== 'convertida' ? `<button type="button" class="dropdown-item link-btn-menu" data-id="${c.id}" style="display:block; width:100%; text-align:left; padding:8px 12px; border:none; background:none; cursor:pointer; color:var(--color-text); border-top:1px solid #eee;">🔗 Copiar link</button>` : ''}
               </div>
             </div>
-            ${c.estado !== 'convertida' ? `<button type="button" class="btn-secondary link-btn" data-id="${c.id}">Copiar link</button>` : ''}
             ${c.estado === 'borrador' ? `<button type="button" class="estado-btn" data-id="${c.id}" data-estado="enviada">Marcar enviada</button>
               <button type="button" class="btn-danger eliminar-btn" data-id="${c.id}">Eliminar</button>` : ''}
             ${c.estado === 'enviada' ? `<button type="button" class="estado-btn" data-id="${c.id}" data-estado="aprobada">Aprobar</button>
@@ -591,15 +609,27 @@
         }
       });
 
-      tbody.querySelectorAll('.link-btn').forEach(btn => {
+      tbody.querySelectorAll('.link-btn-menu').forEach(btn => {
         btn.addEventListener('click', async () => {
           const url = linkPublicoCotizacion(btn.dataset.id);
+          btn.closest('.dropdown-menu').style.display = 'none';
           try {
             await navigator.clipboard.writeText(url);
             alert('Link copiado:\n' + url);
           } catch {
             prompt('Copia el link manualmente:', url);
           }
+        });
+      });
+      tbody.querySelectorAll('.agendar-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const c = cotizacionesCache.find(x => x.id === btn.dataset.id);
+          if (!c) return;
+          const params = new URLSearchParams();
+          if (c.cliente_id) params.set('cliente_id', c.cliente_id);
+          if (c.vehiculo_id) params.set('vehiculo_id', c.vehiculo_id);
+          params.set('cotizacion_id', c.id);
+          window.location.href = `agenda.html?${params.toString()}`;
         });
       });
       tbody.querySelectorAll('.estado-btn').forEach(btn => {

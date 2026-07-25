@@ -302,7 +302,7 @@
       let error;
       if (id) ({ error } = await supabaseClient.from('citas').update(payload).eq('id', id));
       else     ({ error } = await supabaseClient.from('citas').insert({ ...payload, estado: 'confirmado', origen: 'interno' }));
-      if (error) { errorEl.textContent = `Error: ${error.message} (¿ejecutaste sql/actualizacion-v10-agenda.sql?)`; return; }
+      if (error) { errorEl.textContent = `Error: ${error.message} (revisa que estén ejecutados todos los sql/actualizacion-v*.sql en Supabase)`; return; }
       document.getElementById('form-card').style.display = 'none';
       document.getElementById('dia-actual').value = fecha;
       await cargar();
@@ -377,7 +377,7 @@
     function mensajeConfirmacionCita(c) {
       const nombre = nombreCliente(c);
       const serv = servicioCita(c);
-      return `Hola ${nombre} \u{1F44B}\n\nLe saluda ${tallerHorarios.nombre}. Confirmamos su cita para el ${fmtFecha(c.fecha_hora)} a las ${fmtHora(c.fecha_hora)}${serv ? ` (${serv})` : ''}.\n\n${lineaModalidad(c.modalidad, c.direccion)}\n\nCualquier cambio, avísenos con tiempo. ¡Le esperamos!`;
+      return `Hola ${nombre},\n\nLe saluda ${tallerHorarios.nombre}. Confirmamos su cita para el ${fmtFecha(c.fecha_hora)} a las ${fmtHora(c.fecha_hora)}${serv ? ` (${serv})` : ''}.\n\n${lineaModalidad(c.modalidad, c.direccion)}\n\nCualquier cambio, avísenos con tiempo. ¡Le esperamos!`;
     }
 
     // Mensaje de recordatorio (día anterior): transparente con precio y tiempo
@@ -389,10 +389,10 @@
       const tiempo = c.trabajos && c.trabajos.horas_estimadas ? fmtDuracion(c.trabajos.horas_estimadas) : '';
 
       const lineas = [
-        `Hola, ${nombre} \u{1F44B}`, '',
+        `Hola, ${nombre},`, '',
         `Le saluda el equipo de ${tallerHorarios.nombre}. Este es un recordatorio de su cita:`, '',
-        `\u{1F5D3}\u{FE0F} Mañana a las ${fmtHora(c.fecha_hora)}`,
-        `\u{1F527} ${serv || 'Servicio agendado'}`, '',
+        `Fecha: mañana a las ${fmtHora(c.fecha_hora)}`,
+        `Servicio: ${serv || 'Servicio agendado'}`, '',
         'Lo que puede esperar:',
       ];
       lineas.push(precio != null
@@ -730,6 +730,20 @@
 
       document.getElementById('dia-actual').value = new Date().toISOString().slice(0, 10);
       await cargar();
+
+      // Si se llega desde "Agendar" en una cotización, abrir el formulario prellenado.
+      const params = new URLSearchParams(window.location.search);
+      const cotizacionId = params.get('cotizacion_id');
+      if (cotizacionId) {
+        abrirForm(null);
+        document.getElementById('cliente_id').value = params.get('cliente_id') || '';
+        actualizarVehiculos();
+        actualizarCotizaciones();
+        document.getElementById('vehiculo_id').value = params.get('vehiculo_id') || '';
+        document.getElementById('cotizacion_id').value = cotizacionId;
+        prellenarDireccion();
+        window.history.replaceState({}, '', 'agenda.html');
+      }
     })();
   </script>
 </body>

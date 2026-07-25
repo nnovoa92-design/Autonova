@@ -38,15 +38,20 @@
       const ivaPct = Number((d.taller && d.taller.iva_pct) ?? 19);
       const items = d.items || [];
       const sumaCat = (cat) => items.filter(i => categoriaItem(i) === cat).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
-      const subtotalMO = sumaCat('mano_obra');
-      const subtotalRepuestos = sumaCat('repuestos');
-      const subtotalTrabajoExterno = sumaCat('trabajo_externo');
-      const subtotalInsumosTaller = sumaCat('insumo_taller');
-      const subtotal = subtotalMO + subtotalRepuestos + subtotalTrabajoExterno + subtotalInsumosTaller;
+      const subtotalMOBruto = sumaCat('mano_obra');
+      const subtotalRepuestosBruto = sumaCat('repuestos');
+      const subtotalTrabajoExternoBruto = sumaCat('trabajo_externo');
+      const subtotalInsumosTallerBruto = sumaCat('insumo_taller');
+      const subtotal = subtotalMOBruto + subtotalRepuestosBruto + subtotalTrabajoExternoBruto + subtotalInsumosTallerBruto;
       const descuento = subtotal * (Number(d.descuento_pct || 0) / 100);
       const neto = subtotal - descuento;
       const conIva = d.con_iva !== false;
       const iva = conIva ? neto * (ivaPct / 100) : 0;
+      const factorDescuento = subtotal > 0 ? neto / subtotal : 1;
+      const subtotalMO = subtotalMOBruto * factorDescuento;
+      const subtotalRepuestos = subtotalRepuestosBruto * factorDescuento;
+      const subtotalTrabajoExterno = subtotalTrabajoExternoBruto * factorDescuento;
+      const subtotalInsumosTaller = subtotalInsumosTallerBruto * factorDescuento;
       return { ivaPct, subtotal, subtotalMO, subtotalRepuestos, subtotalTrabajoExterno, subtotalInsumosTaller, descuento, neto, iva, conIva, total: neto + iva };
     }
 
