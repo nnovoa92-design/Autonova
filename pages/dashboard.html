@@ -132,9 +132,21 @@
       return `${h} horas`;
     }
 
-    // Busca la cotización aprobada/enviada más reciente del cliente (y del
-    // mismo vehículo, si la cita tiene uno) para dar un precio de referencia.
+    // Si la cita tiene una cotización enlazada explícitamente, se usa esa
+    // (sin adivinar). Si no, se busca la aprobada/enviada más reciente del
+    // cliente (y del mismo vehículo, si la cita tiene uno) como referencia.
     async function buscarPrecioEstimado(c) {
+      if (c.cotizacion_id) {
+        const { data: cot } = await supabaseClient.from('cotizaciones')
+          .select('descuento_pct, con_iva, cotizacion_items(cantidad, precio_unitario)')
+          .eq('id', c.cotizacion_id).maybeSingle();
+        if (cot) {
+          const subtotal = (cot.cotizacion_items || []).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
+          const neto = subtotal * (1 - Number(cot.descuento_pct || 0) / 100);
+          const iva = cot.con_iva !== false ? neto * Number(cfgIvaPct || 19) / 100 : 0;
+          return neto + iva;
+        }
+      }
       if (!c.cliente_id) return null;
       let query = supabaseClient.from('cotizaciones')
         .select('descuento_pct, con_iva, cotizacion_items(cantidad, precio_unitario)')
@@ -295,7 +307,7 @@
       const diaManana = mananaDate.toISOString().slice(0, 10);
       const { data: citasManana } = await supabaseClient
         .from('citas')
-        .select('cliente_id, vehiculo_id, fecha_hora, modalidad, descripcion, telefono_contacto, nombre_contacto, clientes(nombre, telefono, email), vehiculos(patente, marca, modelo), trabajos(nombre, horas_estimadas)')
+        .select('cliente_id, vehiculo_id, cotizacion_id, fecha_hora, modalidad, descripcion, telefono_contacto, nombre_contacto, clientes(nombre, telefono, email), vehiculos(patente, marca, modelo), trabajos(nombre, horas_estimadas)')
         .gte('fecha_hora', `${diaManana}T00:00:00`).lte('fecha_hora', `${diaManana}T23:59:59`)
         .in('estado', ['pendiente', 'confirmado'])
         .order('fecha_hora');
@@ -341,7 +353,7 @@
         const patente = f.vehiculo && f.vehiculo.patente ? f.vehiculo.patente : 'su vehículo';
 
         if (f.tipo === 'Rev. técnica') {
-          return `Hola, ${nombre} 👋
+          return `Hola, ${nombre} \u{1F44B}
 
 Le saluda el equipo de **${config.nombre}**. Queremos recordarle que la revisión técnica de su vehículo, patente **${patente}**, corresponde durante este mes.
 
@@ -350,10 +362,10 @@ Para ayudarle a ahorrar tiempo y evitar esperas, contamos con el servicio de tra
 Quedamos atentos para ayudarle y coordinar una hora.`;
         } else if (f.tipo === 'Cita mañana') {
           const lineas = [
-            `Hola, ${nombre} 👋`, '',
+            `Hola, ${nombre} \u{1F44B}`, '',
             `Le saluda el equipo de **${config.nombre}**. Este es un recordatorio de su cita:`, '',
-            `🗓️ Mañana a las **${f.hora}**`,
-            `🔧 ${f.servicio || 'Servicio agendado'}${f.vehiculo ? ` — vehículo ${patente}` : ''}`, '',
+            `\u{1F5D3}\u{FE0F} Mañana a las **${f.hora}**`,
+            `\u{1F527} ${f.servicio || 'Servicio agendado'}${f.vehiculo ? ` — vehículo ${patente}` : ''}`, '',
             'Lo que puede esperar:',
           ];
           lineas.push(f.precioEstimado != null
@@ -365,7 +377,7 @@ Quedamos atentos para ayudarle y coordinar una hora.`;
           lineas.push(`• ${lineaModalidad(f.modalidad)}`, '', 'Gracias por confiar en nosotros. ¡Nos vemos mañana!');
           return lineas.join('\n');
         } else {
-          return `Hola, ${nombre} 👋
+          return `Hola, ${nombre} \u{1F44B}
 
 Le saluda el equipo de **${config.nombre}**. Queremos contarle que ya están próximos a cumplirse 12 meses desde el último servicio realizado a su vehículo patente **${patente}**.
 

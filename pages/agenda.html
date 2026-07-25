@@ -87,6 +87,15 @@
           </div>
           <div class="form-row">
             <div class="form-group">
+              <label for="cotizacion_id">Cotización asociada (opcional)</label>
+              <select id="cotizacion_id"><option value="">Sin cotización</option></select>
+              <p style="color:var(--color-text-muted); font-size:0.78rem; margin:0.2rem 0 0;">
+                Si eliges una, su valor aparece en el mensaje de recordatorio.
+              </p>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
               <label for="fecha">Fecha *</label>
               <input type="date" id="fecha" required />
             </div>
@@ -140,7 +149,7 @@
   <script src="../assets/js/supabaseClient.js"></script>
   <script src="../assets/js/layout.js"></script>
   <script>
-    let clientesCache = [], vehiculosCache = [], trabajosCache = [], personalCache = [];
+    let clientesCache = [], vehiculosCache = [], trabajosCache = [], personalCache = [], cotizacionesCache = [];
     let tallerHorarios = null;
 
     const ESTADOS_CITA = {
@@ -191,6 +200,21 @@
         propios.map(v => `<option value="${v.id}">${v.patente} · ${[v.marca, v.modelo].filter(Boolean).join(' ')}</option>`).join('');
     }
 
+    function calcularTotalCotizacion(cot) {
+      const subtotal = (cot.cotizacion_items || []).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
+      const neto = subtotal * (1 - Number(cot.descuento_pct || 0) / 100);
+      const iva = cot.con_iva !== false ? neto * Number(tallerHorarios.iva_pct || 19) / 100 : 0;
+      return neto + iva;
+    }
+
+    function actualizarCotizaciones() {
+      const clienteId = document.getElementById('cliente_id').value;
+      const propias = cotizacionesCache.filter(c => c.cliente_id === clienteId);
+      document.getElementById('cotizacion_id').innerHTML =
+        '<option value="">Sin cotización</option>' +
+        propias.map(c => `<option value="${c.id}">${fmtNumero('COT', c.numero)} · ${fmtMoneda(calcularTotalCotizacion(c))} · ${(ESTADOS_COTIZACION[c.estado] || {}).label || c.estado}</option>`).join('');
+    }
+
     // ---------- Formulario ----------
     function abrirForm(cita) {
       document.getElementById('form-card').style.display = 'block';
@@ -200,7 +224,9 @@
         document.getElementById('cita-id').value = cita.id;
         document.getElementById('cliente_id').value = cita.cliente_id ?? '';
         actualizarVehiculos();
+        actualizarCotizaciones();
         document.getElementById('vehiculo_id').value = cita.vehiculo_id ?? '';
+        document.getElementById('cotizacion_id').value = cita.cotizacion_id ?? '';
         document.getElementById('trabajo_id').value = cita.trabajo_id ?? '';
         document.getElementById('personal_id').value = cita.personal_id ?? '';
         const d = new Date(cita.fecha_hora);
@@ -214,6 +240,7 @@
         document.getElementById('cita-id').value = '';
         document.getElementById('cliente_id').value = '';
         document.getElementById('vehiculo_id').innerHTML = '<option value="">Sin vehículo</option>';
+        document.getElementById('cotizacion_id').innerHTML = '<option value="">Sin cotización</option>';
         document.getElementById('trabajo_id').value = '';
         document.getElementById('personal_id').value = '';
         document.getElementById('fecha').value = document.getElementById('dia-actual').value || new Date().toISOString().slice(0, 10);
@@ -227,7 +254,7 @@
 
     document.getElementById('nueva-btn').addEventListener('click', () => abrirForm(null));
     document.getElementById('cancelar-form-btn').addEventListener('click', () => document.getElementById('form-card').style.display = 'none');
-    document.getElementById('cliente_id').addEventListener('change', actualizarVehiculos);
+    document.getElementById('cliente_id').addEventListener('change', () => { actualizarVehiculos(); actualizarCotizaciones(); });
 
     document.getElementById('guardar-btn').addEventListener('click', async () => {
       const errorEl = document.getElementById('form-error');
@@ -239,6 +266,7 @@
       const payload = {
         cliente_id:  document.getElementById('cliente_id').value  || null,
         vehiculo_id: document.getElementById('vehiculo_id').value || null,
+        cotizacion_id: document.getElementById('cotizacion_id').value || null,
         trabajo_id:  document.getElementById('trabajo_id').value  || null,
         personal_id: document.getElementById('personal_id').value || null,
         fecha_hora: fechaHora,
@@ -290,9 +318,14 @@
       return `${h} horas`;
     }
 
-    // Busca la cotización aprobada/enviada más reciente del cliente (y del
-    // mismo vehículo, si la cita tiene uno) para dar un precio de referencia.
+    // Si la cita tiene una cotización enlazada explícitamente, se usa esa
+    // (sin adivinar). Si no, se busca la aprobada/enviada más reciente del
+    // cliente (y del mismo vehículo, si la cita tiene uno) como referencia.
     async function buscarPrecioEstimado(c) {
+      if (c.cotizacion_id) {
+        const cot = cotizacionesCache.find(x => x.id === c.cotizacion_id);
+        if (cot) return calcularTotalCotizacion(cot);
+      }
       if (!c.cliente_id) return null;
       let query = supabaseClient.from('cotizaciones')
         .select('descuento_pct, con_iva, cotizacion_items(cantidad, precio_unitario)')
@@ -312,7 +345,7 @@
     function mensajeConfirmacionCita(c) {
       const nombre = nombreCliente(c);
       const serv = servicioCita(c);
-      return `Hola ${nombre} 👋\n\nLe saluda ${tallerHorarios.nombre}. Confirmamos su cita para el ${fmtFecha(c.fecha_hora)} a las ${fmtHora(c.fecha_hora)}${serv ? ` (${serv})` : ''}.\n\n${lineaModalidad(c.modalidad)}\n\nCualquier cambio, avísenos con tiempo. ¡Le esperamos!`;
+      return `Hola ${nombre} \u{1F44B}\n\nLe saluda ${tallerHorarios.nombre}. Confirmamos su cita para el ${fmtFecha(c.fecha_hora)} a las ${fmtHora(c.fecha_hora)}${serv ? ` (${serv})` : ''}.\n\n${lineaModalidad(c.modalidad)}\n\nCualquier cambio, avísenos con tiempo. ¡Le esperamos!`;
     }
 
     // Mensaje de recordatorio (día anterior): transparente con precio y tiempo
@@ -324,10 +357,10 @@
       const tiempo = c.trabajos && c.trabajos.horas_estimadas ? fmtDuracion(c.trabajos.horas_estimadas) : '';
 
       const lineas = [
-        `Hola, ${nombre} 👋`, '',
+        `Hola, ${nombre} \u{1F44B}`, '',
         `Le saluda el equipo de ${tallerHorarios.nombre}. Este es un recordatorio de su cita:`, '',
-        `🗓️ Mañana a las ${fmtHora(c.fecha_hora)}`,
-        `🔧 ${serv || 'Servicio agendado'}`, '',
+        `\u{1F5D3}\u{FE0F} Mañana a las ${fmtHora(c.fecha_hora)}`,
+        `\u{1F527} ${serv || 'Servicio agendado'}`, '',
         'Lo que puede esperar:',
       ];
       lineas.push(precio != null
@@ -641,17 +674,19 @@
     (async () => {
       const session = await initLayout('agenda');
       if (!session) return;
-      const [clientes, vehiculos, trabajos, personal, config] = await Promise.all([
+      const [clientes, vehiculos, trabajos, personal, cotizaciones, config] = await Promise.all([
         supabaseClient.from('clientes').select('id, nombre').eq('activo', true).order('nombre'),
         supabaseClient.from('vehiculos').select('*').eq('activo', true).order('patente'),
         supabaseClient.from('trabajos').select('*').eq('activo', true).order('nombre'),
         supabaseClient.from('personal').select('*').eq('activo', true).order('nombre'),
+        supabaseClient.from('cotizaciones').select('id, numero, cliente_id, estado, descuento_pct, con_iva, cotizacion_items(cantidad, precio_unitario)').order('creado_en', { ascending: false }),
         getTallerConfig(),
       ]);
       clientesCache  = clientes.data  || [];
       vehiculosCache = vehiculos.data || [];
       trabajosCache  = trabajos.data  || [];
       personalCache  = personal.data  || [];
+      cotizacionesCache = cotizaciones.data || [];
       tallerHorarios = config;
 
       document.getElementById('cliente_id').innerHTML =
