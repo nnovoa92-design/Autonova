@@ -358,17 +358,20 @@
     }
 
     // Cobro automático por bodegaje: días transcurridos desde que se marcó
-    // "Listo" (menos los días de gracia), multiplicados por el valor diario.
-    // Se congela en la fecha de entrega si ya fue retirado.
+    // "Listo" (menos los días de gracia), multiplicados por el valor diario neto.
+    // Se congela en la fecha de entrega si ya fue retirado. El valor configurado
+    // es neto; se le suma IVA igual que el resto de la OT (respeta con_iva).
     function calcularBodegaje(o) {
       if (!o.fecha_listo) return { dias: 0, monto: 0 };
       const gracia = Number(config.bodegaje_dias_gracia ?? 2);
-      const montoDia = Number(config.bodegaje_monto_dia ?? 3500);
+      const montoDiaNeto = Number(config.bodegaje_monto_dia ?? 4000);
       const desde = new Date(o.fecha_listo);
       const hasta = (o.estado === 'entregado' && o.fecha_entrega) ? new Date(o.fecha_entrega) : new Date();
       const diasTranscurridos = Math.floor((hasta - desde) / 86400000);
       const dias = Math.max(0, diasTranscurridos - gracia);
-      return { dias, monto: dias * montoDia };
+      const montoNeto = dias * montoDiaNeto;
+      const monto = (o.con_iva !== false) ? montoNeto * (1 + Number(config.iva_pct) / 100) : montoNeto;
+      return { dias, monto };
     }
 
     // Sugiere el texto de "Garantía especial" según la Política de Servicio
