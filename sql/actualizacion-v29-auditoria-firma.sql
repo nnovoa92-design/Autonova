@@ -59,9 +59,11 @@ $$;
 
 grant execute on function portal_consultar_inspeccion_ingreso(uuid) to anon;
 
--- Se elimina la firma anterior de la función: "create or replace" no puede
--- agregar parámetros nuevos sin volverse una sobrecarga aparte, y
--- PostgREST no podría elegir cuál usar.
+-- Se eliminan las firmas anteriores de la función (v27 y v28): "create or
+-- replace" no puede agregar parámetros nuevos sin volverse una sobrecarga
+-- aparte, y PostgREST no podría elegir cuál usar. Se listan ambas por si
+-- esta actualización se corre sin haber aplicado v28 antes.
+drop function if exists portal_firmar_inspeccion_ingreso(uuid, text);
 drop function if exists portal_firmar_inspeccion_ingreso(uuid, text, double precision, double precision);
 
 -- El cliente confirma y firma la inspección desde el link público.
