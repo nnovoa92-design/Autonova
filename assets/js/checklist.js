@@ -152,7 +152,7 @@ function inspEvidencia(datos, k) {
   if (obs) html += `<div style="font-size:0.82rem; color:var(--color-text-muted); margin-top:3px;">${obs}</div>`;
   if (fotos.length) {
     html += `<div class="fotos-grid" style="margin-top:5px;">` +
-      fotos.map(u => `<div class="foto-item"><a href="${u}" target="_blank"><img src="${u}" loading="lazy" /></a></div>`).join('') +
+      fotos.map(u => `<div class="foto-item"><a href="${u}" target="_blank"><img src="${u}" /></a></div>`).join('') +
       `</div>`;
   }
   return html;

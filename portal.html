@@ -84,7 +84,7 @@
       if (fotos && fotos.length) {
         fotosHtml = '<h3>Fotos</h3><div class="fotos-grid">' + fotos.map(f => {
           const url = supabaseClient.storage.from('fotos-ot').getPublicUrl(`${d.orden_id}/${f.name}`).data.publicUrl;
-          return `<div class="foto-item"><a href="${url}" target="_blank"><img src="${url}" loading="lazy" /></a></div>`;
+          return `<div class="foto-item"><a href="${url}" target="_blank"><img src="${url}" /></a></div>`;
         }).join('') + '</div>';
       }
 
@@ -107,7 +107,7 @@
           <div class="card" style="margin:0.5rem 0; padding:0.75rem;">
             <strong>${a.texto || ''}</strong>
             <div style="font-size:0.78rem; color:var(--color-text-muted);">${fmtFechaHora(a.fecha)}</div>
-            ${(a.fotos && a.fotos.length) ? `<div class="fotos-grid" style="margin-top:0.4rem;">${a.fotos.map(u => `<div class="foto-item"><a href="${u}" target="_blank"><img src="${u}" loading="lazy" /></a></div>`).join('')}</div>` : ''}
+            ${(a.fotos && a.fotos.length) ? `<div class="fotos-grid" style="margin-top:0.4rem;">${a.fotos.map(u => `<div class="foto-item"><a href="${u}" target="_blank"><img src="${u}" /></a></div>`).join('')}</div>` : ''}
           </div>`).join('')}` : ''}
         ${(d.items || []).length ? `
         <h3>Trabajos y repuestos</h3>

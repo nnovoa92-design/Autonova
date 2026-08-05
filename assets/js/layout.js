@@ -104,39 +104,51 @@ function abrirEnlace(url) {
   if (!w) window.location.href = url;
 }
 
+// Espera a que todas las imágenes dentro de un contenedor terminen de
+// cargar (o fallen) antes de imprimir/exportar — evita que el PDF o la
+// impresión salga sin fotos por una carrera con la descarga de red.
+function esperarImagenesImpresion(selector) {
+  const imgs = Array.from(document.querySelectorAll(`${selector} img`));
+  if (!imgs.length) return Promise.resolve();
+  return Promise.all(imgs.map(img => {
+    if (img.complete) return Promise.resolve();
+    return new Promise(resolve => {
+      img.addEventListener('load', resolve, { once: true });
+      img.addEventListener('error', resolve, { once: true });
+    });
+  }));
+}
+
 // Descarga un elemento (el "print-area" ya armado) como archivo PDF.
 // Si la librería html2pdf no está disponible, cae a la impresión del navegador.
-function descargarPDF(elementId, nombreArchivo) {
+// El elemento vive oculto (display:none) fuera de @media print, así que
+// html2canvas no puede capturarlo directamente: se fuerza visible solo en
+// el documento clonado (onclone) sin afectar la página real.
+async function descargarPDF(elementId, nombreArchivo) {
   const el = document.getElementById(elementId);
   if (!el) { console.error('Elemento no encontrado:', elementId); return; }
   if (typeof html2pdf === 'undefined') { window.print(); return; }
 
-  console.log('descargarPDF:', {
-    elementId,
-    innerHTML_length: el.innerHTML.length,
-    offsetHeight: el.offsetHeight,
-    offsetWidth: el.offsetWidth,
-    computedStyle: window.getComputedStyle(el).display,
-    display_important: window.getComputedStyle(el, null).getPropertyValue('display')
-  });
+  await esperarImagenesImpresion(`#${elementId}`);
 
-  const prev = el.getAttribute('style') || '';
-
-  html2pdf().set({
-    margin: 8,
-    filename: (nombreArchivo || 'documento') + '.pdf',
-    image: { type: 'jpeg', quality: 0.96 },
-    html2canvas: { scale: 2, useCORS: true, logging: false },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-  }).from(el).save()
-    .then(() => {
-      setTimeout(() => { el.setAttribute('style', prev); }, 100);
-    })
-    .catch((e) => {
-      console.error('PDF error:', e);
-      setTimeout(() => { el.setAttribute('style', prev); }, 100);
-      window.print();
-    });
+  try {
+    await html2pdf().set({
+      margin: 8,
+      filename: (nombreArchivo || 'documento') + '.pdf',
+      image: { type: 'jpeg', quality: 0.96 },
+      html2canvas: {
+        scale: 2, useCORS: true, logging: false,
+        onclone: (clonedDoc) => {
+          const clonedEl = clonedDoc.getElementById(elementId);
+          if (clonedEl) clonedEl.style.display = 'block';
+        },
+      },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    }).from(el).save();
+  } catch (e) {
+    console.error('PDF error:', e);
+    window.print();
+  }
 }
 
 // Mes (1-12) de revisión técnica según el último dígito de la patente

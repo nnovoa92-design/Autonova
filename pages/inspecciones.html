@@ -413,9 +413,10 @@
       }
     });
 
-    document.getElementById('imprimir-btn').addEventListener('click', () => {
+    document.getElementById('imprimir-btn').addEventListener('click', async () => {
       if (!inspActual) return;
       construirPrintInspeccion(inspActual);
+      await esperarImagenesImpresion('#print-area');
       window.print();
     });
 

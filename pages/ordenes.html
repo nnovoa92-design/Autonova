@@ -107,6 +107,15 @@
             <button type="button" id="sugerir-garantia-btn" class="btn-secondary" style="margin-top:0.5rem;">↻ Sugerir según política</button>
           </div>
 
+          <div class="form-group">
+            <label>Inspección de ingreso</label>
+            <p style="color:var(--color-text-muted); font-size:0.8rem; margin:0 0 0.35rem;">
+              Estado visual del vehículo al recibirlo. Queda guardado en el informe y el expediente de esta OT.
+            </p>
+            <button type="button" id="inspeccion-ingreso-btn" class="btn-secondary">📋 Inspección de ingreso</button>
+            <span id="inspeccion-ingreso-resumen" style="font-size:0.82rem; color:var(--color-text-muted); margin-left:0.5rem;"></span>
+          </div>
+
           <h3>Ítems de la orden</h3>
           <div class="form-row" style="align-items:end;">
             <div class="form-group">
@@ -321,6 +330,11 @@
 
   <div class="print-area" id="print-area"></div>
 
+  <!-- Modal genérico -->
+  <div class="modal-backdrop" id="modal-backdrop">
+    <div class="modal" id="modal"></div>
+  </div>
+
   <script src="../assets/vendor/supabase.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script src="../assets/js/supabaseClient.js"></script>
@@ -468,8 +482,9 @@
       renderChecklistRecepcion();
     }
 
-    function renderChecklistRecepcion() {
-      const body = document.getElementById('checklist-recepcion-body');
+    function renderChecklistRecepcion(containerId) {
+      containerId = containerId || 'checklist-recepcion-body';
+      const body = document.getElementById(containerId);
       body.innerHTML = checklistActual.map((c, idx) => `
         <div class="form-row" style="align-items:center; gap:0.5rem; margin-bottom:0.4rem;">
           <label style="display:flex; align-items:center; gap:0.4rem; flex:1; margin:0; font-size:0.9rem; color:var(--color-text);">
@@ -487,12 +502,66 @@
       body.querySelectorAll('.check-nota').forEach(inp =>
         inp.addEventListener('input', () => { checklistActual[inp.dataset.idx].nota = inp.value; }));
       body.querySelectorAll('.quitar-check-btn').forEach(btn =>
-        btn.addEventListener('click', () => { checklistActual.splice(Number(btn.dataset.idx), 1); renderChecklistRecepcion(); }));
+        btn.addEventListener('click', () => { checklistActual.splice(Number(btn.dataset.idx), 1); renderChecklistRecepcion(containerId); }));
     }
 
     document.getElementById('agregar-item-checklist-btn').addEventListener('click', () => {
       checklistActual.push({ item: '', marcado: false, nota: '' });
       renderChecklistRecepcion();
+    });
+
+    // ---------- Modal genérico ----------
+    const $modalBackdrop = document.getElementById('modal-backdrop');
+    function cerrarModal() { $modalBackdrop.classList.remove('abierto'); document.getElementById('modal').innerHTML = ''; }
+    function abrirModal(titulo, camposHtml, onGuardar) {
+      document.getElementById('modal').innerHTML = `
+        <h3>${titulo}</h3>
+        ${camposHtml}
+        <p class="error-message" id="modal-error"></p>
+        <div class="modal-acciones">
+          <button type="button" id="modal-guardar">Guardar</button>
+          <button type="button" class="btn-secondary" id="modal-cancelar">Cancelar</button>
+        </div>`;
+      $modalBackdrop.classList.add('abierto');
+      document.getElementById('modal-cancelar').addEventListener('click', cerrarModal);
+      document.getElementById('modal-guardar').addEventListener('click', onGuardar);
+    }
+    $modalBackdrop.addEventListener('click', (e) => { if (e.target === $modalBackdrop) cerrarModal(); });
+
+    // ---------- Inspección de ingreso (checklist en ventana emergente, OT ya creada) ----------
+    function resumenChecklist(checklist) {
+      const el = document.getElementById('inspeccion-ingreso-resumen');
+      if (!checklist || !checklist.length) { el.textContent = 'Sin registrar aún.'; return; }
+      const marcados = checklist.filter(c => c.marcado).length;
+      el.textContent = `${marcados} de ${checklist.length} ítem(s) marcados.`;
+    }
+
+    document.getElementById('inspeccion-ingreso-btn').addEventListener('click', () => {
+      if (!ordenActual) return;
+      checklistActual = (ordenActual.checklist_recepcion && ordenActual.checklist_recepcion.length)
+        ? ordenActual.checklist_recepcion.map(c => ({ item: c.item, marcado: !!c.marcado, nota: c.nota || '' }))
+        : CHECKLIST_ESTANDAR.map(item => ({ item, marcado: false, nota: '' }));
+
+      abrirModal('Inspección de ingreso',
+        `<p style="color:var(--color-text-muted); font-size:0.82rem; margin-top:0;">
+           Marca lo que corresponda y agrega una nota si es necesario. Queda guardado en el informe y el expediente de esta OT.
+         </p>
+         <div id="modal-checklist-body"></div>
+         <button type="button" id="modal-agregar-item-checklist-btn" class="btn-secondary btn-mini" style="margin-top:0.5rem;">+ Agregar ítem</button>`,
+        async () => {
+          const checklist = checklistActual.filter(c => c.item.trim());
+          const { error } = await supabaseClient.from('ordenes')
+            .update({ checklist_recepcion: checklist }).eq('id', ordenActual.id);
+          if (error) { document.getElementById('modal-error').textContent = 'Error: ' + error.message; return; }
+          cerrarModal();
+          await abrirDetalle(ordenActual.id);
+        });
+
+      renderChecklistRecepcion('modal-checklist-body');
+      document.getElementById('modal-agregar-item-checklist-btn').addEventListener('click', () => {
+        checklistActual.push({ item: '', marcado: false, nota: '' });
+        renderChecklistRecepcion('modal-checklist-body');
+      });
     });
 
     // ---------- Firma digital (canvas) ----------
@@ -618,6 +687,7 @@
       estadoSel.innerHTML = Object.entries(ESTADOS_ORDEN)
         .map(([k, v]) => `<option value="${k}"${k === o.estado ? ' selected' : ''}>${v.label}</option>`).join('');
       document.getElementById('detalle-con-iva').value = (o.con_iva === false) ? 'false' : 'true';
+      resumenChecklist(o.checklist_recepcion);
 
       avanceFotosPendientes = [];
       const afEstado = document.getElementById('avance-fotos-estado');
@@ -1230,6 +1300,7 @@
       if (!ordenActual) return;
       if (!config) config = await getTallerConfig();
       construirPrintOrden(ordenActual);
+      await esperarImagenesImpresion('#print-area');
       window.print();
     });
 
@@ -1279,7 +1350,11 @@
         <div style="margin-top:1rem; background:#fef3c7; padding:0.75rem 1rem; border-radius:6px; border-left:3px solid #92600a;">
           <strong>Garantía especial de este trabajo:</strong> ${o.garantia_especial}
         </div>` : ''}
-        ${(o.avances && o.avances.length) ? `<h3 style="margin-top:1.5rem;">Trabajos realizados</h3>${o.avances.map(a => `<p style="margin:0.3rem 0;">• ${a.texto || ''} <span style="color:#666;">(${fmtFecha(a.fecha)})</span></p>`).join('')}` : ''}
+        ${(o.avances && o.avances.length) ? `<h3 style="margin-top:1.5rem;">Trabajos realizados</h3>${o.avances.map(a => `
+        <div style="margin:0.5rem 0;">
+          <p style="margin:0.2rem 0;">• ${a.texto || ''} <span style="color:#666;">(${fmtFecha(a.fecha)})</span></p>
+          ${(a.fotos && a.fotos.length) ? `<div style="display:flex; flex-wrap:wrap; gap:0.4rem; margin:0.3rem 0 0.6rem;">${a.fotos.map(u => `<img src="${u}" style="width:110px; height:80px; object-fit:cover; border:1px solid #ccc; border-radius:4px;" />`).join('')}</div>` : ''}
+        </div>`).join('')}` : ''}
         ${o.firma_cliente_url ? `
         <div style="margin-top:1.5rem;">
           <p style="font-size:0.85rem; margin:0 0 0.25rem;"><strong>Firma del cliente</strong> (recepción del vehículo, ${fmtFecha(o.firma_fecha)}):</p>
@@ -1304,8 +1379,12 @@
       const cli = o.clientes || {};
       const politicasEspeciales = textoPoliticasEspeciales(items);
 
+      // .list() no es recursivo: las fotos de avances viven en {id}/avance/
+      // y quedarían fuera (o aparecerían como una carpeta rota) si solo se
+      // filtra por nombre. f.id === null identifica entradas de carpeta.
       const { data: archivos } = await supabaseClient.storage.from('fotos-ot').list(o.id, { limit: 100 });
-      const fotos = (archivos || []).filter(f => !f.name.startsWith('abonos') && f.name !== 'firma_recepcion.png');
+      const fotos = (archivos || []).filter(f => f.id !== null && !f.name.startsWith('abonos') && f.name !== 'firma_recepcion.png');
+      const avancesConFotos = (o.avances || []).filter(a => a.fotos && a.fotos.length);
 
       const historial = (o.ordenes_historial || []).slice().sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
       const pagosTimeline = [
@@ -1363,7 +1442,15 @@
         ${fotos.length ? `
         <div style="display:flex; flex-wrap:wrap; gap:0.5rem;">
           ${fotos.map(f => `<img src="${supabaseClient.storage.from('fotos-ot').getPublicUrl(`${o.id}/${f.name}`).data.publicUrl}" style="width:160px; height:120px; object-fit:cover; border:1px solid #ccc; border-radius:6px;" />`).join('')}
-        </div>` : '<p style="color:#666;">Sin fotografías registradas.</p>'}
+        </div>` : '<p style="color:#666;">Sin fotografías generales registradas.</p>'}
+
+        ${avancesConFotos.length ? `
+        <h3 style="margin-top:1rem;">Fotografías de avances de trabajo</h3>
+        ${avancesConFotos.map(a => `
+        <p style="font-size:0.8rem; margin:0.5rem 0 0.2rem; color:#666;">${a.texto || 'Avance'} — ${fmtFechaHora(a.fecha)}</p>
+        <div style="display:flex; flex-wrap:wrap; gap:0.5rem;">
+          ${a.fotos.map(u => `<img src="${u}" style="width:160px; height:120px; object-fit:cover; border:1px solid #ccc; border-radius:6px;" />`).join('')}
+        </div>`).join('')}` : ''}
 
         ${o.notas ? `<h3 style="margin-top:1.5rem;">Notas internas</h3><p>${o.notas}</p>` : ''}
 
@@ -1384,6 +1471,7 @@
     document.getElementById('expediente-btn').addEventListener('click', async () => {
       if (!ordenActual) return;
       await construirExpediente(ordenActual);
+      await esperarImagenesImpresion('#print-area');
       window.print();
     });
 

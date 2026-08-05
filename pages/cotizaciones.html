@@ -599,6 +599,7 @@
           if (!c) return;
           if (!config) config = await getTallerConfig();
           construirPrintCotizacion(c);
+          await esperarImagenesImpresion('#print-area');
           window.print();
         });
       });
@@ -749,10 +750,11 @@
       abrirEnlace(linkGmail(email, asunto, cuerpo));
     }
 
-    function imprimirCotizacion(cotId) {
+    async function imprimirCotizacion(cotId) {
       const c = cotizacionesCache.find(x => x.id === cotId);
       if (!c) return;
       construirPrintCotizacion(c);
+      await esperarImagenesImpresion('#print-area');
       window.print();
     }
 
