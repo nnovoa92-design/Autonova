@@ -113,6 +113,7 @@
               Estado visual del vehículo al recibirlo. Queda guardado en el informe y el expediente de esta OT.
             </p>
             <button type="button" id="inspeccion-ingreso-btn" class="btn-secondary">📋 Inspección de ingreso</button>
+            <button type="button" id="enviar-inspeccion-btn" class="btn-secondary">💬 Enviar al cliente para firmar</button>
             <span id="inspeccion-ingreso-resumen" style="font-size:0.82rem; color:var(--color-text-muted); margin-left:0.5rem;"></span>
           </div>
 
@@ -485,14 +486,31 @@
     function renderChecklistRecepcion(containerId) {
       containerId = containerId || 'checklist-recepcion-body';
       const body = document.getElementById(containerId);
+      // Las fotos por ítem solo se pueden subir si la OT ya existe (necesitan
+      // su id para la ruta en Storage) — por eso no aparecen en "Nueva OT".
+      const ordenId = ordenActual ? ordenActual.id : null;
       body.innerHTML = checklistActual.map((c, idx) => `
-        <div class="form-row" style="align-items:center; gap:0.5rem; margin-bottom:0.4rem;">
-          <label style="display:flex; align-items:center; gap:0.4rem; flex:1; margin:0; font-size:0.9rem; color:var(--color-text);">
-            <input type="checkbox" class="check-item" data-idx="${idx}" ${c.marcado ? 'checked' : ''} style="width:auto;" />
-            <input type="text" class="check-label" data-idx="${idx}" value="${c.item.replace(/"/g, '&quot;')}" style="border:none; background:transparent; padding:0.2rem;" />
-          </label>
-          <input type="text" class="check-nota" data-idx="${idx}" value="${(c.nota || '').replace(/"/g, '&quot;')}" placeholder="Nota (opcional)" style="max-width:220px;" />
-          <button type="button" class="btn-danger quitar-check-btn" data-idx="${idx}" style="padding:0.3rem 0.6rem;">✕</button>
+        <div style="border-bottom:1px solid var(--color-border); padding-bottom:0.5rem; margin-bottom:0.5rem;">
+          <div class="form-row" style="align-items:center; gap:0.5rem; margin-bottom:0.3rem;">
+            <label style="display:flex; align-items:center; gap:0.4rem; flex:1; margin:0; font-size:0.9rem; color:var(--color-text);">
+              <input type="checkbox" class="check-item" data-idx="${idx}" ${c.marcado ? 'checked' : ''} style="width:auto;" />
+              <input type="text" class="check-label" data-idx="${idx}" value="${c.item.replace(/"/g, '&quot;')}" style="border:none; background:transparent; padding:0.2rem;" />
+            </label>
+            <input type="text" class="check-nota" data-idx="${idx}" value="${(c.nota || '').replace(/"/g, '&quot;')}" placeholder="Nota (opcional)" style="max-width:220px;" />
+            <button type="button" class="btn-danger quitar-check-btn" data-idx="${idx}" style="padding:0.3rem 0.6rem;">✕</button>
+          </div>
+          ${ordenId ? `
+          <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; padding-left:1.6rem;">
+            ${(c.fotos || []).map((u, fi) => `
+              <div style="position:relative;">
+                <a href="${u}" target="_blank"><img src="${u}" style="width:52px; height:52px; object-fit:cover; border-radius:4px; border:1px solid var(--color-border);" /></a>
+                <button type="button" class="quitar-check-foto-btn" data-idx="${idx}" data-fi="${fi}" style="position:absolute; top:-6px; right:-6px; width:18px; height:18px; line-height:16px; padding:0; border-radius:50%; font-size:0.65rem;">✕</button>
+              </div>`).join('')}
+            <label class="btn btn-secondary btn-mini" style="cursor:pointer;">
+              📷 Foto
+              <input type="file" accept="image/*" multiple class="check-foto-input" data-idx="${idx}" style="display:none;" />
+            </label>
+          </div>` : ''}
         </div>`).join('');
 
       body.querySelectorAll('.check-item').forEach(inp =>
@@ -503,10 +521,30 @@
         inp.addEventListener('input', () => { checklistActual[inp.dataset.idx].nota = inp.value; }));
       body.querySelectorAll('.quitar-check-btn').forEach(btn =>
         btn.addEventListener('click', () => { checklistActual.splice(Number(btn.dataset.idx), 1); renderChecklistRecepcion(containerId); }));
+      body.querySelectorAll('.quitar-check-foto-btn').forEach(btn =>
+        btn.addEventListener('click', () => {
+          checklistActual[btn.dataset.idx].fotos.splice(Number(btn.dataset.fi), 1);
+          renderChecklistRecepcion(containerId);
+        }));
+      body.querySelectorAll('.check-foto-input').forEach(inp =>
+        inp.addEventListener('change', async (e) => {
+          const idx = Number(inp.dataset.idx);
+          for (const file of Array.from(e.target.files)) {
+            const nombre = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9_.-]/g, '_')}`;
+            const path = `${ordenId}/inspeccion/${idx}_${nombre}`;
+            const { error } = await supabaseClient.storage.from('fotos-ot').upload(path, file);
+            if (!error) {
+              const url = supabaseClient.storage.from('fotos-ot').getPublicUrl(path).data.publicUrl;
+              if (!checklistActual[idx].fotos) checklistActual[idx].fotos = [];
+              checklistActual[idx].fotos.push(url);
+            }
+          }
+          renderChecklistRecepcion(containerId);
+        }));
     }
 
     document.getElementById('agregar-item-checklist-btn').addEventListener('click', () => {
-      checklistActual.push({ item: '', marcado: false, nota: '' });
+      checklistActual.push({ item: '', marcado: false, nota: '', fotos: [] });
       renderChecklistRecepcion();
     });
 
@@ -539,8 +577,8 @@
     document.getElementById('inspeccion-ingreso-btn').addEventListener('click', () => {
       if (!ordenActual) return;
       checklistActual = (ordenActual.checklist_recepcion && ordenActual.checklist_recepcion.length)
-        ? ordenActual.checklist_recepcion.map(c => ({ item: c.item, marcado: !!c.marcado, nota: c.nota || '' }))
-        : CHECKLIST_ESTANDAR.map(item => ({ item, marcado: false, nota: '' }));
+        ? ordenActual.checklist_recepcion.map(c => ({ item: c.item, marcado: !!c.marcado, nota: c.nota || '', fotos: c.fotos || [] }))
+        : CHECKLIST_ESTANDAR.map(item => ({ item, marcado: false, nota: '', fotos: [] }));
 
       abrirModal('Inspección de ingreso',
         `<p style="color:var(--color-text-muted); font-size:0.82rem; margin-top:0;">
@@ -559,9 +597,23 @@
 
       renderChecklistRecepcion('modal-checklist-body');
       document.getElementById('modal-agregar-item-checklist-btn').addEventListener('click', () => {
-        checklistActual.push({ item: '', marcado: false, nota: '' });
+        checklistActual.push({ item: '', marcado: false, nota: '', fotos: [] });
         renderChecklistRecepcion('modal-checklist-body');
       });
+    });
+
+    document.getElementById('enviar-inspeccion-btn').addEventListener('click', () => {
+      if (!ordenActual) return;
+      const o = ordenActual;
+      if (!o.checklist_recepcion || !o.checklist_recepcion.length) {
+        alert('Primero registra y guarda la inspección de ingreso.');
+        return;
+      }
+      const tel = o.clientes && o.clientes.telefono;
+      if (!tel) { alert('El cliente no tiene teléfono registrado.'); return; }
+      const link = `${window.location.origin}/inspeccion-ingreso.html?id=${o.id}`;
+      const mensaje = `Hola ${o.clientes.nombre}, le saluda ${config.nombre}. Le compartimos el detalle de la inspección de ingreso de ${o.vehiculos ? `su vehículo ${o.vehiculos.patente}` : 'su vehículo'} (${fmtNumero('OT', o.numero)}). Puede revisarla y firmarla aquí:\n${link}`;
+      abrirEnlace(linkWhatsApp(tel, mensaje));
     });
 
     // ---------- Firma digital (canvas) ----------
@@ -1326,9 +1378,18 @@
         ${o.diagnostico ? `<p><strong>Motivo de trabajo:</strong> ${o.diagnostico}</p>` : ''}
         ${(o.checklist_recepcion && o.checklist_recepcion.length) ? `
         <div style="margin:0.75rem 0;">
-          <p style="margin:0 0 0.35rem; font-weight:bold; font-size:0.9rem;">Checklist de recepción</p>
-          <p style="font-size:0.85rem; margin:0;">${o.checklist_recepcion.map(c => `${c.marcado ? '☑' : '☐'} ${c.item}${c.nota ? ` (${c.nota})` : ''}`).join(' &nbsp;·&nbsp; ')}</p>
-        </div>` : ''}
+          <p style="margin:0 0 0.35rem; font-weight:bold; font-size:0.9rem;">Checklist de recepción (inspección de ingreso)</p>
+          ${o.checklist_recepcion.map(c => `
+          <div style="margin:0.25rem 0;">
+            <span style="font-size:0.85rem;">${c.marcado ? '☑' : '☐'} ${c.item}${c.nota ? ` (${c.nota})` : ''}</span>
+            ${(c.fotos && c.fotos.length) ? `<div style="display:flex; flex-wrap:wrap; gap:0.3rem; margin-top:0.2rem;">${c.fotos.map(u => `<img src="${u}" style="width:70px; height:52px; object-fit:cover; border:1px solid #ccc; border-radius:3px;" />`).join('')}</div>` : ''}
+          </div>`).join('')}
+        </div>
+        ${o.checklist_firma_png ? `
+        <div style="margin:0.75rem 0;">
+          <p style="font-size:0.85rem; margin:0 0 0.25rem;"><strong>Conformidad del cliente con la inspección de ingreso</strong> (firmada a distancia el ${fmtFechaHora(o.checklist_firma_fecha)}):</p>
+          <img src="${o.checklist_firma_png}" alt="Firma de conformidad" style="max-width:260px; border:1px solid #ccc; border-radius:6px; background:#fff;" />
+        </div>` : ''}` : ''}
         ${o.pertenencias_declaradas ? `<p style="font-size:0.85rem;"><strong>Pertenencias declaradas:</strong> ${o.pertenencias_declaradas}</p>` : ''}
         <table style="width:100%; border-collapse:collapse;">
           <thead><tr style="border-bottom:1px solid #000;"><th style="text-align:left;padding:4px;">Descripción</th><th style="text-align:right;padding:4px;">Cant.</th><th style="text-align:right;padding:4px;">P. unit.</th><th style="text-align:right;padding:4px;">Total</th></tr></thead>
@@ -1414,9 +1475,14 @@
         ${o.diagnostico ? `<h3>Motivo de trabajo</h3><p>${o.diagnostico}</p>` : ''}
         ${o.garantia_especial ? `<h3>Garantía especial</h3><p>${o.garantia_especial}</p>` : ''}
 
-        <h3>Checklist de recepción</h3>
+        <h3>Checklist de recepción (inspección de ingreso)</h3>
         ${(o.checklist_recepcion && o.checklist_recepcion.length) ? `
-        <ul style="font-size:0.85rem;">${o.checklist_recepcion.map(c => `<li>${c.marcado ? '☑' : '☐'} ${c.item}${c.nota ? ` — ${c.nota}` : ''}</li>`).join('')}</ul>` : '<p style="color:#666;">Sin checklist registrado.</p>'}
+        <ul style="font-size:0.85rem;">${o.checklist_recepcion.map(c => `<li>${c.marcado ? '☑' : '☐'} ${c.item}${c.nota ? ` — ${c.nota}` : ''}
+          ${(c.fotos && c.fotos.length) ? `<div style="display:flex; flex-wrap:wrap; gap:0.3rem; margin-top:0.2rem;">${c.fotos.map(u => `<img src="${u}" style="width:80px; height:60px; object-fit:cover; border:1px solid #ccc; border-radius:4px;" />`).join('')}</div>` : ''}
+        </li>`).join('')}</ul>` : '<p style="color:#666;">Sin checklist registrado.</p>'}
+        ${o.checklist_firma_png ? `
+        <p style="font-size:0.85rem; margin-top:0.5rem;">Conformidad del cliente firmada a distancia el ${fmtFechaHora(o.checklist_firma_fecha)}:</p>
+        <img src="${o.checklist_firma_png}" alt="Firma de conformidad" style="max-width:260px; border:1px solid #ccc; border-radius:6px; background:#fff;" />` : ''}
         ${o.pertenencias_declaradas ? `<p><strong>Pertenencias declaradas:</strong> ${o.pertenencias_declaradas}</p>` : ''}
 
         <h3>Ítems de la orden</h3>

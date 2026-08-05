@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inspección de ingreso · Autonova</title>
+  <link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body class="portal-page">
+  <div class="brand-band" style="max-width:760px; width:100%; margin-bottom:1rem;">
+    <img src="assets/img/logo.png" alt="Autonova" onerror="this.style.display='none'" />
+    <div class="brand-band-text">
+      <div class="brand-band-name" id="taller-nombre">Autonova</div>
+      <div class="brand-band-sub">Inspección de ingreso del vehículo</div>
+    </div>
+  </div>
+
+  <div class="portal-card" id="contenido">
+    <p>Cargando inspección...</p>
+  </div>
+
+  <script src="assets/vendor/supabase.min.js"></script>
+  <script src="assets/js/supabaseClient.js"></script>
+  <script src="assets/js/layout.js"></script>
+  <script>
+    const otId = new URLSearchParams(window.location.search).get('id');
+    let insData = null;
+    let firmaCtx = null, firmaDibujando = false, firmaTieneTrazo = false;
+
+    function initFirmaCanvas() {
+      const canvas = document.getElementById('firma-canvas');
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+      firmaCtx = canvas.getContext('2d');
+      firmaCtx.strokeStyle = '#15181e';
+      firmaCtx.lineWidth = 2;
+      firmaCtx.lineCap = 'round';
+      firmaTieneTrazo = false;
+
+      const posicion = (e) => {
+        const r = canvas.getBoundingClientRect();
+        const p = e.touches ? e.touches[0] : e;
+        return { x: p.clientX - r.left, y: p.clientY - r.top };
+      };
+      const empezar = (e) => {
+        e.preventDefault();
+        firmaDibujando = true;
+        const { x, y } = posicion(e);
+        firmaCtx.beginPath();
+        firmaCtx.moveTo(x, y);
+      };
+      const dibujar = (e) => {
+        if (!firmaDibujando) return;
+        e.preventDefault();
+        const { x, y } = posicion(e);
+        firmaCtx.lineTo(x, y);
+        firmaCtx.stroke();
+        firmaTieneTrazo = true;
+      };
+      const terminar = () => { firmaDibujando = false; };
+      canvas.addEventListener('mousedown', empezar);
+      canvas.addEventListener('mousemove', dibujar);
+      canvas.addEventListener('mouseup', terminar);
+      canvas.addEventListener('mouseleave', terminar);
+      canvas.addEventListener('touchstart', empezar);
+      canvas.addEventListener('touchmove', dibujar);
+      canvas.addEventListener('touchend', terminar);
+
+      document.getElementById('limpiar-firma-btn').addEventListener('click', () => {
+        firmaCtx.clearRect(0, 0, canvas.width, canvas.height);
+        firmaTieneTrazo = false;
+      });
+      document.getElementById('firmar-btn').addEventListener('click', firmar);
+    }
+
+    async function firmar() {
+      const errorEl = document.getElementById('firma-error');
+      errorEl.textContent = '';
+      if (!firmaTieneTrazo) { errorEl.textContent = 'Dibuje su firma antes de confirmar.'; return; }
+      if (!confirm('¿Confirmas que la información de esta inspección es correcta y quieres firmarla?')) return;
+
+      const canvas = document.getElementById('firma-canvas');
+      const png = canvas.toDataURL('image/png');
+      const { data, error } = await supabaseClient.rpc('portal_firmar_inspeccion_ingreso', {
+        p_id: otId,
+        p_firma_png: png,
+      });
+      if (error || data !== 'ok') {
+        errorEl.textContent = 'No pudimos registrar la firma. Intenta de nuevo o contacta al taller.';
+        return;
+      }
+      insData.checklist_firma_png = png;
+      insData.checklist_firma_fecha = new Date().toISOString();
+      render(insData);
+    }
+
+    function itemFila(c) {
+      return `
+        <div style="padding:0.5rem 0; border-bottom:1px solid #eee;">
+          <span>${c.marcado ? '☑' : '☐'} ${c.item}${c.nota ? ` — ${c.nota}` : ''}</span>
+          ${(c.fotos && c.fotos.length) ? `<div class="fotos-grid" style="margin-top:0.4rem;">${c.fotos.map(u => `<div class="foto-item"><a href="${u}" target="_blank"><img src="${u}" /></a></div>`).join('')}</div>` : ''}
+        </div>`;
+    }
+
+    function render(d) {
+      const checklist = d.checklist_recepcion || [];
+      const contenido = document.getElementById('contenido');
+      contenido.innerHTML = `
+        <div class="toolbar">
+          <h2 style="margin:0;">${fmtNumero('OT', d.numero)} · ${d.vehiculo ? d.vehiculo.patente : ''}</h2>
+          <button type="button" class="btn-secondary" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
+        </div>
+        <p style="color:var(--color-text-muted); margin:0.25rem 0 1rem;">
+          <strong>${d.cliente ? d.cliente.nombre : ''}</strong>
+          ${d.vehiculo ? `<br>${[d.vehiculo.marca, d.vehiculo.modelo].filter(Boolean).join(' ')}` : ''}
+          <br>Ingreso: ${fmtFechaHora(d.fecha_ingreso)}
+        </p>
+        <h3>Checklist de recepción</h3>
+        ${checklist.length ? checklist.map(itemFila).join('') : '<p style="color:var(--color-text-muted);">Sin ítems registrados.</p>'}
+        ${d.checklist_firma_png ? `
+        <div style="margin-top:1.5rem; background:#e8f5e9; padding:1rem; border-radius:6px;">
+          <p style="margin:0 0 0.5rem; color:#1b5e20; font-weight:600;">Firmado el ${fmtFechaHora(d.checklist_firma_fecha)}.</p>
+          <img src="${d.checklist_firma_png}" alt="Firma del cliente" style="max-width:260px; border:1px solid #ccc; border-radius:6px; background:#fff;" />
+        </div>` : `
+        <div style="margin-top:1.5rem;">
+          <p style="font-size:0.9rem;">Al firmar, confirma que revisó y está conforme con el estado registrado del vehículo.</p>
+          <canvas id="firma-canvas" style="border:1px solid var(--color-border); border-radius:var(--radius); width:100%; height:150px; touch-action:none; background:#fff; display:block;"></canvas>
+          <div style="display:flex; gap:0.5rem; margin-top:0.5rem; flex-wrap:wrap;">
+            <button type="button" id="firmar-btn">✓ Confirmar y firmar</button>
+            <button type="button" id="limpiar-firma-btn" class="btn-secondary">Limpiar firma</button>
+          </div>
+          <p class="error-message" id="firma-error"></p>
+        </div>`}
+        ${d.taller ? `<p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:1.5rem;">
+          ${d.taller.nombre} · ${d.taller.direccion ?? ''} · ${d.taller.telefono ?? ''}
+        </p>` : ''}
+      `;
+      if (!d.checklist_firma_png) initFirmaCanvas();
+    }
+
+    (async () => {
+      const contenido = document.getElementById('contenido');
+      if (!otId) {
+        contenido.innerHTML = '<p class="error-message">Link inválido: falta el identificador de la orden.</p>';
+        return;
+      }
+      const { data, error } = await supabaseClient.rpc('portal_consultar_inspeccion_ingreso', { p_id: otId });
+      if (error || !data) {
+        contenido.innerHTML = '<p class="error-message">No encontramos esta inspección. Verifica el link o contacta al taller.</p>';
+        return;
+      }
+      if (data.taller && data.taller.nombre) document.getElementById('taller-nombre').textContent = data.taller.nombre;
+      insData = data;
+      render(data);
+    })();
+  </script>
+</body>
+</html>

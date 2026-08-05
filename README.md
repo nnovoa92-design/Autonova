@@ -26,6 +26,7 @@ estático (Netlify, Vercel, Cloudflare Pages).
 | `portal.html` | **Público**: el cliente consulta el estado de su vehículo con patente + N° de OT (incluye fotos y detalle) |
 | `cotizacion.html` | **Público**: el cliente revisa y aprueba/rechaza la cotización desde el link que le envías por WhatsApp |
 | `inspeccion.html` | **Público**: informe completo de inspección precompra desde el link único |
+| `inspeccion-ingreso.html` | **Público**: el cliente revisa el checklist de recepción de su OT y lo firma a distancia desde el link que le envías por WhatsApp |
 
 > Si tu base ya existía antes de la v2, ejecuta también `sql/actualizacion-v2.sql`
 > (crea inspecciones, migra las antiguas y agrega los porcentajes de reparto).
