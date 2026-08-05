@@ -1351,12 +1351,12 @@
     document.getElementById('pdf-ot-btn').addEventListener('click', async () => {
       if (!ordenActual) return;
       if (!config) config = await getTallerConfig();
-      construirPrintOrden(ordenActual);
+      await construirPrintOrden(ordenActual);
       await esperarImagenesImpresion('#print-area');
       window.print();
     });
 
-    function construirPrintOrden(o) {
+    async function construirPrintOrden(o) {
       const items = o.orden_items || [];
       const t = calcularTotal(items, o.con_iva !== false);
       const veh = o.vehiculos ? `${o.vehiculos.patente} · ${[o.vehiculos.marca, o.vehiculos.modelo].filter(Boolean).join(' ')}` : '';
@@ -1368,6 +1368,10 @@
       const saldo = t.total + bodegaje.monto - pagado;
       const desgloseHTML = renderDesgloseHTML(t, 300);
       const politicasEspeciales = textoPoliticasEspeciales(items);
+      // Solo fotos generales de recepción (no las de avance/inspección, que
+      // ya se muestran en su propia sección con su contexto).
+      const { data: archivosGenerales } = await supabaseClient.storage.from('fotos-ot').list(o.id, { limit: 100 });
+      const fotosGenerales = (archivosGenerales || []).filter(f => f.id !== null && !f.name.startsWith('abonos') && f.name !== 'firma_recepcion.png');
       document.getElementById('print-area').innerHTML = `
         <div class="print-brand"><img src="../assets/img/logo.png" alt="" onerror="this.style.display='none'" /><span class="print-brand-name">${config.nombre}</span></div>
         <div class="print-header">
@@ -1389,8 +1393,16 @@
         <div style="margin:0.75rem 0;">
           <p style="font-size:0.85rem; margin:0 0 0.25rem;"><strong>Conformidad del cliente con la inspección de ingreso</strong> (firmada a distancia el ${fmtFechaHora(o.checklist_firma_fecha)}):</p>
           <img src="${o.checklist_firma_png}" alt="Firma de conformidad" style="max-width:260px; border:1px solid #ccc; border-radius:6px; background:#fff;" />
+          ${(o.checklist_firma_lat != null && o.checklist_firma_lng != null) ? `<p style="font-size:0.78rem; margin:0.25rem 0 0;">Ubicación de la firma: <a href="https://www.google.com/maps?q=${o.checklist_firma_lat},${o.checklist_firma_lng}" target="_blank">${o.checklist_firma_lat.toFixed(5)}, ${o.checklist_firma_lng.toFixed(5)}</a></p>` : ''}
         </div>` : ''}` : ''}
         ${o.pertenencias_declaradas ? `<p style="font-size:0.85rem;"><strong>Pertenencias declaradas:</strong> ${o.pertenencias_declaradas}</p>` : ''}
+        ${fotosGenerales.length ? `
+        <div style="margin:0.75rem 0;">
+          <p style="margin:0 0 0.35rem; font-weight:bold; font-size:0.9rem;">Fotos del vehículo</p>
+          <div style="display:flex; flex-wrap:wrap; gap:0.4rem;">
+            ${fotosGenerales.map(f => `<img src="${supabaseClient.storage.from('fotos-ot').getPublicUrl(`${o.id}/${f.name}`).data.publicUrl}" style="width:110px; height:80px; object-fit:cover; border:1px solid #ccc; border-radius:4px;" />`).join('')}
+          </div>
+        </div>` : ''}
         <table style="width:100%; border-collapse:collapse;">
           <thead><tr style="border-bottom:1px solid #000;"><th style="text-align:left;padding:4px;">Descripción</th><th style="text-align:right;padding:4px;">Cant.</th><th style="text-align:right;padding:4px;">P. unit.</th><th style="text-align:right;padding:4px;">Total</th></tr></thead>
           <tbody>${items.map(i => `<tr style="border-bottom:1px solid #ccc;"><td style="padding:4px;">${i.descripcion}</td><td style="text-align:right;padding:4px;">${Number(i.cantidad).toLocaleString('es-CL')}</td><td style="text-align:right;padding:4px;">${fmtMoneda(i.precio_unitario)}</td><td style="text-align:right;padding:4px;">${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td></tr>`).join('')}</tbody>
@@ -1482,7 +1494,8 @@
         </li>`).join('')}</ul>` : '<p style="color:#666;">Sin checklist registrado.</p>'}
         ${o.checklist_firma_png ? `
         <p style="font-size:0.85rem; margin-top:0.5rem;">Conformidad del cliente firmada a distancia el ${fmtFechaHora(o.checklist_firma_fecha)}:</p>
-        <img src="${o.checklist_firma_png}" alt="Firma de conformidad" style="max-width:260px; border:1px solid #ccc; border-radius:6px; background:#fff;" />` : ''}
+        <img src="${o.checklist_firma_png}" alt="Firma de conformidad" style="max-width:260px; border:1px solid #ccc; border-radius:6px; background:#fff;" />
+        ${(o.checklist_firma_lat != null && o.checklist_firma_lng != null) ? `<p style="font-size:0.78rem; margin:0.25rem 0 0;">Ubicación de la firma: <a href="https://www.google.com/maps?q=${o.checklist_firma_lat},${o.checklist_firma_lng}" target="_blank">${o.checklist_firma_lat.toFixed(5)}, ${o.checklist_firma_lng.toFixed(5)}</a></p>` : ''}` : ''}
         ${o.pertenencias_declaradas ? `<p><strong>Pertenencias declaradas:</strong> ${o.pertenencias_declaradas}</p>` : ''}
 
         <h3>Ítems de la orden</h3>

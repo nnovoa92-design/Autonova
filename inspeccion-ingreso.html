@@ -75,17 +75,34 @@
       document.getElementById('firmar-btn').addEventListener('click', firmar);
     }
 
+    // Ubicación del dispositivo al momento de firmar, como respaldo de
+    // desde dónde se firmó. Es opcional: si el cliente no tiene geolocalización
+    // o no la autoriza, la firma se registra igual, sin coordenadas.
+    function obtenerUbicacion() {
+      return new Promise(resolve => {
+        if (!navigator.geolocation) { resolve(null); return; }
+        navigator.geolocation.getCurrentPosition(
+          (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+          () => resolve(null),
+          { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+        );
+      });
+    }
+
     async function firmar() {
       const errorEl = document.getElementById('firma-error');
       errorEl.textContent = '';
       if (!firmaTieneTrazo) { errorEl.textContent = 'Dibuje su firma antes de confirmar.'; return; }
       if (!confirm('¿Confirmas que la información de esta inspección es correcta y quieres firmarla?')) return;
 
+      const ubicacion = await obtenerUbicacion();
       const canvas = document.getElementById('firma-canvas');
       const png = canvas.toDataURL('image/png');
       const { data, error } = await supabaseClient.rpc('portal_firmar_inspeccion_ingreso', {
         p_id: otId,
         p_firma_png: png,
+        p_lat: ubicacion ? ubicacion.lat : null,
+        p_lng: ubicacion ? ubicacion.lng : null,
       });
       if (error || data !== 'ok') {
         errorEl.textContent = 'No pudimos registrar la firma. Intenta de nuevo o contacta al taller.';
@@ -93,6 +110,8 @@
       }
       insData.checklist_firma_png = png;
       insData.checklist_firma_fecha = new Date().toISOString();
+      insData.checklist_firma_lat = ubicacion ? ubicacion.lat : null;
+      insData.checklist_firma_lng = ubicacion ? ubicacion.lng : null;
       render(insData);
     }
 
@@ -123,6 +142,8 @@
         <div style="margin-top:1.5rem; background:#e8f5e9; padding:1rem; border-radius:6px;">
           <p style="margin:0 0 0.5rem; color:#1b5e20; font-weight:600;">Firmado el ${fmtFechaHora(d.checklist_firma_fecha)}.</p>
           <img src="${d.checklist_firma_png}" alt="Firma del cliente" style="max-width:260px; border:1px solid #ccc; border-radius:6px; background:#fff;" />
+          ${(d.checklist_firma_lat != null && d.checklist_firma_lng != null) ? `
+          <p style="margin:0.5rem 0 0;"><a href="https://www.google.com/maps?q=${d.checklist_firma_lat},${d.checklist_firma_lng}" target="_blank">📍 Ver ubicación desde donde se firmó</a></p>` : ''}
         </div>` : `
         <div style="margin-top:1.5rem;">
           <p style="font-size:0.9rem;">Al firmar, confirma que revisó y está conforme con el estado registrado del vehículo.</p>
