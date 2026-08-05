@@ -104,51 +104,29 @@ function abrirEnlace(url) {
   if (!w) window.location.href = url;
 }
 
-// Espera a que todas las imágenes dentro de un contenedor terminen de
-// cargar (o fallen) antes de imprimir/exportar — evita que el PDF o la
-// impresión salga sin fotos por una carrera con la descarga de red.
-function esperarImagenesImpresion(selector) {
-  const imgs = Array.from(document.querySelectorAll(`${selector} img`));
-  if (!imgs.length) return Promise.resolve();
-  return Promise.all(imgs.map(img => {
-    if (img.complete) return Promise.resolve();
-    return new Promise(resolve => {
-      img.addEventListener('load', resolve, { once: true });
-      img.addEventListener('error', resolve, { once: true });
-    });
-  }));
-}
-
-// Descarga un elemento (el "print-area" ya armado) como archivo PDF.
-// Si la librería html2pdf no está disponible, cae a la impresión del navegador.
-// El elemento vive oculto (display:none) fuera de @media print, así que
-// html2canvas no puede capturarlo directamente: se fuerza visible solo en
-// el documento clonado (onclone) sin afectar la página real.
-async function descargarPDF(elementId, nombreArchivo) {
-  const el = document.getElementById(elementId);
-  if (!el) { console.error('Elemento no encontrado:', elementId); return; }
-  if (typeof html2pdf === 'undefined') { window.print(); return; }
-
-  await esperarImagenesImpresion(`#${elementId}`);
-
-  try {
-    await html2pdf().set({
-      margin: 8,
-      filename: (nombreArchivo || 'documento') + '.pdf',
-      image: { type: 'jpeg', quality: 0.96 },
-      html2canvas: {
-        scale: 2, useCORS: true, logging: false,
-        onclone: (clonedDoc) => {
-          const clonedEl = clonedDoc.getElementById(elementId);
-          if (clonedEl) clonedEl.style.display = 'block';
-        },
-      },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-    }).from(el).save();
-  } catch (e) {
-    console.error('PDF error:', e);
-    window.print();
+// Abre una ventana nueva con el documento a imprimir ya armado (sin el
+// resto de la app alrededor) y dispara la impresión ahí. Reemplaza el
+// método anterior (@media print sobre la misma página / html2canvas
+// contra un contenedor oculto), que no siempre alcanzaba a renderizar
+// imágenes como firmas o fotos antes de imprimir.
+function abrirVentanaImpresion(html, titulo) {
+  const w = window.open('', '_blank');
+  if (!w) {
+    alert('Tu navegador bloqueó la ventana de impresión. Permite ventanas emergentes para este sitio e intenta de nuevo.');
+    return;
   }
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8" />
+<title>${titulo || 'Documento'}</title>
+<base href="${window.location.href}" />
+<link rel="stylesheet" href="${window.location.origin}/assets/css/style.css" />
+</head><body>
+<div class="print-area" id="print-area" style="display:block;">${html}</div>
+</body></html>`);
+  w.document.close();
+
+  const disparar = () => { w.focus(); w.print(); };
+  if (w.document.readyState === 'complete') disparar();
+  else w.addEventListener('load', disparar);
 }
 
 // Mes (1-12) de revisión técnica según el último dígito de la patente

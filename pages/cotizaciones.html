@@ -177,16 +177,12 @@
     </div>
   </div>
 
-  <!-- Plantilla imprimible -->
-  <div class="print-area" id="print-area"></div>
-
   <!-- Modal genérico -->
   <div class="modal-backdrop" id="modal-backdrop">
     <div class="modal" id="modal"></div>
   </div>
 
   <script src="../assets/vendor/supabase.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script src="../assets/js/supabaseClient.js"></script>
   <script src="../assets/js/layout.js"></script>
   <script>
@@ -598,9 +594,8 @@
           const c = cotizacionesCache.find(x => x.id === btn.dataset.id);
           if (!c) return;
           if (!config) config = await getTallerConfig();
-          construirPrintCotizacion(c);
-          await esperarImagenesImpresion('#print-area');
-          window.print();
+          const html = construirPrintCotizacion(c);
+          abrirVentanaImpresion(html, fmtNumero('COT', c.numero));
         });
       });
       // Botón compartir (dropdown)
@@ -750,12 +745,11 @@
       abrirEnlace(linkGmail(email, asunto, cuerpo));
     }
 
-    async function imprimirCotizacion(cotId) {
+    function imprimirCotizacion(cotId) {
       const c = cotizacionesCache.find(x => x.id === cotId);
       if (!c) return;
-      construirPrintCotizacion(c);
-      await esperarImagenesImpresion('#print-area');
-      window.print();
+      const html = construirPrintCotizacion(c);
+      abrirVentanaImpresion(html, fmtNumero('COT', c.numero));
     }
 
     function construirPrintCotizacion(c) {
@@ -769,7 +763,7 @@
       const desgloseHTML = renderDesgloseHTML(t, 300);
       const politicasEspeciales = textoPoliticasEspeciales(items);
 
-      document.getElementById('print-area').innerHTML = `
+      return `
         <div class="print-brand">
           <img src="../assets/img/logo.png" alt="" onerror="this.style.display='none'" />
           <span class="print-brand-name">${config.nombre}</span>

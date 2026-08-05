@@ -114,10 +114,7 @@
     </div>
   </div>
 
-  <div class="print-area" id="print-area"></div>
-
   <script src="../assets/vendor/supabase.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script src="../assets/js/supabaseClient.js"></script>
   <script src="../assets/js/layout.js"></script>
   <script src="../assets/js/checklist.js"></script>
@@ -413,21 +410,18 @@
       }
     });
 
-    document.getElementById('imprimir-btn').addEventListener('click', async () => {
+    document.getElementById('imprimir-btn').addEventListener('click', () => {
       if (!inspActual) return;
-      construirPrintInspeccion(inspActual);
-      await esperarImagenesImpresion('#print-area');
-      window.print();
+      abrirVentanaImpresion(construirPrintInspeccion(inspActual), fmtNumero('INS', inspActual.numero));
     });
 
     document.getElementById('pdf-btn').addEventListener('click', () => {
       if (!inspActual) return;
-      construirPrintInspeccion(inspActual);
-      descargarPDF('print-area', `Inspeccion-${fmtNumero('INS', inspActual.numero)}`);
+      abrirVentanaImpresion(construirPrintInspeccion(inspActual), fmtNumero('INS', inspActual.numero));
     });
 
     function construirPrintInspeccion(i) {
-      document.getElementById('print-area').innerHTML = `
+      return `
         <div class="print-brand">
           <img src="../assets/img/logo.png" alt="" onerror="this.style.display='none'" />
           <span class="print-brand-name">${config.nombre}</span>

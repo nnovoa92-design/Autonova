@@ -329,15 +329,12 @@
     </div>
   </div>
 
-  <div class="print-area" id="print-area"></div>
-
   <!-- Modal genérico -->
   <div class="modal-backdrop" id="modal-backdrop">
     <div class="modal" id="modal"></div>
   </div>
 
   <script src="../assets/vendor/supabase.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script src="../assets/js/supabaseClient.js"></script>
   <script src="../assets/js/layout.js"></script>
   <script>
@@ -1351,9 +1348,8 @@
     document.getElementById('pdf-ot-btn').addEventListener('click', async () => {
       if (!ordenActual) return;
       if (!config) config = await getTallerConfig();
-      await construirPrintOrden(ordenActual);
-      await esperarImagenesImpresion('#print-area');
-      window.print();
+      const html = await construirPrintOrden(ordenActual);
+      abrirVentanaImpresion(html, fmtNumero('OT', ordenActual.numero));
     });
 
     async function construirPrintOrden(o) {
@@ -1372,7 +1368,7 @@
       // ya se muestran en su propia sección con su contexto).
       const { data: archivosGenerales } = await supabaseClient.storage.from('fotos-ot').list(o.id, { limit: 100 });
       const fotosGenerales = (archivosGenerales || []).filter(f => f.id !== null && !f.name.startsWith('abonos') && f.name !== 'firma_recepcion.png');
-      document.getElementById('print-area').innerHTML = `
+      return `
         <div class="print-brand"><img src="../assets/img/logo.png" alt="" onerror="this.style.display='none'" /><span class="print-brand-name">${config.nombre}</span></div>
         <div class="print-header">
           <div><div>${config.rut ?? ''}</div><div>${config.direccion ?? ''}</div><div>${config.telefono ?? ''}</div></div>
@@ -1470,7 +1466,7 @@
         ...(o.firma_fecha ? [{ fecha: o.firma_fecha, texto: 'Firma digital de recepción registrada' }] : []),
       ].sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
 
-      document.getElementById('print-area').innerHTML = `
+      return `
         <div class="print-brand"><img src="../assets/img/logo.png" alt="" onerror="this.style.display='none'" /><span class="print-brand-name">${config.nombre}</span></div>
         <h2 style="margin:1rem 1.5rem 0;">Expediente completo — ${fmtNumero('OT', o.numero)}</h2>
         <p style="margin:0 1.5rem; color:#666; font-size:0.8rem;">Documento interno generado el ${fmtFechaHora(new Date().toISOString())}. No es el documento entregado al cliente.</p>
@@ -1549,9 +1545,8 @@
 
     document.getElementById('expediente-btn').addEventListener('click', async () => {
       if (!ordenActual) return;
-      await construirExpediente(ordenActual);
-      await esperarImagenesImpresion('#print-area');
-      window.print();
+      const html = await construirExpediente(ordenActual);
+      abrirVentanaImpresion(html, `Expediente ${fmtNumero('OT', ordenActual.numero)}`);
     });
 
     document.getElementById('email-ot-btn').addEventListener('click', () => {

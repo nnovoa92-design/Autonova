@@ -213,8 +213,6 @@
     </div>
   </div>
 
-  <div class="print-area" id="print-area"></div>
-
   <script src="../assets/vendor/supabase.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="../assets/js/supabaseClient.js"></script>
@@ -657,7 +655,7 @@
         return `<tr><td>${fmtFecha(m.fecha)}</td><td>${m.patente ?? ''}</td><td>${m.cliente ?? ''}</td><td>${m.descripcion ?? ''}</td><td style="text-align:right;">${fmtMoneda(t.moNeta)}</td><td style="text-align:right;">${fmtMoneda(t.totalConRep)}</td><td>${m.estado_pago}</td></tr>`;
       }).join('');
       const totalMes = movimientosCache.reduce((s, m) => s + calc(m).totalConRep, 0);
-      document.getElementById('print-area').innerHTML = `
+      const html = `
         <div class="print-brand"><img src="../assets/img/logo.png" alt="" onerror="this.style.display='none'" /><span class="print-brand-name">${config.nombre}</span></div>
         <h2>Libro contable — ${mes} ${anio}</h2>
         <table style="width:100%; border-collapse:collapse;">
@@ -665,7 +663,7 @@
           <tbody>${filas}</tbody>
         </table>
         <h3 style="text-align:right; margin-top:1rem;">Total del mes: ${fmtMoneda(totalMes)}</h3>`;
-      window.print();
+      abrirVentanaImpresion(html, `Libro contable ${mes} ${anio}`);
     });
 
     (async () => {
