@@ -104,6 +104,28 @@ function abrirEnlace(url) {
   if (!w) window.location.href = url;
 }
 
+// SO · navegador legible (ej. "Android · Chrome"), para el registro de
+// auditoría de firmas electrónicas.
+function detectarDispositivo() {
+  const ua = navigator.userAgent || '';
+  let so = 'Desconocido';
+  if (/Android/i.test(ua)) so = 'Android';
+  else if (/iPhone|iPad|iPod/i.test(ua)) so = 'iPhone/iPad (iOS)';
+  else if (/Windows/i.test(ua)) so = 'Windows';
+  else if (/Macintosh|Mac OS/i.test(ua)) so = 'Mac';
+  else if (/Linux/i.test(ua)) so = 'Linux';
+
+  let navegador = 'Navegador';
+  if (/Edg\//i.test(ua)) navegador = 'Edge';
+  else if (/OPR\//i.test(ua) || /Opera/i.test(ua)) navegador = 'Opera';
+  else if (/CriOS\//i.test(ua)) navegador = 'Chrome';
+  else if (/Chrome\//i.test(ua) && !/Edg\//i.test(ua)) navegador = 'Chrome';
+  else if (/Firefox\//i.test(ua)) navegador = 'Firefox';
+  else if (/Safari\//i.test(ua) && !/Chrome/i.test(ua)) navegador = 'Safari';
+
+  return `${so} · ${navegador}`;
+}
+
 // Abre una ventana nueva con el documento a imprimir ya armado (sin el
 // resto de la app alrededor) y dispara la impresión ahí. Reemplaza el
 // método anterior (@media print sobre la misma página / html2canvas

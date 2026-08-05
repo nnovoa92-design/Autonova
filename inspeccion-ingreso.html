@@ -92,10 +92,14 @@
     async function firmar() {
       const errorEl = document.getElementById('firma-error');
       errorEl.textContent = '';
+      const nombreDeclarado = document.getElementById('firma-nombre').value.trim();
+      const rutDeclarado = document.getElementById('firma-rut').value.trim();
+      if (!nombreDeclarado || !rutDeclarado) { errorEl.textContent = 'Ingrese su nombre completo y RUT.'; return; }
       if (!firmaTieneTrazo) { errorEl.textContent = 'Dibuje su firma antes de confirmar.'; return; }
       if (!confirm('¿Confirmas que la información de esta inspección es correcta y quieres firmarla?')) return;
 
       const ubicacion = await obtenerUbicacion();
+      const dispositivo = detectarDispositivo();
       const canvas = document.getElementById('firma-canvas');
       const png = canvas.toDataURL('image/png');
       const { data, error } = await supabaseClient.rpc('portal_firmar_inspeccion_ingreso', {
@@ -103,6 +107,9 @@
         p_firma_png: png,
         p_lat: ubicacion ? ubicacion.lat : null,
         p_lng: ubicacion ? ubicacion.lng : null,
+        p_dispositivo: dispositivo,
+        p_nombre_declarado: nombreDeclarado,
+        p_rut_declarado: rutDeclarado,
       });
       if (error || data !== 'ok') {
         errorEl.textContent = 'No pudimos registrar la firma. Intenta de nuevo o contacta al taller.';
@@ -112,6 +119,12 @@
       insData.checklist_firma_fecha = new Date().toISOString();
       insData.checklist_firma_lat = ubicacion ? ubicacion.lat : null;
       insData.checklist_firma_lng = ubicacion ? ubicacion.lng : null;
+      insData.checklist_firma_dispositivo = dispositivo;
+      insData.checklist_firma_nombre_declarado = nombreDeclarado;
+      insData.checklist_firma_rut_declarado = rutDeclarado;
+      // La IP la calcula el servidor; se vuelve a consultar para mostrarla.
+      const { data: actualizado } = await supabaseClient.rpc('portal_consultar_inspeccion_ingreso', { p_id: otId });
+      if (actualizado) insData = actualizado;
       render(insData);
     }
 
@@ -144,15 +157,33 @@
           <img src="${d.checklist_firma_png}" alt="Firma del cliente" style="max-width:260px; border:1px solid #ccc; border-radius:6px; background:#fff;" />
           ${(d.checklist_firma_lat != null && d.checklist_firma_lng != null) ? `
           <p style="margin:0.5rem 0 0;"><a href="https://www.google.com/maps?q=${d.checklist_firma_lat},${d.checklist_firma_lng}" target="_blank">📍 Ver ubicación desde donde se firmó</a></p>` : ''}
+          <p style="margin:0.75rem 0 0; padding-top:0.5rem; border-top:1px solid #c8e6c9; font-size:0.75rem; color:#33513a;">
+            Registro de firma electrónica — Firmante declarado: ${d.checklist_firma_nombre_declarado || '–'}${d.checklist_firma_rut_declarado ? ` (RUT ${d.checklist_firma_rut_declarado})` : ''}
+            · Dispositivo: ${d.checklist_firma_dispositivo || '–'}
+            ${d.checklist_firma_ip ? ` · IP: ${d.checklist_firma_ip}` : ''}
+          </p>
         </div>` : `
         <div style="margin-top:1.5rem;">
           <p style="font-size:0.9rem;">Al firmar, confirma que revisó y está conforme con el estado registrado del vehículo.</p>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="firma-nombre">Nombre completo *</label>
+              <input type="text" id="firma-nombre" value="${d.cliente ? (d.cliente.nombre || '').replace(/"/g, '&quot;') : ''}" />
+            </div>
+            <div class="form-group">
+              <label for="firma-rut">RUT *</label>
+              <input type="text" id="firma-rut" placeholder="12.345.678-9" />
+            </div>
+          </div>
           <canvas id="firma-canvas" style="border:1px solid var(--color-border); border-radius:var(--radius); width:100%; height:150px; touch-action:none; background:#fff; display:block;"></canvas>
           <div style="display:flex; gap:0.5rem; margin-top:0.5rem; flex-wrap:wrap;">
             <button type="button" id="firmar-btn">✓ Confirmar y firmar</button>
             <button type="button" id="limpiar-firma-btn" class="btn-secondary">Limpiar firma</button>
           </div>
           <p class="error-message" id="firma-error"></p>
+          <p style="font-size:0.72rem; color:var(--color-text-muted); margin-top:0.5rem;">
+            Al firmar se registra la fecha, hora, dispositivo e IP desde donde firma, como respaldo de esta conformidad.
+          </p>
         </div>`}
         ${d.taller ? `<p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:1.5rem;">
           ${d.taller.nombre} · ${d.taller.direccion ?? ''} · ${d.taller.telefono ?? ''}

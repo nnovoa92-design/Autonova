@@ -701,7 +701,7 @@
         const { error: firmaError } = await supabaseClient.storage.from('fotos-ot').upload(ruta, firmaBlob);
         if (!firmaError) {
           const url = supabaseClient.storage.from('fotos-ot').getPublicUrl(ruta).data.publicUrl;
-          await supabaseClient.from('ordenes').update({ firma_cliente_url: url, firma_fecha: new Date().toISOString() }).eq('id', data.id);
+          await supabaseClient.from('ordenes').update({ firma_cliente_url: url, firma_fecha: new Date().toISOString(), firma_dispositivo: detectarDispositivo() }).eq('id', data.id);
         }
       }
 
@@ -1352,6 +1352,17 @@
       abrirVentanaImpresion(html, fmtNumero('OT', ordenActual.numero));
     });
 
+    // Registro de firma electrónica (respaldo legal): fecha ya se muestra
+    // junto a la firma; acá solo el firmante declarado, dispositivo e IP.
+    function bloqueAuditoriaFirma(o) {
+      const partes = [];
+      if (o.checklist_firma_nombre_declarado) partes.push(`Firmante declarado: ${o.checklist_firma_nombre_declarado}${o.checklist_firma_rut_declarado ? ` (RUT ${o.checklist_firma_rut_declarado})` : ''}`);
+      if (o.checklist_firma_dispositivo) partes.push(`Dispositivo: ${o.checklist_firma_dispositivo}`);
+      if (o.checklist_firma_ip) partes.push(`IP: ${o.checklist_firma_ip}`);
+      if (!partes.length) return '';
+      return `<p style="font-size:0.72rem; color:#666; margin:0.25rem 0 0;">${partes.join(' · ')}</p>`;
+    }
+
     async function construirPrintOrden(o) {
       const items = o.orden_items || [];
       const t = calcularTotal(items, o.con_iva !== false);
@@ -1390,6 +1401,7 @@
           <p style="font-size:0.85rem; margin:0 0 0.25rem;"><strong>Conformidad del cliente con la inspección de ingreso</strong> (firmada a distancia el ${fmtFechaHora(o.checklist_firma_fecha)}):</p>
           <img src="${o.checklist_firma_png}" alt="Firma de conformidad" style="max-width:260px; border:1px solid #ccc; border-radius:6px; background:#fff;" />
           ${(o.checklist_firma_lat != null && o.checklist_firma_lng != null) ? `<p style="font-size:0.78rem; margin:0.25rem 0 0;">Ubicación de la firma: <a href="https://www.google.com/maps?q=${o.checklist_firma_lat},${o.checklist_firma_lng}" target="_blank">${o.checklist_firma_lat.toFixed(5)}, ${o.checklist_firma_lng.toFixed(5)}</a></p>` : ''}
+          ${bloqueAuditoriaFirma(o)}
         </div>` : ''}` : ''}
         ${o.pertenencias_declaradas ? `<p style="font-size:0.85rem;"><strong>Pertenencias declaradas:</strong> ${o.pertenencias_declaradas}</p>` : ''}
         ${fotosGenerales.length ? `
@@ -1428,6 +1440,7 @@
         <div style="margin-top:1.5rem;">
           <p style="font-size:0.85rem; margin:0 0 0.25rem;"><strong>Firma del cliente</strong> (recepción del vehículo, ${fmtFecha(o.firma_fecha)}):</p>
           <img src="${o.firma_cliente_url}" alt="Firma del cliente" style="max-width:260px; border:1px solid #ccc; border-radius:6px; background:#fff;" />
+          ${o.firma_dispositivo ? `<p style="font-size:0.72rem; color:#666; margin:0.25rem 0 0;">Dispositivo: ${o.firma_dispositivo}</p>` : ''}
         </div>` : ''}
         ${politicasEspeciales ? `
         <div style="margin-top:1.5rem; background:#fef3c7; padding:0.75rem 1rem; border-radius:6px; font-size:0.78rem; white-space:pre-wrap;">${politicasEspeciales}</div>` : ''}
@@ -1491,7 +1504,8 @@
         ${o.checklist_firma_png ? `
         <p style="font-size:0.85rem; margin-top:0.5rem;">Conformidad del cliente firmada a distancia el ${fmtFechaHora(o.checklist_firma_fecha)}:</p>
         <img src="${o.checklist_firma_png}" alt="Firma de conformidad" style="max-width:260px; border:1px solid #ccc; border-radius:6px; background:#fff;" />
-        ${(o.checklist_firma_lat != null && o.checklist_firma_lng != null) ? `<p style="font-size:0.78rem; margin:0.25rem 0 0;">Ubicación de la firma: <a href="https://www.google.com/maps?q=${o.checklist_firma_lat},${o.checklist_firma_lng}" target="_blank">${o.checklist_firma_lat.toFixed(5)}, ${o.checklist_firma_lng.toFixed(5)}</a></p>` : ''}` : ''}
+        ${(o.checklist_firma_lat != null && o.checklist_firma_lng != null) ? `<p style="font-size:0.78rem; margin:0.25rem 0 0;">Ubicación de la firma: <a href="https://www.google.com/maps?q=${o.checklist_firma_lat},${o.checklist_firma_lng}" target="_blank">${o.checklist_firma_lat.toFixed(5)}, ${o.checklist_firma_lng.toFixed(5)}</a></p>` : ''}
+        ${bloqueAuditoriaFirma(o)}` : ''}
         ${o.pertenencias_declaradas ? `<p><strong>Pertenencias declaradas:</strong> ${o.pertenencias_declaradas}</p>` : ''}
 
         <h3>Ítems de la orden</h3>
@@ -1508,7 +1522,8 @@
         ${o.firma_cliente_url ? `
         <h3>Firma del cliente</h3>
         <p style="font-size:0.85rem;">Registrada el ${fmtFechaHora(o.firma_fecha)}</p>
-        <img src="${o.firma_cliente_url}" alt="Firma del cliente" style="max-width:260px; border:1px solid #ccc; border-radius:6px; background:#fff;" />` : ''}
+        <img src="${o.firma_cliente_url}" alt="Firma del cliente" style="max-width:260px; border:1px solid #ccc; border-radius:6px; background:#fff;" />
+        ${o.firma_dispositivo ? `<p style="font-size:0.72rem; color:#666; margin:0.25rem 0 0;">Dispositivo: ${o.firma_dispositivo}</p>` : ''}` : ''}
 
         <h3 style="margin-top:1.5rem;">Línea de tiempo</h3>
         ${timelineCompleta.length ? `<ul style="font-size:0.85rem;">${timelineCompleta.map(e => `<li>${fmtFechaHora(e.fecha)} — ${e.texto}</li>`).join('')}</ul>` : '<p style="color:#666;">Sin eventos registrados.</p>'}
