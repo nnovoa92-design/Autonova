@@ -78,16 +78,6 @@
             `<span class="badge ${i < idx ? 'badge-green' : (i === idx ? 'badge-blue' : 'badge-gray')}">${ESTADOS_ORDEN[p].label}</span>`
           ).join(' <span style="color:var(--color-text-muted);">→</span> ');
 
-      // Fotos del vehículo (bucket público)
-      let fotosHtml = '';
-      const { data: fotos } = await supabaseClient.storage.from('fotos-ot').list(d.orden_id, { limit: 50 });
-      if (fotos && fotos.length) {
-        fotosHtml = '<h3>Fotos</h3><div class="fotos-grid">' + fotos.map(f => {
-          const url = supabaseClient.storage.from('fotos-ot').getPublicUrl(`${d.orden_id}/${f.name}`).data.publicUrl;
-          return `<div class="foto-item"><a href="${url}" target="_blank"><img src="${url}" /></a></div>`;
-        }).join('') + '</div>';
-      }
-
       const resultado = document.getElementById('resultado');
       resultado.innerHTML = `
         <div class="toolbar">
@@ -126,7 +116,6 @@
           ${conIva ? `<div class="fila"><span>IVA ${ivaPct}%</span><span>${fmtMoneda(iva)}</span></div>` : '<div class="fila" style="color:var(--color-text-muted);"><span>Sin IVA</span><span>–</span></div>'}
           <div class="fila total"><span>Total</span><span>${fmtMoneda(total)}</span></div>
         </div>` : ''}
-        ${fotosHtml}
         ${d.taller ? `<p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:1rem;">
           ${d.taller.nombre} · ${d.taller.direccion ?? ''} · ${d.taller.telefono ?? ''}
         </p>` : ''}

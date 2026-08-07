@@ -128,10 +128,16 @@
       render(insData);
     }
 
+    function estadoChecklistLabel(c) {
+      if (c.estado === 'optimo') return '<span style="color:#1b6e3c; font-weight:700;">✓ Óptimo</span>';
+      if (c.estado === 'observacion') return '<span style="color:#a93b33; font-weight:700;">⚠ Observación</span>';
+      return '<span style="color:#999;">Sin evaluar</span>';
+    }
+
     function itemFila(c) {
       return `
         <div style="padding:0.5rem 0; border-bottom:1px solid #eee;">
-          <span>${c.marcado ? '☑' : '☐'} ${c.item}${c.nota ? ` — ${c.nota}` : ''}</span>
+          <span>${estadoChecklistLabel(c)} — ${c.item}${c.nota ? ` — ${c.nota}` : ''}</span>
           ${(c.fotos && c.fotos.length) ? `<div class="fotos-grid" style="margin-top:0.4rem;">${c.fotos.map(u => `<div class="foto-item"><a href="${u}" target="_blank"><img src="${u}" /></a></div>`).join('')}</div>` : ''}
         </div>`;
     }

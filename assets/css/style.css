@@ -523,6 +523,20 @@ th {
 .select-con-boton { display: flex; gap: 0.4rem; align-items: stretch; }
 .select-con-boton select { flex: 1; }
 
+/* Botones de estado por ítem del checklist de inspección de ingreso */
+.estado-btn {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border);
+  background: #fff;
+  color: var(--color-text-muted);
+}
+.estado-btn:hover { background: #f2f2f2; }
+.estado-btn.estado-optimo.activo { background: #1b6e3c; border-color: #1b6e3c; color: #fff; }
+.estado-btn.estado-observacion.activo { background: #a93b33; border-color: #a93b33; color: #fff; }
+
 /* ---------- Inspecciones ---------- */
 .cl-item {
   display: flex;

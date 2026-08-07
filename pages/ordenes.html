@@ -220,14 +220,6 @@
             <tbody id="abonos-body"></tbody>
           </table>
 
-          <h3 style="margin-top:1.5rem;">Fotos del vehículo</h3>
-          <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.5rem;">
-            Estado de recepción, daños previos y evidencia del trabajo realizado.
-          </p>
-          <input type="file" id="foto-input" accept="image/*" multiple style="max-width:340px;" />
-          <p class="error-message" id="foto-error"></p>
-          <div id="fotos-grid" class="fotos-grid"></div>
-
           <h3 style="margin-top:1.5rem;">Trabajos realizados / avances</h3>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.5rem;">
             Registra cada "qué se hizo" con su foto. Cada avance se muestra por separado en el informe del cliente.
@@ -476,7 +468,7 @@
     let checklistActual = [];
 
     function inicializarChecklist() {
-      checklistActual = CHECKLIST_ESTANDAR.map(item => ({ item, marcado: false, nota: '' }));
+      checklistActual = CHECKLIST_ESTANDAR.map(item => ({ item, estado: null, nota: '', fotos: [] }));
       renderChecklistRecepcion();
     }
 
@@ -487,17 +479,18 @@
       // su id para la ruta en Storage) — por eso no aparecen en "Nueva OT".
       const ordenId = ordenActual ? ordenActual.id : null;
       body.innerHTML = checklistActual.map((c, idx) => `
-        <div style="border-bottom:1px solid var(--color-border); padding-bottom:0.5rem; margin-bottom:0.5rem;">
-          <div class="form-row" style="align-items:center; gap:0.5rem; margin-bottom:0.3rem;">
-            <label style="display:flex; align-items:center; gap:0.4rem; flex:1; margin:0; font-size:0.9rem; color:var(--color-text);">
-              <input type="checkbox" class="check-item" data-idx="${idx}" ${c.marcado ? 'checked' : ''} style="width:auto;" />
-              <input type="text" class="check-label" data-idx="${idx}" value="${c.item.replace(/"/g, '&quot;')}" style="border:none; background:transparent; padding:0.2rem;" />
-            </label>
-            <input type="text" class="check-nota" data-idx="${idx}" value="${(c.nota || '').replace(/"/g, '&quot;')}" placeholder="Nota (opcional)" style="max-width:220px;" />
-            <button type="button" class="btn-danger quitar-check-btn" data-idx="${idx}" style="padding:0.3rem 0.6rem;">✕</button>
+        <div style="border-bottom:1px solid var(--color-border); padding-bottom:0.6rem; margin-bottom:0.6rem;">
+          <div style="display:flex; align-items:center; gap:0.5rem;">
+            <input type="text" class="check-label" data-idx="${idx}" value="${c.item.replace(/"/g, '&quot;')}" style="flex:1; min-width:0;" />
+            <button type="button" class="btn-danger quitar-check-btn" data-idx="${idx}" style="padding:0.3rem 0.6rem; flex-shrink:0;">✕</button>
           </div>
+          <div style="display:flex; gap:0.4rem; margin-top:0.4rem; flex-wrap:wrap;">
+            <button type="button" class="estado-btn estado-optimo${c.estado === 'optimo' ? ' activo' : ''}" data-idx="${idx}" data-estado="optimo">✓ Óptimo</button>
+            <button type="button" class="estado-btn estado-observacion${c.estado === 'observacion' ? ' activo' : ''}" data-idx="${idx}" data-estado="observacion">⚠ Observación</button>
+          </div>
+          <input type="text" class="check-nota" data-idx="${idx}" value="${(c.nota || '').replace(/"/g, '&quot;')}" placeholder="Nota (opcional)" style="width:100%; margin-top:0.4rem; font-size:0.82rem; padding:0.4rem 0.6rem;" />
           ${ordenId ? `
-          <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; padding-left:1.6rem;">
+          <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; margin-top:0.4rem;">
             ${(c.fotos || []).map((u, fi) => `
               <div style="position:relative;">
                 <a href="${u}" target="_blank"><img src="${u}" style="width:52px; height:52px; object-fit:cover; border-radius:4px; border:1px solid var(--color-border);" /></a>
@@ -510,12 +503,15 @@
           </div>` : ''}
         </div>`).join('');
 
-      body.querySelectorAll('.check-item').forEach(inp =>
-        inp.addEventListener('change', () => { checklistActual[inp.dataset.idx].marcado = inp.checked; }));
       body.querySelectorAll('.check-label').forEach(inp =>
         inp.addEventListener('input', () => { checklistActual[inp.dataset.idx].item = inp.value; }));
       body.querySelectorAll('.check-nota').forEach(inp =>
         inp.addEventListener('input', () => { checklistActual[inp.dataset.idx].nota = inp.value; }));
+      body.querySelectorAll('.estado-btn').forEach(btn =>
+        btn.addEventListener('click', () => {
+          checklistActual[btn.dataset.idx].estado = btn.dataset.estado;
+          renderChecklistRecepcion(containerId);
+        }));
       body.querySelectorAll('.quitar-check-btn').forEach(btn =>
         btn.addEventListener('click', () => { checklistActual.splice(Number(btn.dataset.idx), 1); renderChecklistRecepcion(containerId); }));
       body.querySelectorAll('.quitar-check-foto-btn').forEach(btn =>
@@ -541,7 +537,7 @@
     }
 
     document.getElementById('agregar-item-checklist-btn').addEventListener('click', () => {
-      checklistActual.push({ item: '', marcado: false, nota: '', fotos: [] });
+      checklistActual.push({ item: '', estado: null, nota: '', fotos: [] });
       renderChecklistRecepcion();
     });
 
@@ -567,15 +563,16 @@
     function resumenChecklist(checklist) {
       const el = document.getElementById('inspeccion-ingreso-resumen');
       if (!checklist || !checklist.length) { el.textContent = 'Sin registrar aún.'; return; }
-      const marcados = checklist.filter(c => c.marcado).length;
-      el.textContent = `${marcados} de ${checklist.length} ítem(s) marcados.`;
+      const optimos = checklist.filter(c => c.estado === 'optimo').length;
+      const observaciones = checklist.filter(c => c.estado === 'observacion').length;
+      el.textContent = `${optimos} óptimo(s), ${observaciones} con observación, de ${checklist.length} ítem(s).`;
     }
 
     document.getElementById('inspeccion-ingreso-btn').addEventListener('click', () => {
       if (!ordenActual) return;
       checklistActual = (ordenActual.checklist_recepcion && ordenActual.checklist_recepcion.length)
-        ? ordenActual.checklist_recepcion.map(c => ({ item: c.item, marcado: !!c.marcado, nota: c.nota || '', fotos: c.fotos || [] }))
-        : CHECKLIST_ESTANDAR.map(item => ({ item, marcado: false, nota: '', fotos: [] }));
+        ? ordenActual.checklist_recepcion.map(c => ({ item: c.item, estado: c.estado || null, nota: c.nota || '', fotos: c.fotos || [] }))
+        : CHECKLIST_ESTANDAR.map(item => ({ item, estado: null, nota: '', fotos: [] }));
 
       abrirModal('Inspección de ingreso',
         `<p style="color:var(--color-text-muted); font-size:0.82rem; margin-top:0;">
@@ -594,7 +591,7 @@
 
       renderChecklistRecepcion('modal-checklist-body');
       document.getElementById('modal-agregar-item-checklist-btn').addEventListener('click', () => {
-        checklistActual.push({ item: '', marcado: false, nota: '', fotos: [] });
+        checklistActual.push({ item: '', estado: null, nota: '', fotos: [] });
         renderChecklistRecepcion('modal-checklist-body');
       });
     });
@@ -744,7 +741,6 @@
       renderItemsDetalle();
       renderHoras();
       renderAvances();
-      await cargarFotos();
       await cargarAbonos();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -809,40 +805,6 @@
     }
     setupAutoList('nueva-diagnostico');
     setupAutoList('detalle-diagnostico');
-
-    // ---------- Fotos (Supabase Storage, bucket "fotos-ot") ----------
-    async function cargarFotos() {
-      if (!ordenActual) return;
-      const grid = document.getElementById('fotos-grid');
-      const { data, error } = await supabaseClient.storage.from('fotos-ot').list(ordenActual.id, { limit: 100 });
-      if (error) {
-        grid.innerHTML = `<p class="error-message">No se pudieron listar las fotos: ${error.message}</p>`;
-        return;
-      }
-      // Filtrar para excluir carpeta de abonos (solo mostrar fotos del vehículo)
-      const fotos = (data || []).filter(f => !f.name.startsWith('abonos/'));
-      if (!fotos || !fotos.length) {
-        grid.innerHTML = '<p style="color:var(--color-text-muted); font-size:0.85rem;">Sin fotos todavía.</p>';
-        return;
-      }
-      grid.innerHTML = fotos.map(f => {
-        const url = supabaseClient.storage.from('fotos-ot').getPublicUrl(`${ordenActual.id}/${f.name}`).data.publicUrl;
-        return `
-        <div class="foto-item">
-          <a href="${url}" target="_blank"><img src="${url}" alt="${f.name}" loading="lazy" /></a>
-          <button type="button" class="btn-danger foto-del-btn" data-name="${f.name}">✕</button>
-        </div>`;
-      }).join('');
-
-      grid.querySelectorAll('.foto-del-btn').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          if (!confirm('¿Eliminar esta foto?')) return;
-          const { error } = await supabaseClient.storage.from('fotos-ot').remove([`${ordenActual.id}/${btn.dataset.name}`]);
-          if (error) { alert('Error al eliminar: ' + error.message); return; }
-          await cargarFotos();
-        });
-      });
-    }
 
     // ---------- Abonos (pagos parciales) ----------
     let abonosActuales = [];
@@ -1272,19 +1234,6 @@
       await abrirDetalle(ordenActual.id);
     });
 
-    document.getElementById('foto-input').addEventListener('change', async (e) => {
-      if (!ordenActual || !e.target.files.length) return;
-      const errorEl = document.getElementById('foto-error');
-      errorEl.textContent = '';
-      for (const file of e.target.files) {
-        const nombre = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9_.-]/g, '_')}`;
-        const { error } = await supabaseClient.storage.from('fotos-ot').upload(`${ordenActual.id}/${nombre}`, file);
-        if (error) errorEl.textContent = `Error al subir ${file.name}: ${error.message}`;
-      }
-      e.target.value = '';
-      await cargarFotos();
-    });
-
     document.getElementById('avance-fotos').addEventListener('change', async (e) => {
       if (!ordenActual || !e.target.files.length) return;
       const estado = document.getElementById('avance-fotos-estado');
@@ -1348,9 +1297,17 @@
     document.getElementById('pdf-ot-btn').addEventListener('click', async () => {
       if (!ordenActual) return;
       if (!config) config = await getTallerConfig();
-      const html = await construirPrintOrden(ordenActual);
+      const html = construirPrintOrden(ordenActual);
       abrirVentanaImpresion(html, fmtNumero('OT', ordenActual.numero));
     });
+
+    // Etiqueta de estado por ítem del checklist de inspección de ingreso,
+    // igual criterio visual (verde/rojo) que los botones Óptimo/Observación.
+    function estadoChecklistLabel(c) {
+      if (c.estado === 'optimo') return '<span style="color:#1b6e3c; font-weight:700;">✓ Óptimo</span>';
+      if (c.estado === 'observacion') return '<span style="color:#a93b33; font-weight:700;">⚠ Observación</span>';
+      return '<span style="color:#999;">Sin evaluar</span>';
+    }
 
     // Registro de firma electrónica (respaldo legal): fecha ya se muestra
     // junto a la firma; acá solo el firmante declarado, dispositivo e IP.
@@ -1363,7 +1320,7 @@
       return `<p style="font-size:0.72rem; color:#666; margin:0.25rem 0 0;">${partes.join(' · ')}</p>`;
     }
 
-    async function construirPrintOrden(o) {
+    function construirPrintOrden(o) {
       const items = o.orden_items || [];
       const t = calcularTotal(items, o.con_iva !== false);
       const veh = o.vehiculos ? `${o.vehiculos.patente} · ${[o.vehiculos.marca, o.vehiculos.modelo].filter(Boolean).join(' ')}` : '';
@@ -1375,10 +1332,6 @@
       const saldo = t.total + bodegaje.monto - pagado;
       const desgloseHTML = renderDesgloseHTML(t, 300);
       const politicasEspeciales = textoPoliticasEspeciales(items);
-      // Solo fotos generales de recepción (no las de avance/inspección, que
-      // ya se muestran en su propia sección con su contexto).
-      const { data: archivosGenerales } = await supabaseClient.storage.from('fotos-ot').list(o.id, { limit: 100 });
-      const fotosGenerales = (archivosGenerales || []).filter(f => f.id !== null && !f.name.startsWith('abonos') && f.name !== 'firma_recepcion.png');
       return `
         <div class="print-brand"><img src="../assets/img/logo.png" alt="" onerror="this.style.display='none'" /><span class="print-brand-name">${config.nombre}</span></div>
         <div class="print-header">
@@ -1392,7 +1345,7 @@
           <p style="margin:0 0 0.35rem; font-weight:bold; font-size:0.9rem;">Checklist de recepción (inspección de ingreso)</p>
           ${o.checklist_recepcion.map(c => `
           <div style="margin:0.25rem 0;">
-            <span style="font-size:0.85rem;">${c.marcado ? '☑' : '☐'} ${c.item}${c.nota ? ` (${c.nota})` : ''}</span>
+            <span style="font-size:0.85rem;">${estadoChecklistLabel(c)} — ${c.item}${c.nota ? ` (${c.nota})` : ''}</span>
             ${(c.fotos && c.fotos.length) ? `<div style="display:flex; flex-wrap:wrap; gap:0.3rem; margin-top:0.2rem;">${c.fotos.map(u => `<img src="${u}" style="width:70px; height:52px; object-fit:cover; border:1px solid #ccc; border-radius:3px;" />`).join('')}</div>` : ''}
           </div>`).join('')}
         </div>
@@ -1404,13 +1357,6 @@
           ${bloqueAuditoriaFirma(o)}
         </div>` : ''}` : ''}
         ${o.pertenencias_declaradas ? `<p style="font-size:0.85rem;"><strong>Pertenencias declaradas:</strong> ${o.pertenencias_declaradas}</p>` : ''}
-        ${fotosGenerales.length ? `
-        <div style="margin:0.75rem 0;">
-          <p style="margin:0 0 0.35rem; font-weight:bold; font-size:0.9rem;">Fotos del vehículo</p>
-          <div style="display:flex; flex-wrap:wrap; gap:0.4rem;">
-            ${fotosGenerales.map(f => `<img src="${supabaseClient.storage.from('fotos-ot').getPublicUrl(`${o.id}/${f.name}`).data.publicUrl}" style="width:110px; height:80px; object-fit:cover; border:1px solid #ccc; border-radius:4px;" />`).join('')}
-          </div>
-        </div>` : ''}
         <table style="width:100%; border-collapse:collapse;">
           <thead><tr style="border-bottom:1px solid #000;"><th style="text-align:left;padding:4px;">Descripción</th><th style="text-align:right;padding:4px;">Cant.</th><th style="text-align:right;padding:4px;">P. unit.</th><th style="text-align:right;padding:4px;">Total</th></tr></thead>
           <tbody>${items.map(i => `<tr style="border-bottom:1px solid #ccc;"><td style="padding:4px;">${i.descripcion}</td><td style="text-align:right;padding:4px;">${Number(i.cantidad).toLocaleString('es-CL')}</td><td style="text-align:right;padding:4px;">${fmtMoneda(i.precio_unitario)}</td><td style="text-align:right;padding:4px;">${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td></tr>`).join('')}</tbody>
@@ -1450,7 +1396,7 @@
     }
 
     // ---------- Expediente completo (interno, respaldo judicial) ----------
-    async function construirExpediente(o) {
+    function construirExpediente(o) {
       const items = o.orden_items || [];
       const t = calcularTotal(items, o.con_iva !== false);
       const bodegaje = calcularBodegaje(o);
@@ -1461,11 +1407,6 @@
       const cli = o.clientes || {};
       const politicasEspeciales = textoPoliticasEspeciales(items);
 
-      // .list() no es recursivo: las fotos de avances viven en {id}/avance/
-      // y quedarían fuera (o aparecerían como una carpeta rota) si solo se
-      // filtra por nombre. f.id === null identifica entradas de carpeta.
-      const { data: archivos } = await supabaseClient.storage.from('fotos-ot').list(o.id, { limit: 100 });
-      const fotos = (archivos || []).filter(f => f.id !== null && !f.name.startsWith('abonos') && f.name !== 'firma_recepcion.png');
       const avancesConFotos = (o.avances || []).filter(a => a.fotos && a.fotos.length);
 
       const historial = (o.ordenes_historial || []).slice().sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
@@ -1498,7 +1439,7 @@
 
         <h3>Checklist de recepción (inspección de ingreso)</h3>
         ${(o.checklist_recepcion && o.checklist_recepcion.length) ? `
-        <ul style="font-size:0.85rem;">${o.checklist_recepcion.map(c => `<li>${c.marcado ? '☑' : '☐'} ${c.item}${c.nota ? ` — ${c.nota}` : ''}
+        <ul style="font-size:0.85rem;">${o.checklist_recepcion.map(c => `<li>${estadoChecklistLabel(c)} — ${c.item}${c.nota ? ` — ${c.nota}` : ''}
           ${(c.fotos && c.fotos.length) ? `<div style="display:flex; flex-wrap:wrap; gap:0.3rem; margin-top:0.2rem;">${c.fotos.map(u => `<img src="${u}" style="width:80px; height:60px; object-fit:cover; border:1px solid #ccc; border-radius:4px;" />`).join('')}</div>` : ''}
         </li>`).join('')}</ul>` : '<p style="color:#666;">Sin checklist registrado.</p>'}
         ${o.checklist_firma_png ? `
@@ -1528,14 +1469,8 @@
         <h3 style="margin-top:1.5rem;">Línea de tiempo</h3>
         ${timelineCompleta.length ? `<ul style="font-size:0.85rem;">${timelineCompleta.map(e => `<li>${fmtFechaHora(e.fecha)} — ${e.texto}</li>`).join('')}</ul>` : '<p style="color:#666;">Sin eventos registrados.</p>'}
 
-        <h3 style="margin-top:1.5rem;">Fotografías del vehículo</h3>
-        ${fotos.length ? `
-        <div style="display:flex; flex-wrap:wrap; gap:0.5rem;">
-          ${fotos.map(f => `<img src="${supabaseClient.storage.from('fotos-ot').getPublicUrl(`${o.id}/${f.name}`).data.publicUrl}" style="width:160px; height:120px; object-fit:cover; border:1px solid #ccc; border-radius:6px;" />`).join('')}
-        </div>` : '<p style="color:#666;">Sin fotografías generales registradas.</p>'}
-
         ${avancesConFotos.length ? `
-        <h3 style="margin-top:1rem;">Fotografías de avances de trabajo</h3>
+        <h3 style="margin-top:1.5rem;">Fotografías de avances de trabajo</h3>
         ${avancesConFotos.map(a => `
         <p style="font-size:0.8rem; margin:0.5rem 0 0.2rem; color:#666;">${a.texto || 'Avance'} — ${fmtFechaHora(a.fecha)}</p>
         <div style="display:flex; flex-wrap:wrap; gap:0.5rem;">
@@ -1558,9 +1493,9 @@
       `;
     }
 
-    document.getElementById('expediente-btn').addEventListener('click', async () => {
+    document.getElementById('expediente-btn').addEventListener('click', () => {
       if (!ordenActual) return;
-      const html = await construirExpediente(ordenActual);
+      const html = construirExpediente(ordenActual);
       abrirVentanaImpresion(html, `Expediente ${fmtNumero('OT', ordenActual.numero)}`);
     });
 
