@@ -140,15 +140,39 @@ function abrirVentanaImpresion(html, titulo) {
   w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8" />
 <title>${titulo || 'Documento'}</title>
 <base href="${window.location.href}" />
-<link rel="stylesheet" href="${window.location.origin}/assets/css/style.css" />
 </head><body>
 <div class="print-area" id="print-area" style="display:block;">${html}</div>
 </body></html>`);
   w.document.close();
 
-  const disparar = () => { w.focus(); w.print(); };
-  if (w.document.readyState === 'complete') disparar();
-  else w.addEventListener('load', disparar);
+  // readyState/load de una ventana armada con document.write() no son
+  // confiables (suelen marcar "complete" antes de que la hoja de estilo
+  // externa termine de cargar) — se espera explícitamente el <link> y
+  // las imágenes antes de imprimir, o el documento sale sin estilos.
+  const cssLink = w.document.createElement('link');
+  cssLink.rel = 'stylesheet';
+  cssLink.href = `${window.location.origin}/assets/css/style.css`;
+  const esperarCss = new Promise(resolve => {
+    cssLink.addEventListener('load', resolve, { once: true });
+    cssLink.addEventListener('error', resolve, { once: true });
+  });
+  w.document.head.appendChild(cssLink);
+
+  esperarCss
+    .then(() => esperarImagenesImpresion(w))
+    .then(() => { w.focus(); w.print(); });
+}
+
+function esperarImagenesImpresion(w) {
+  const imgs = Array.from(w.document.images);
+  if (!imgs.length) return Promise.resolve();
+  return Promise.all(imgs.map(img => {
+    if (img.complete) return Promise.resolve();
+    return new Promise(resolve => {
+      img.addEventListener('load', resolve, { once: true });
+      img.addEventListener('error', resolve, { once: true });
+    });
+  }));
 }
 
 // Mes (1-12) de revisión técnica según el último dígito de la patente
