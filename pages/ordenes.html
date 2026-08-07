@@ -485,8 +485,8 @@
             <button type="button" class="btn-danger quitar-check-btn" data-idx="${idx}" style="padding:0.3rem 0.6rem; flex-shrink:0;">✕</button>
           </div>
           <div style="display:flex; gap:0.4rem; margin-top:0.4rem; flex-wrap:wrap;">
-            <button type="button" class="estado-btn estado-optimo${c.estado === 'optimo' ? ' activo' : ''}" data-idx="${idx}" data-estado="optimo">✓ Óptimo</button>
-            <button type="button" class="estado-btn estado-observacion${c.estado === 'observacion' ? ' activo' : ''}" data-idx="${idx}" data-estado="observacion">⚠ Observación</button>
+            <button type="button" class="chk-estado-btn estado-optimo${c.estado === 'optimo' ? ' activo' : ''}" data-idx="${idx}" data-estado="optimo">✓ Óptimo</button>
+            <button type="button" class="chk-estado-btn estado-observacion${c.estado === 'observacion' ? ' activo' : ''}" data-idx="${idx}" data-estado="observacion">⚠ Observación</button>
           </div>
           <input type="text" class="check-nota" data-idx="${idx}" value="${(c.nota || '').replace(/"/g, '&quot;')}" placeholder="Nota (opcional)" style="width:100%; margin-top:0.4rem; font-size:0.82rem; padding:0.4rem 0.6rem;" />
           ${ordenId ? `
@@ -507,7 +507,7 @@
         inp.addEventListener('input', () => { checklistActual[inp.dataset.idx].item = inp.value; }));
       body.querySelectorAll('.check-nota').forEach(inp =>
         inp.addEventListener('input', () => { checklistActual[inp.dataset.idx].nota = inp.value; }));
-      body.querySelectorAll('.estado-btn').forEach(btn =>
+      body.querySelectorAll('.chk-estado-btn').forEach(btn =>
         btn.addEventListener('click', () => {
           checklistActual[btn.dataset.idx].estado = btn.dataset.estado;
           renderChecklistRecepcion(containerId);
@@ -1154,12 +1154,12 @@
         const t = calcularTotal(o.orden_items, o.con_iva !== false);
         return `
         <tr>
-          <td>${fmtNumero('OT', o.numero)}</td>
-          <td>${fmtFecha(o.fecha_ingreso)}</td>
+          <td style="white-space:nowrap;">${fmtNumero('OT', o.numero)}</td>
+          <td style="white-space:nowrap;">${fmtFecha(o.fecha_ingreso)}</td>
           <td>${o.clientes ? o.clientes.nombre : '–'}</td>
-          <td>${o.vehiculos ? o.vehiculos.patente : '–'}</td>
-          <td>${fmtMoneda(t.total)}</td>
-          <td>${badgeEstado(o.estado, ESTADOS_ORDEN)}</td>
+          <td style="white-space:nowrap;">${o.vehiculos ? o.vehiculos.patente : '–'}</td>
+          <td style="white-space:nowrap;">${fmtMoneda(t.total)}</td>
+          <td style="white-space:nowrap;">${badgeEstado(o.estado, ESTADOS_ORDEN)}</td>
           <td class="table-actions">
             <button type="button" class="btn-secondary abrir-btn" data-id="${o.id}">Abrir</button>
           </td>

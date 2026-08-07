@@ -150,13 +150,13 @@
           const iva = Number(p.monto) - neto;
           return `
           <tr>
-            <td>${fmtFechaHora(p.fecha)}</td>
-            <td>${p.ordenes ? fmtNumero('OT', p.ordenes.numero) : '–'}</td>
+            <td style="white-space:nowrap;">${fmtFechaHora(p.fecha)}</td>
+            <td style="white-space:nowrap;">${p.ordenes ? fmtNumero('OT', p.ordenes.numero) : '–'}</td>
             <td>${p.clientes ? p.clientes.nombre : '–'}</td>
-            <td>${fmtMoneda(p.monto)}</td>
-            <td>${p.con_iva === false ? '<span class="badge badge-gray">sin IVA</span>' : fmtMoneda(iva)}</td>
-            <td>${fmtMoneda(neto)}</td>
-            <td>${METODOS_PAGO[p.metodo_pago] ?? '–'}</td>
+            <td style="white-space:nowrap;">${fmtMoneda(p.monto)}</td>
+            <td style="white-space:nowrap;">${p.con_iva === false ? '<span class="badge badge-gray">sin IVA</span>' : fmtMoneda(iva)}</td>
+            <td style="white-space:nowrap;">${fmtMoneda(neto)}</td>
+            <td style="white-space:nowrap;">${METODOS_PAGO[p.metodo_pago] ?? '–'}</td>
             <td>${p.notas ?? '–'}</td>
             <td><button type="button" class="btn-danger eliminar-btn" data-id="${p.id}" style="padding:0.2rem 0.5rem;">✕</button></td>
           </tr>`;

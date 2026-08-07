@@ -556,12 +556,12 @@
         const editable = c.estado !== 'convertida';
         return `
         <tr>
-          <td>${fmtNumero('COT', c.numero)}</td>
-          <td>${fmtFecha(c.fecha)}</td>
+          <td style="white-space:nowrap;">${fmtNumero('COT', c.numero)}</td>
+          <td style="white-space:nowrap;">${fmtFecha(c.fecha)}</td>
           <td>${c.clientes ? c.clientes.nombre : '–'}</td>
-          <td>${vehiculo}</td>
-          <td>${fmtMoneda(t.total)}</td>
-          <td>${badgeEstado(c.estado, ESTADOS_COTIZACION)}</td>
+          <td style="white-space:nowrap;">${vehiculo}</td>
+          <td style="white-space:nowrap;">${fmtMoneda(t.total)}</td>
+          <td style="white-space:nowrap;">${badgeEstado(c.estado, ESTADOS_COTIZACION)}</td>
           <td class="table-actions">
             ${editable ? `<button type="button" class="btn-secondary editar-btn" data-id="${c.id}">Editar</button>` : ''}
             <button type="button" class="btn-secondary pdf-btn" data-id="${c.id}">📄 PDF</button>

@@ -153,12 +153,12 @@
 
       tbody.innerHTML = ots.map(o => `
         <tr>
-          <td>${fmtFecha(o.fecha_ingreso)}</td>
-          <td>${fmtNumero('OT', o.numero)}</td>
-          <td>${o.km_ingreso != null ? Number(o.km_ingreso).toLocaleString('es-CL') : '–'}</td>
+          <td style="white-space:nowrap;">${fmtFecha(o.fecha_ingreso)}</td>
+          <td style="white-space:nowrap;">${fmtNumero('OT', o.numero)}</td>
+          <td style="white-space:nowrap;">${o.km_ingreso != null ? Number(o.km_ingreso).toLocaleString('es-CL') : '–'}</td>
           <td>${(o.orden_items || []).map(i => i.descripcion).join(', ') || '–'}</td>
-          <td>${fmtMoneda(totalOT(o))}</td>
-          <td>${badgeEstado(o.estado, ESTADOS_ORDEN)}</td>
+          <td style="white-space:nowrap;">${fmtMoneda(totalOT(o))}</td>
+          <td style="white-space:nowrap;">${badgeEstado(o.estado, ESTADOS_ORDEN)}</td>
         </tr>`).join('');
 
       const gastado = ots.filter(o => o.estado !== 'cancelado').reduce((s, o) => s + totalOT(o), 0);

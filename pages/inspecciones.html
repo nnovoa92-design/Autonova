@@ -466,11 +466,11 @@
         const nivel = i.score >= 90 ? 'badge-green' : (i.score >= 60 ? 'badge-yellow' : 'badge-red');
         return `
         <tr>
-          <td>${fmtNumero('INS', i.numero)}</td>
-          <td>${fmtFecha(i.fecha)}</td>
+          <td style="white-space:nowrap;">${fmtNumero('INS', i.numero)}</td>
+          <td style="white-space:nowrap;">${fmtFecha(i.fecha)}</td>
           <td>${i.nombre_comprador}</td>
           <td>${[i.patente, i.marca, i.modelo].filter(Boolean).join(' ') || '–'}</td>
-          <td><span class="badge ${nivel}">${i.score ?? '–'}/100</span></td>
+          <td style="white-space:nowrap;"><span class="badge ${nivel}">${i.score ?? '–'}/100</span></td>
           <td class="table-actions">
             <button type="button" class="btn-secondary ver-btn" data-id="${i.id}">Ver</button>
             <button type="button" class="btn-danger eliminar-btn" data-id="${i.id}">Eliminar</button>

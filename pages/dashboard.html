@@ -258,11 +258,11 @@
         otsBody.innerHTML = '<tr><td colspan="5">No hay vehículos en taller.</td></tr>';
       } else {
         otsBody.innerHTML = ots.map(o => `<tr>
-          <td>${fmtNumero('OT', o.numero)}</td>
+          <td style="white-space:nowrap;">${fmtNumero('OT', o.numero)}</td>
           <td>${o.vehiculos ? `${o.vehiculos.patente} · ${o.vehiculos.marca} ${o.vehiculos.modelo}` : '–'}</td>
           <td>${o.clientes ? o.clientes.nombre : '–'}</td>
-          <td>${fmtFecha(o.fecha_ingreso)}</td>
-          <td>${badgeEstado(o.estado, ESTADOS_ORDEN)}</td>
+          <td style="white-space:nowrap;">${fmtFecha(o.fecha_ingreso)}</td>
+          <td style="white-space:nowrap;">${badgeEstado(o.estado, ESTADOS_ORDEN)}</td>
         </tr>`).join('');
       }
 
@@ -278,11 +278,11 @@
         cotBody.innerHTML = '<tr><td colspan="5">No hay cotizaciones.</td></tr>';
       } else {
         cotBody.innerHTML = cots.map(c => `<tr>
-          <td>${fmtNumero('COT', c.numero)}</td>
+          <td style="white-space:nowrap;">${fmtNumero('COT', c.numero)}</td>
           <td>${c.clientes ? c.clientes.nombre : '–'}</td>
           <td>${c.vehiculos ? `${c.vehiculos.patente} · ${c.vehiculos.marca} ${c.vehiculos.modelo}` : '–'}</td>
-          <td>${fmtFecha(c.fecha)}</td>
-          <td>${badgeEstado(c.estado, ESTADOS_COTIZACION)}</td>
+          <td style="white-space:nowrap;">${fmtFecha(c.fecha)}</td>
+          <td style="white-space:nowrap;">${badgeEstado(c.estado, ESTADOS_COTIZACION)}</td>
         </tr>`).join('');
       }
 
