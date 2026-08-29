@@ -22,12 +22,15 @@
           <input type="hidden" id="cotizacion-id" />
           <div class="form-row">
             <div class="form-group">
-              <label for="cliente_id">Cliente *</label>
-              <input type="text" id="cliente-search" placeholder="Buscar cliente..." style="margin-bottom:0.25rem; width:100%;" />
-              <div class="select-con-boton">
-                <select id="cliente_id" required></select>
-                <button type="button" class="btn-secondary btn-mini" id="nuevo-cliente-btn">+ Nuevo</button>
+              <label for="cliente-buscar">Cliente *</label>
+              <div class="combobox-wrap">
+                <div class="select-con-boton">
+                  <input type="text" id="cliente-buscar" placeholder="Escribe para buscar..." autocomplete="off" />
+                  <button type="button" class="btn-secondary btn-mini" id="nuevo-cliente-btn">+ Nuevo</button>
+                </div>
+                <div class="combobox-lista" id="cliente-lista" style="display:none;"></div>
               </div>
+              <select id="cliente_id" style="display:none;"></select>
             </div>
             <div class="form-group">
               <label for="vehiculo_id">Vehículo</label>
@@ -66,20 +69,26 @@
               </select>
             </div>
             <div class="form-group" id="grupo-trabajo">
-              <label for="item-trabajo">Trabajo precargado</label>
-              <input type="text" id="trabajo-search" placeholder="Buscar trabajo..." style="margin-bottom:0.25rem; width:100%; display:none;" />
-              <div class="select-con-boton">
-                <select id="item-trabajo"></select>
-                <button type="button" class="btn-secondary btn-mini" id="nuevo-trabajo-btn">+ Nuevo</button>
+              <label for="trabajo-buscar">Trabajo precargado</label>
+              <div class="combobox-wrap">
+                <div class="select-con-boton">
+                  <input type="text" id="trabajo-buscar" placeholder="Escribe para buscar..." autocomplete="off" />
+                  <button type="button" class="btn-secondary btn-mini" id="nuevo-trabajo-btn">+ Nuevo</button>
+                </div>
+                <div class="combobox-lista" id="trabajo-lista" style="display:none;"></div>
               </div>
+              <select id="item-trabajo" style="display:none;"></select>
             </div>
             <div class="form-group" id="grupo-repuesto" style="display:none;">
-              <label for="item-repuesto">Repuesto</label>
-              <input type="text" id="repuesto-search" placeholder="Buscar repuesto..." style="margin-bottom:0.25rem; width:100%; display:none;" />
-              <div class="select-con-boton">
-                <select id="item-repuesto"></select>
-                <button type="button" class="btn-secondary btn-mini" id="nuevo-repuesto-btn">+ Nuevo</button>
+              <label for="repuesto-buscar">Repuesto</label>
+              <div class="combobox-wrap">
+                <div class="select-con-boton">
+                  <input type="text" id="repuesto-buscar" placeholder="Escribe para buscar..." autocomplete="off" />
+                  <button type="button" class="btn-secondary btn-mini" id="nuevo-repuesto-btn">+ Nuevo</button>
+                </div>
+                <div class="combobox-lista" id="repuesto-lista" style="display:none;"></div>
               </div>
+              <select id="item-repuesto" style="display:none;"></select>
             </div>
             <div class="form-group" id="grupo-descripcion" style="display:none;">
               <label for="item-descripcion">Descripción</label>
@@ -99,6 +108,10 @@
               <label for="item-cantidad" id="item-cantidad-label">Horas</label>
               <input type="number" id="item-cantidad" value="1" min="0" step="0.25" />
             </div>
+            <div class="form-group" id="grupo-horas-trabajo" style="display:none; max-width:140px;">
+              <label for="item-horas">Horas por trabajo</label>
+              <input type="number" id="item-horas" min="0" step="0.25" />
+            </div>
             <div class="form-group" style="max-width:150px;">
               <label for="item-precio">Precio unitario</label>
               <input type="number" id="item-precio" min="0" step="1" />
@@ -107,6 +120,7 @@
               <button type="button" id="agregar-item-btn">Agregar</button>
             </div>
           </div>
+          <p id="item-preview" style="color:var(--color-text-muted); font-weight:600; margin:0.4rem 0 0;"></p>
 
           <p style="color:var(--color-text-muted); font-size:0.82rem; margin:0.5rem 0 0.25rem;">
             Al elegir un trabajo se cargan su mano de obra y los insumos que requiere.
@@ -202,11 +216,12 @@
     }
 
     // Carga un trabajo del catálogo (n veces) como líneas: mano de obra + sus insumos.
-    function agregarTrabajoCompleto(t, n = 1) {
+    function agregarTrabajoCompleto(t, n = 1, horasPorTrabajo = null) {
       n = Math.max(1, Number(n) || 1);
       const sufijo = n > 1 ? ` (x${n})` : '';
       const moPrecio = t.precio_fijo != null ? Number(t.precio_fijo) : Number(config.valor_hora);
-      const moCantidad = (t.precio_fijo != null ? 1 : Number(t.horas_estimadas || 0)) * n;
+      const horas = horasPorTrabajo != null ? Number(horasPorTrabajo) : Number(t.horas_estimadas || 0);
+      const moCantidad = (t.precio_fijo != null ? 1 : horas) * n;
       itemsActuales.push({ tipo: 'mano_obra', trabajo_id: t.id, repuesto_id: null, descripcion: t.nombre + sufijo, cantidad: moCantidad, precio_unitario: moPrecio });
       // La descripción larga del trabajo (qué incluye, etc.) siempre queda
       // registrada en Notas, para que el cliente vea el detalle de la
@@ -334,6 +349,7 @@
         document.getElementById('editor-title').textContent = `Editar ${fmtNumero('COT', cot.numero)}`;
         document.getElementById('cotizacion-id').value = cot.id;
         document.getElementById('cliente_id').value = cot.cliente_id;
+        document.getElementById('cliente-buscar').value = cot.clientes ? cot.clientes.nombre : (clientesCache.find(c => c.id === cot.cliente_id) || {}).nombre || '';
         actualizarVehiculos();
         document.getElementById('vehiculo_id').value = cot.vehiculo_id ?? '';
         document.getElementById('validez_dias').value = cot.validez_dias;
@@ -345,6 +361,7 @@
         document.getElementById('editor-title').textContent = 'Nueva cotización';
         document.getElementById('cotizacion-id').value = '';
         document.getElementById('cliente_id').value = '';
+        document.getElementById('cliente-buscar').value = '';
         document.getElementById('vehiculo_id').innerHTML = '<option value="">Sin vehículo</option>';
         document.getElementById('validez_dias').value = '15';
         document.getElementById('descuento_pct').value = '0';
@@ -376,31 +393,59 @@
       document.getElementById('grupo-repuesto').style.display = tipo === 'repuesto' ? 'block' : 'none';
       document.getElementById('grupo-descripcion').style.display = libre ? 'block' : 'none';
       document.getElementById('grupo-tipo-otro').style.display = tipo === 'otro' ? 'block' : 'none';
-      document.getElementById('trabajo-search').style.display = tipo === 'mano_obra' ? 'block' : 'none';
-      document.getElementById('repuesto-search').style.display = tipo === 'repuesto' ? 'block' : 'none';
       // Para un trabajo del catálogo, la cantidad = N° de trabajos; el precio se calcula solo.
       document.getElementById('item-cantidad').parentElement.style.display = 'block';
       document.getElementById('item-precio').parentElement.style.display = tipo === 'mano_obra' ? 'none' : 'block';
-      document.getElementById('item-cantidad-label').textContent = tipo === 'mano_obra' ? 'N° de trabajos' : 'Cantidad';
+      document.getElementById('item-cantidad-label').textContent = 'Cantidad';
       if (tipo === 'mano_obra') document.getElementById('item-cantidad').value = '1';
       else if (tipo === 'repuesto') onRepuestoChange();
       else if (libre) {
         document.getElementById('item-cantidad').value = '1';
         document.getElementById('item-precio').value = '';
       }
+      actualizarCamposTrabajo();
     }
 
     function onTrabajoChange() {
       const t = trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value);
       if (!t) return;
-      // N° de trabajos siempre es 1 (una unidad del trabajo)
-      // Las horas se multiplican automáticamente en agregarTrabajoCompleto
+      // Cantidad siempre parte en 1 (una unidad del trabajo); si quiere más
+      // de uno, se sube acá y las horas/precio se multiplican al agregar.
       document.getElementById('item-cantidad').value = '1';
       // Si tiene precio fijo, el precio es el total; si no, es valor hora (se multiplica por horas)
       if (t.precio_fijo != null) {
         document.getElementById('item-precio').value = Number(t.precio_fijo);
       } else {
         document.getElementById('item-precio').value = Number(config.valor_hora);
+        document.getElementById('item-horas').value = Number(t.horas_estimadas || 0);
+      }
+      actualizarCamposTrabajo();
+    }
+
+    // El campo "Horas por trabajo" solo tiene sentido si el trabajo se
+    // cobra por hora (sin precio fijo) — con precio fijo la cantidad ya
+    // multiplica el total directo, sin pasar por horas.
+    function actualizarCamposTrabajo() {
+      const tipo = document.getElementById('item-tipo').value;
+      const t = tipo === 'mano_obra' ? trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value) : null;
+      const mostrarHoras = !!(t && t.precio_fijo == null);
+      document.getElementById('grupo-horas-trabajo').style.display = mostrarHoras ? 'block' : 'none';
+      actualizarPreviewTrabajo();
+    }
+
+    function actualizarPreviewTrabajo() {
+      const previewEl = document.getElementById('item-preview');
+      const tipo = document.getElementById('item-tipo').value;
+      if (tipo !== 'mano_obra') { previewEl.textContent = ''; return; }
+      const t = trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value);
+      if (!t) { previewEl.textContent = ''; return; }
+      const cantidad = Math.max(1, Number(document.getElementById('item-cantidad').value) || 1);
+      if (t.precio_fijo != null) {
+        previewEl.textContent = `Total: ${cantidad} × ${fmtMoneda(t.precio_fijo)} = ${fmtMoneda(Number(t.precio_fijo) * cantidad)}`;
+      } else {
+        const horas = Math.max(0, Number(document.getElementById('item-horas').value) || 0);
+        const totalHoras = horas * cantidad;
+        previewEl.textContent = `Total: ${cantidad} × ${horas} h = ${totalHoras} h · ${fmtMoneda(totalHoras * Number(config.valor_hora))}`;
       }
     }
 
@@ -418,7 +463,9 @@
         const t = trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value);
         if (!t) return;
         const n = Math.max(1, Number(document.getElementById('item-cantidad').value) || 1);
-        agregarTrabajoCompleto(t, n);
+        const horasPorTrabajo = t.precio_fijo != null ? null : Math.max(0, Number(document.getElementById('item-horas').value) || 0);
+        agregarTrabajoCompleto(t, n, horasPorTrabajo);
+        document.getElementById('item-preview').textContent = '';
         return;
       }
 
@@ -873,41 +920,29 @@
       document.getElementById('cliente_id').innerHTML =
         '<option value="">Seleccionar cliente...</option>' +
         clientesCache.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
-      if (sel) document.getElementById('cliente_id').value = sel;
+      if (sel) {
+        document.getElementById('cliente_id').value = sel;
+        const c = clientesCache.find(x => x.id === sel);
+        document.getElementById('cliente-buscar').value = c ? c.nombre : '';
+      }
     }
     function poblarTrabajos(sel) {
       document.getElementById('item-trabajo').innerHTML =
         trabajosCache.map(t => `<option value="${t.id}">${t.nombre} (${t.horas_estimadas} h)</option>`).join('');
-      if (sel) document.getElementById('item-trabajo').value = sel;
+      if (sel) {
+        document.getElementById('item-trabajo').value = sel;
+        const t = trabajosCache.find(x => x.id === sel);
+        document.getElementById('trabajo-buscar').value = t ? `${t.nombre} (${t.horas_estimadas} h)` : '';
+      }
     }
     function poblarRepuestos(sel) {
       document.getElementById('item-repuesto').innerHTML =
         repuestosCache.map(r => `<option value="${r.id}">${r.sku ? r.sku + ' · ' : ''}${r.nombre} — ${fmtMoneda(r.precio_venta)}</option>`).join('');
-      if (sel) document.getElementById('item-repuesto').value = sel;
-    }
-
-    // ---------- Búsqueda rápida en dropdowns ----------
-    function setupSearch(inputId, selectId, dataArray, labelFn) {
-      const input = document.getElementById(inputId);
-      const select = document.getElementById(selectId);
-      if (!input || !select) return;
-
-      input.addEventListener('input', () => {
-        const query = input.value.toLowerCase();
-        const options = select.querySelectorAll('option');
-        options.forEach(opt => {
-          if (opt.value === '') opt.style.display = 'block';
-          else {
-            const text = labelFn(dataArray.find(d => d.id === opt.value) || {}).toLowerCase();
-            opt.style.display = text.includes(query) ? 'block' : 'none';
-          }
-        });
-      });
-
-      select.addEventListener('focus', () => { input.style.display = 'block'; input.focus(); });
-      input.addEventListener('blur', () => {
-        setTimeout(() => { if (select.value) input.style.display = 'none'; }, 100);
-      });
+      if (sel) {
+        document.getElementById('item-repuesto').value = sel;
+        const r = repuestosCache.find(x => x.id === sel);
+        document.getElementById('repuesto-buscar').value = r ? `${r.sku ? r.sku + ' · ' : ''}${r.nombre}` : '';
+      }
     }
 
 
@@ -986,6 +1021,7 @@
           trabajosCache.push(data); trabajosCache.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
           document.getElementById('item-tipo').value = 'mano_obra'; onTipoChange();
           poblarTrabajos(data.id);
+          onTrabajoChange();
           cerrarModal();
         });
     });
@@ -1016,6 +1052,8 @@
     document.getElementById('item-tipo').addEventListener('change', onTipoChange);
     document.getElementById('item-trabajo').addEventListener('change', onTrabajoChange);
     document.getElementById('item-repuesto').addEventListener('change', onRepuestoChange);
+    document.getElementById('item-cantidad').addEventListener('input', actualizarPreviewTrabajo);
+    document.getElementById('item-horas').addEventListener('input', actualizarPreviewTrabajo);
     document.getElementById('descuento_pct').addEventListener('input', renderTotales);
     document.getElementById('con_iva').addEventListener('change', renderTotales);
     document.getElementById('filter-estado').addEventListener('change', renderCotizaciones);
@@ -1042,9 +1080,9 @@
       poblarTrabajos();
       poblarRepuestos();
 
-      setupSearch('cliente-search', 'cliente_id', clientesCache, c => c.nombre);
-      setupSearch('trabajo-search', 'item-trabajo', trabajosCache, t => `${t.nombre} (${t.horas_estimadas} h)`);
-      setupSearch('repuesto-search', 'item-repuesto', repuestosCache, r => `${r.sku ? r.sku + ' · ' : ''}${r.nombre}`);
+      setupCombobox('cliente-buscar', 'cliente_id', 'cliente-lista', clientesCache, c => c.nombre);
+      setupCombobox('trabajo-buscar', 'item-trabajo', 'trabajo-lista', trabajosCache, t => `${t.nombre} (${t.horas_estimadas} h)`);
+      setupCombobox('repuesto-buscar', 'item-repuesto', 'repuesto-lista', repuestosCache, r => `${r.sku ? r.sku + ' · ' : ''}${r.nombre}`);
 
       onTipoChange();
       await loadCotizaciones();

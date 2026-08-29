@@ -79,6 +79,58 @@ function fmtNumero(prefijo, numero) {
   return `${prefijo}-${String(numero ?? 0).padStart(4, '0')}`;
 }
 
+// Combobox de autocompletado: un campo de texto que, al escribir, muestra
+// una lista desplegable con las coincidencias (por nombre). El <select>
+// oculto sigue siendo la fuente de verdad (value + evento "change"), así
+// el resto del código que ya lee/escucha ese <select> no necesita cambiar.
+// dataArray se lee por referencia en cada apertura, así que basta con que
+// el array se actualice en el sitio (push/sort) para que el buscador vea
+// los cambios sin tener que volver a llamar a esta función.
+function setupCombobox(inputId, selectId, listId, dataArray, labelFn) {
+  const input = document.getElementById(inputId);
+  const select = document.getElementById(selectId);
+  const list = document.getElementById(listId);
+  if (!input || !select || !list) return;
+  let resultados = [];
+  let resaltado = -1;
+
+  function seleccionar(item) {
+    select.value = item.id;
+    input.value = labelFn(item);
+    list.style.display = 'none';
+    select.dispatchEvent(new Event('change'));
+  }
+
+  function marcarResaltado() {
+    list.querySelectorAll('.combobox-item').forEach((el, i) => el.classList.toggle('resaltado', i === resaltado));
+  }
+
+  function render(query) {
+    const q = query.trim().toLowerCase();
+    resultados = (q ? dataArray.filter(d => labelFn(d).toLowerCase().includes(q)) : dataArray).slice(0, 30);
+    resaltado = -1;
+    if (!resultados.length) {
+      list.innerHTML = '<div class="combobox-vacio">Sin coincidencias</div>';
+    } else {
+      list.innerHTML = resultados.map(d => `<div class="combobox-item">${labelFn(d)}</div>`).join('');
+      list.querySelectorAll('.combobox-item').forEach((el, i) =>
+        el.addEventListener('mousedown', (e) => { e.preventDefault(); seleccionar(resultados[i]); }));
+    }
+    list.style.display = 'block';
+  }
+
+  input.addEventListener('input', () => { select.value = ''; render(input.value); });
+  input.addEventListener('focus', () => render(input.value));
+  input.addEventListener('blur', () => setTimeout(() => { list.style.display = 'none'; }, 150));
+  input.addEventListener('keydown', (e) => {
+    if (list.style.display === 'none' || !resultados.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); resaltado = Math.min(resaltado + 1, resultados.length - 1); marcarResaltado(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); resaltado = Math.max(resaltado - 1, 0); marcarResaltado(); }
+    else if (e.key === 'Enter') { if (resaltado >= 0) { e.preventDefault(); seleccionar(resultados[resaltado]); } }
+    else if (e.key === 'Escape') { list.style.display = 'none'; }
+  });
+}
+
 // Link wa.me con el mensaje prellenado. Acepta teléfonos chilenos
 // con o sin +56 (ej: "+56 9 8765 4321" o "987654321").
 function linkWhatsApp(telefono, mensaje) {

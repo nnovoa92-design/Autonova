@@ -519,7 +519,27 @@ th {
   white-space: nowrap;
 }
 .select-con-boton { display: flex; gap: 0.4rem; align-items: stretch; }
-.select-con-boton select { flex: 1; }
+.select-con-boton select, .select-con-boton input { flex: 1; }
+
+/* Combobox de autocompletado (buscar cliente/trabajo/repuesto por nombre) */
+.combobox-wrap { position: relative; }
+.combobox-lista {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 0.2rem;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  max-height: 240px;
+  overflow-y: auto;
+  z-index: 20;
+}
+.combobox-item { padding: 0.5rem 0.7rem; font-size: 0.88rem; cursor: pointer; }
+.combobox-item:hover, .combobox-item.resaltado { background: var(--color-primary); color: #fff; }
+.combobox-vacio { padding: 0.5rem 0.7rem; font-size: 0.85rem; color: var(--color-text-muted); }
 
 /* Botones de estado por ítem del checklist de inspección de ingreso.
    Nombre distinto de .estado-btn (ya usado en cotizaciones para
