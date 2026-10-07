@@ -17,6 +17,42 @@
     }
     .slot-content { flex: 1; padding: 0.4rem 0.75rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
     .slot-bloqueado { background: repeating-linear-gradient(135deg, rgba(0,0,0,0.035), rgba(0,0,0,0.035) 8px, transparent 8px, transparent 16px); }
+
+    #dia-actual { width: auto; }
+
+    /* Selector de vista (Día / Semana) */
+    .vista-tabs { display: inline-flex; border: 1px solid var(--color-primary); border-radius: var(--radius); overflow: hidden; }
+    .vista-tabs button { border: none; border-radius: 0; background: transparent; color: var(--color-primary); padding: 0.45rem 0.9rem; }
+    .vista-tabs button.activa { background: var(--color-primary); color: #fff; }
+    .bloqueo-item { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.5rem 0; border-bottom: 1px solid var(--color-border); font-size: 0.9rem; }
+
+    /* Vista semanal */
+    .semana-wrap { overflow-x: auto; }
+    .semana-grid { display: grid; grid-template-columns: 56px repeat(7, minmax(112px, 1fr)); min-width: 840px; }
+    .sem-cab { padding: 0.4rem 0.3rem; text-align: center; border-bottom: 2px solid var(--color-border); border-left: 1px solid var(--color-border); font-size: 0.78rem; background: var(--color-surface-alt); }
+    .sem-cab.hoy { box-shadow: inset 0 -3px 0 var(--color-primary); }
+    .sem-cab.cerrado { color: var(--color-text-muted); }
+    .sem-dia-btn { background: none; border: none; color: var(--color-text); font-family: var(--font-display); font-size: 0.95rem; padding: 0; cursor: pointer; text-transform: uppercase; }
+    .sem-dia-btn:hover { background: none; color: var(--color-primary); }
+    .sem-cab-estado { display: block; font-size: 0.72rem; color: var(--color-text-muted); margin-top: 0.1rem; }
+    .sem-bloq-btn { background: none; border: none; color: var(--color-text-muted); padding: 0 0.2rem; font-size: 0.8rem; cursor: pointer; }
+    .sem-bloq-btn:hover { background: none; color: var(--color-primary); }
+    .sem-hora { padding: 0.4rem 0.2rem; font-family: var(--font-display); font-size: 0.8rem; color: var(--color-text-muted); background: var(--color-surface-alt); border-top: 1px solid var(--color-border); display: flex; justify-content: center; position: sticky; left: 0; z-index: 1; }
+    .sem-celda { min-height: 50px; border-top: 1px solid var(--color-border); border-left: 1px solid var(--color-border); padding: 2px; font-size: 0.78rem; display: flex; flex-direction: column; gap: 2px; }
+    .sem-libre { cursor: pointer; }
+    .sem-libre:hover { background: rgba(225, 52, 30, 0.07); }
+    .sem-libre:hover::after { content: '+'; color: var(--color-primary); font-weight: 700; text-align: center; }
+    .sem-cerrada { background: #f1f1f3; }
+    .sem-bloqueada { background: repeating-linear-gradient(135deg, rgba(0,0,0,0.05), rgba(0,0,0,0.05) 6px, transparent 6px, transparent 12px); }
+    .sem-cita { border-radius: 4px; padding: 2px 4px; cursor: pointer; line-height: 1.2; overflow: hidden; }
+    .sem-cita small { display: block; color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sem-pendiente  { background: #fef3c7; border-left: 3px solid #d99a06; }
+    .sem-confirmado { background: #dbeafe; border-left: 3px solid #1d4ed8; }
+    .sem-completado { background: #d8f3dc; border-left: 3px solid #1b6e3c; }
+    .sem-ausente    { background: #e4e7eb; border-left: 3px solid #6b7280; }
+    .sem-nota { font-size: 0.72rem; font-style: italic; color: var(--color-text-muted); padding: 0 4px; display: flex; align-items: center; justify-content: space-between; gap: 0.2rem; }
+    .sem-nota button { background: none; border: none; color: var(--color-text-muted); padding: 0 0.2rem; font-size: 0.75rem; cursor: pointer; }
+    .sem-nota button:hover { background: none; color: var(--color-danger); }
     .slot-libre { cursor: pointer; }
     .slot-libre:hover { background: rgba(225, 52, 30, 0.05); }
     .slot-libre .add-hint {
@@ -132,14 +168,27 @@
           <p class="error-message" id="form-error"></p>
         </div>
 
-        <!-- Vista de día -->
+        <!-- Bloqueos vigentes (mismos que en Configuración) -->
+        <div class="card" id="bloqueos-card" style="display:none;">
+          <h2 style="margin-top:0;">🔒 Bloqueos vigentes y próximos</h2>
+          <div id="bloqueos-body"></div>
+        </div>
+
+        <!-- Vista de día / semana -->
         <div class="card">
           <div class="toolbar">
-            <div style="display:flex; gap:0.5rem; align-items:center;">
+            <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
               <button id="dia-prev" class="btn-secondary">←</button>
               <input type="date" id="dia-actual" />
               <button id="dia-next" class="btn-secondary">→</button>
               <button id="dia-hoy" class="btn-secondary">Hoy</button>
+            </div>
+            <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+              <div class="vista-tabs" role="group" aria-label="Vista de la agenda">
+                <button type="button" id="vista-dia">Día</button>
+                <button type="button" id="vista-semana">Semana</button>
+              </div>
+              <button type="button" id="bloquear-btn" class="btn-secondary">🔒 Bloquear</button>
             </div>
             <span id="dia-titulo" style="font-family:var(--font-display); text-transform:uppercase; font-size:1rem;"></span>
           </div>
@@ -148,6 +197,11 @@
 
       </div>
     </div>
+  </div>
+
+  <!-- Modal para bloquear agenda -->
+  <div class="modal-backdrop" id="bloqueo-backdrop">
+    <div class="modal" id="bloqueo-modal"></div>
   </div>
 
   <script src="../assets/vendor/supabase.min.js"></script>
@@ -216,8 +270,27 @@
       const m = minDeHHMM(slot), largo = slotMinTaller();
       if (dia.pausa_desde && dia.pausa_hasta && m < minDeHHMM(dia.pausa_hasta) && minDeHHMM(dia.pausa_desde) < m + largo) return { tipo: 'pausa' };
       const b = bloqueosDelDia(dateStr).find(x => x.hora_desde && m < minDeHHMM(x.hora_hasta) && minDeHHMM(x.hora_desde) < m + largo);
-      return b ? { tipo: 'bloqueo', motivo: b.motivo } : null;
+      return b ? { tipo: 'bloqueo', motivo: b.motivo, id: b.id } : null;
     }
+
+    // ---------- Fechas locales (el navegador está en hora de Chile) ----------
+    const p2 = (n) => String(n).padStart(2, '0');
+    const ymdLocal = (d) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+    function sumarDiasYmd(ymd, n) {
+      const d = new Date(ymd + 'T12:00:00');
+      d.setDate(d.getDate() + n);
+      return ymdLocal(d);
+    }
+    // Lunes de la semana que contiene a ymd
+    function lunesDe(ymd) {
+      const d = new Date(ymd + 'T12:00:00');
+      return sumarDiasYmd(ymd, -((d.getDay() + 6) % 7));
+    }
+    const textoCorto = (ymd) => new Date(ymd + 'T12:00:00').toLocaleDateString('es-CL', { day: 'numeric', month: 'short' });
+
+    // Vista actual: 'dia' o 'semana' (se recuerda entre visitas; en pantallas anchas arranca en semana).
+    let vista = 'dia';
+    try { vista = localStorage.getItem('agenda_vista') || (window.innerWidth >= 900 ? 'semana' : 'dia'); } catch (e) { vista = window.innerWidth >= 900 ? 'semana' : 'dia'; }
 
     // Texto de aviso si una cita nueva cae en un día/hora cerrado o bloqueado (null si todo bien).
     function avisoFueraDeHorario(dateStr, hora) {
@@ -520,6 +593,7 @@
           <div class="slot-hora">${slot}</div>
           <div class="slot-content slot-bloqueado">
             <span style="flex:1; color:var(--color-text-muted); font-size:0.85rem;">${etiqueta}</span>
+            ${bloqueo.tipo === 'bloqueo' ? `<button type="button" class="btn-secondary btn-mini quitar-bloqueo" data-id="${bloqueo.id}">Quitar bloqueo</button>` : ''}
             <button type="button" class="btn-secondary btn-mini agregar-mas-btn" data-slot="${slot}">+ Agregar igual</button>
           </div>
         </div>`;
@@ -530,6 +604,7 @@
           <div class="slot-content slot-libre" data-slot="${slot}">
             <span style="flex:1; color:var(--color-text-muted); font-size:0.85rem;">Disponible</span>
             <span class="add-hint">+ Agregar</span>
+            <button type="button" class="btn-secondary btn-mini bloquear-hora" data-slot="${slot}" title="Bloquear esta hora">🔒</button>
           </div>
         </div>`;
       }
@@ -559,10 +634,11 @@
           ? citasDia.map(c => `<div class="horario-slot"><div class="slot-hora">${fmtHora(c.fecha_hora)}</div><div class="slot-content">${renderCitaCard(c)}</div></div>`).join('')
           : '';
         const titulo = bloqueoDia
-          ? `🔒 Día bloqueado${bloqueoDia.motivo ? ': ' + escapar(bloqueoDia.motivo) : ''}.`
+          ? `🔒 Día bloqueado${bloqueoDia.motivo ? ': ' + escapar(bloqueoDia.motivo) : ''}.<br><button type="button" class="btn-secondary btn-mini quitar-bloqueo" data-id="${bloqueoDia.id}" style="margin-top:0.5rem;">Quitar bloqueo</button>`
           : `${NOMBRE_DIA[dow]} — sin atención. <a href="configuracion.html">Configuración → Horario de atención</a> para abrirlo.`;
         grid.innerHTML = `<div class="sin-horario">${titulo}${citasDia.length ? '<br>Hay cita(s) registrada(s) ese día:' : ''}</div>${extra}`;
         if (citasDia.length) wireAcciones(grid);
+        wireBloqueos(grid);
         return;
       }
 
@@ -627,6 +703,113 @@
       });
 
       wireAcciones(grid);
+      wireBloqueos(grid);
+    }
+
+    // ---------- Vista semanal ----------
+    let citasSemana = [];
+    function renderSemana() {
+      const grid = document.getElementById('horario-grid');
+      const lunes = lunesDe(document.getElementById('dia-actual').value);
+      const dias = Array.from({ length: 7 }, (_, i) => sumarDiasYmd(lunes, i));
+      const hoy = ymdLocal(new Date());
+      const vivas = citasSemana.filter(c => c.estado !== 'cancelado');
+
+      const info = {};
+      dias.forEach(f => {
+        const slots = getSlotsDelDia(f);
+        info[f] = {
+          dow: new Date(f + 'T12:00:00').getDay(),
+          slots: slots || [],
+          cerrado: slots === null,
+          bloqueoDia: bloqueosDelDia(f).find(b => !b.hora_desde),
+          citas: vivas.filter(c => ymdLocal(new Date(c.fecha_hora)) === f),
+        };
+      });
+
+      // Filas = horas de atención de todos los días + horas de citas fuera de ellas
+      const horas = new Set();
+      dias.forEach(f => {
+        info[f].slots.forEach(s => horas.add(s));
+        info[f].citas.forEach(c => horas.add(fmtHora(c.fecha_hora)));
+      });
+      const filas = Array.from(horas).sort();
+
+      const cabeceras = dias.map(f => {
+        const d = info[f];
+        const estado = d.bloqueoDia ? `🔒 ${escapar(d.bloqueoDia.motivo || 'Bloqueado')}`
+          : d.cerrado ? 'Cerrado'
+          : `${d.citas.length} cita${d.citas.length === 1 ? '' : 's'}`;
+        return `<div class="sem-cab${f === hoy ? ' hoy' : ''}${d.cerrado ? ' cerrado' : ''}">
+          <button type="button" class="sem-dia-btn" data-fecha="${f}" title="Ver este día">${NOMBRE_DIA[d.dow].slice(0, 3)} ${Number(f.slice(8))}</button>
+          <button type="button" class="sem-bloq-btn" data-fecha="${f}" title="Bloquear este día">🔒</button>
+          <span class="sem-cab-estado">${estado}</span>
+        </div>`;
+      }).join('');
+
+      const cuerpo = filas.map(hora => {
+        const celdas = dias.map(f => {
+          const d = info[f];
+          const enSlot = d.slots.includes(hora);
+          const citasAqui = d.citas.filter(c => fmtHora(c.fecha_hora) === hora);
+          const horaMin = minDeHHMM(hora);
+          const continuan = d.citas.filter(c => {
+            const ini = minDeHHMM(fmtHora(c.fecha_hora));
+            return horaMin > ini && horaMin < ini + (Number(c.duracion_min) || 60);
+          });
+          const ocupada = citasAqui.length || continuan.length;
+          const bloq = enSlot && !d.bloqueoDia ? motivoSlot(f, hora) : null;
+
+          let clase = 'sem-celda';
+          if (!ocupada && (d.cerrado || !enSlot)) clase += ' sem-cerrada';
+          else if (d.bloqueoDia || bloq) clase += ' sem-bloqueada';
+          else if (!ocupada) clase += ' sem-libre';
+
+          const chips = citasAqui.map(c => `<div class="sem-cita sem-${c.estado}" data-fecha="${f}" title="${escapar(nombreCliente(c))} — ${escapar(servicioCita(c) || '')}">
+              <strong>${fmtHora(c.fecha_hora)}</strong> ${escapar(nombreCliente(c))}
+              ${servicioCita(c) ? `<small>${escapar(servicioCita(c))}</small>` : ''}
+            </div>`).join('');
+          const conts = continuan.map(c => `<div class="sem-nota">↳ ${escapar(nombreCliente(c))}</div>`).join('');
+          const nota = (!ocupada && bloq)
+            ? `<div class="sem-nota"><span>${bloq.tipo === 'pausa' ? '☕ Pausa' : '🔒 ' + escapar(bloq.motivo || 'Bloqueado')}</span>${bloq.tipo === 'bloqueo' ? `<button type="button" class="quitar-bloqueo" data-id="${bloq.id}" title="Quitar bloqueo">✕</button>` : ''}</div>`
+            : '';
+          const datos = clase.includes('sem-libre') ? ` data-fecha="${f}" data-hora="${hora}"` : '';
+          return `<div class="${clase}"${datos}>${chips}${conts}${nota}</div>`;
+        }).join('');
+        return `<div class="sem-hora">${hora}</div>${celdas}`;
+      }).join('');
+
+      const aviso = filas.length ? '' : `<div class="sin-horario">Sin horas de atención esta semana. Revisa <a href="configuracion.html">Configuración → Horario de atención</a>.</div>`;
+      grid.innerHTML = `<div class="semana-wrap"><div class="semana-grid"><div class="sem-cab"></div>${cabeceras}${cuerpo}</div></div>${aviso}`;
+
+      grid.querySelectorAll('.sem-dia-btn, .sem-cita').forEach(el => el.addEventListener('click', () => irADia(el.dataset.fecha)));
+      grid.querySelectorAll('.sem-bloq-btn').forEach(el => el.addEventListener('click', () => abrirModalBloqueo(el.dataset.fecha)));
+      grid.querySelectorAll('.sem-libre').forEach(el => el.addEventListener('click', () => {
+        abrirForm(null);
+        document.getElementById('fecha').value = el.dataset.fecha;
+        document.getElementById('hora').value = el.dataset.hora;
+      }));
+      wireBloqueos(grid);
+    }
+
+    // Botones de bloqueo: "Quitar bloqueo" y "🔒" para bloquear una hora puntual
+    function wireBloqueos(cont) {
+      cont.querySelectorAll('.quitar-bloqueo').forEach(btn => btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const { quitado, error } = await quitarBloqueoAgenda(btn.dataset.id);
+        if (error) { alert('Error: ' + error.message); return; }
+        if (quitado) await recargarBloqueos();
+      }));
+      cont.querySelectorAll('.bloquear-hora').forEach(btn => btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const m = minDeHHMM(btn.dataset.slot);
+        abrirModalBloqueo(document.getElementById('dia-actual').value, btn.dataset.slot, hhmmDeMin(m + slotMinTaller()));
+      }));
+    }
+
+    function irADia(fecha) {
+      document.getElementById('dia-actual').value = fecha;
+      aplicarVista('dia');
     }
 
     function wireAcciones(cont) {
@@ -743,6 +926,7 @@
     }
 
     async function cargar() {
+      if (vista === 'semana') return cargarSemana();
       const dia = document.getElementById('dia-actual').value;
       document.getElementById('dia-titulo').textContent =
         new Date(dia + 'T12:00:00').toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -766,18 +950,141 @@
       await cargarManana();
     }
 
+    // Semana (lunes a domingo) que contiene el día elegido
+    async function cargarSemana() {
+      const lunes = lunesDe(document.getElementById('dia-actual').value);
+      const domingo = sumarDiasYmd(lunes, 6);
+      document.getElementById('dia-titulo').textContent = `${textoCorto(lunes)} – ${textoCorto(domingo)}`;
+      const { data, error } = await supabaseClient
+        .from('citas')
+        .select('*, clientes(nombre, telefono), vehiculos(patente, marca, modelo), trabajos(nombre, horas_estimadas)')
+        .gte('fecha_hora', new Date(`${lunes}T00:00:00`).toISOString())
+        .lte('fecha_hora', new Date(`${domingo}T23:59:59`).toISOString())
+        .order('fecha_hora');
+      citasSemana = data || [];
+      renderSemana();
+      if (error) {
+        document.getElementById('horario-grid').insertAdjacentHTML('afterbegin',
+          `<div style="padding:0.5rem 0.75rem; background:#fff3cd; color:#856404; font-size:0.85rem; border-bottom:1px solid var(--color-border);">
+            ⚠ Error cargando citas: ${error.message}
+          </div>`);
+        return;
+      }
+      await cargarOnline();
+      await cargarManana();
+    }
+
+    // Cambia entre vista de día y de semana (y la recuerda para la próxima visita)
+    function aplicarVista(v, recordar = true) {
+      vista = v;
+      if (recordar) { try { localStorage.setItem('agenda_vista', v); } catch (e) { /* sin almacenamiento: solo no se recuerda */ } }
+      document.getElementById('vista-dia').classList.toggle('activa', v === 'dia');
+      document.getElementById('vista-semana').classList.toggle('activa', v === 'semana');
+      return cargar();
+    }
+    document.getElementById('vista-dia').addEventListener('click', () => aplicarVista('dia'));
+    document.getElementById('vista-semana').addEventListener('click', () => aplicarVista('semana'));
+
     document.getElementById('dia-actual').addEventListener('change', cargar);
     document.getElementById('dia-prev').addEventListener('click', () => moverDia(-1));
     document.getElementById('dia-next').addEventListener('click', () => moverDia(1));
     document.getElementById('dia-hoy').addEventListener('click', () => {
-      document.getElementById('dia-actual').value = new Date().toISOString().slice(0, 10); cargar();
+      document.getElementById('dia-actual').value = ymdLocal(new Date()); cargar();
     });
+    // En vista semanal las flechas avanzan de a una semana
     function moverDia(n) {
-      const d = new Date(document.getElementById('dia-actual').value + 'T12:00:00');
-      d.setDate(d.getDate() + n);
-      document.getElementById('dia-actual').value = d.toISOString().slice(0, 10);
+      document.getElementById('dia-actual').value = sumarDiasYmd(document.getElementById('dia-actual').value, vista === 'semana' ? n * 7 : n);
       cargar();
     }
+
+    // ---------- Bloqueos (los mismos de Configuración → Bloqueos de agenda) ----------
+    async function recargarBloqueos() {
+      const { data, error } = await supabaseClient.from('bloqueos_agenda').select('*').order('fecha_desde');
+      bloqueosAgenda = (!error && data) || [];
+      renderPanelBloqueos();
+      // Vuelve a pintar la vista actual con los bloqueos nuevos (sin releer las citas)
+      if (vista === 'semana') renderSemana(); else renderCitas();
+    }
+
+    function renderPanelBloqueos() {
+      const card = document.getElementById('bloqueos-card');
+      const hoy = ymdLocal(new Date());
+      const vigentes = bloqueosAgenda.filter(b => b.fecha_hasta >= hoy);
+      if (!vigentes.length) { card.style.display = 'none'; return; }
+      card.style.display = 'block';
+      const cl = (ymd) => ymd.split('-').reverse().join('-');
+      document.getElementById('bloqueos-body').innerHTML = vigentes.map(b => {
+        const dias = b.fecha_desde === b.fecha_hasta ? cl(b.fecha_desde) : `${cl(b.fecha_desde)} al ${cl(b.fecha_hasta)}`;
+        const horas = b.hora_desde ? `de ${escapar(b.hora_desde)} a ${escapar(b.hora_hasta)}` : 'todo el día';
+        return `<div class="bloqueo-item">
+          <span><strong>${dias}</strong> · ${horas}${b.motivo ? ` · ${escapar(b.motivo)}` : ''}</span>
+          <button type="button" class="btn-danger btn-mini quitar-bloqueo" data-id="${b.id}">Quitar</button>
+        </div>`;
+      }).join('');
+      wireBloqueos(document.getElementById('bloqueos-body'));
+    }
+
+    function cerrarModalBloqueo() { document.getElementById('bloqueo-backdrop').classList.remove('abierto'); }
+    document.getElementById('bloqueo-backdrop').addEventListener('click', (e) => { if (e.target.id === 'bloqueo-backdrop') cerrarModalBloqueo(); });
+
+    // horaDesde/horaHasta opcionales: si vienen, el bloqueo parte como "franja de horas"
+    function abrirModalBloqueo(fecha, horaDesde, horaHasta) {
+      const porHoras = !!horaDesde;
+      document.getElementById('bloqueo-modal').innerHTML = `
+        <h3>🔒 Bloquear agenda</h3>
+        <p style="color:var(--color-text-muted); font-size:0.82rem; margin-top:0;">
+          En el período bloqueado no se pueden reservar horas online. Las citas que ya existan no se borran.
+        </p>
+        <div class="form-row">
+          <div class="form-group"><label for="bq-desde">Desde (día) *</label><input type="date" id="bq-desde" value="${fecha}" /></div>
+          <div class="form-group"><label for="bq-hasta">Hasta (día, opcional)</label><input type="date" id="bq-hasta" /></div>
+        </div>
+        <div class="form-group"><label for="bq-motivo">Motivo</label><input type="text" id="bq-motivo" placeholder="Ej: Feriado, trámite, mantención..." /></div>
+        <div class="form-group">
+          <label style="display:flex; align-items:center; gap:0.4rem; color:var(--color-text);">
+            <input type="checkbox" id="bq-todo" ${porHoras ? '' : 'checked'} style="width:auto;" /> Todo el día
+          </label>
+        </div>
+        <div class="form-row" id="bq-horas" style="${porHoras ? '' : 'display:none;'}">
+          <div class="form-group"><label for="bq-hora-desde">Desde (hora)</label><input type="time" id="bq-hora-desde" value="${horaDesde || ''}" /></div>
+          <div class="form-group"><label for="bq-hora-hasta">Hasta (hora)</label><input type="time" id="bq-hora-hasta" value="${horaHasta || ''}" /></div>
+        </div>
+        <p class="error-message" id="bq-error"></p>
+        <p id="bq-aviso" style="color:#92600a; font-size:0.85rem; white-space:pre-wrap;"></p>
+        <div class="modal-acciones">
+          <button type="button" id="bq-guardar">Bloquear</button>
+          <button type="button" class="btn-secondary" id="bq-cancelar">Cancelar</button>
+        </div>`;
+      document.getElementById('bloqueo-backdrop').classList.add('abierto');
+      document.getElementById('bq-cancelar').addEventListener('click', cerrarModalBloqueo);
+      document.getElementById('bq-todo').addEventListener('change', (e) => {
+        document.getElementById('bq-horas').style.display = e.target.checked ? 'none' : '';
+      });
+
+      document.getElementById('bq-guardar').addEventListener('click', async () => {
+        const errorEl = document.getElementById('bq-error');
+        errorEl.textContent = '';
+        const desde = document.getElementById('bq-desde').value;
+        const hasta = document.getElementById('bq-hasta').value || desde;
+        const todo = document.getElementById('bq-todo').checked;
+        const hd = todo ? null : (document.getElementById('bq-hora-desde').value || null);
+        const hh = todo ? null : (document.getElementById('bq-hora-hasta').value || null);
+        if (!desde) { errorEl.textContent = 'Indica el día a bloquear.'; return; }
+        if (hasta < desde) { errorEl.textContent = 'El día "hasta" no puede ser anterior al "desde".'; return; }
+        if (!todo && (!hd || !hh || hd >= hh)) { errorEl.textContent = 'Indica la franja de horas (desde debe ser anterior a hasta).'; return; }
+
+        const { error, afectadas } = await crearBloqueoAgenda({ desde, hasta, horaDesde: hd, horaHasta: hh, motivo: document.getElementById('bq-motivo').value.trim() });
+        if (error) { errorEl.textContent = `Error: ${error.message} (¿ejecutaste sql/actualizacion-v31-agenda-horarios.sql?)`; return; }
+        await recargarBloqueos();
+        const aviso = textoCitasAfectadas(afectadas);
+        if (!aviso) { cerrarModalBloqueo(); return; }
+        // Hay citas dentro del bloqueo: se deja el aviso a la vista hasta que lo cierren
+        document.getElementById('bq-aviso').textContent = aviso;
+        document.getElementById('bq-guardar').style.display = 'none';
+        document.getElementById('bq-cancelar').textContent = 'Entendido';
+      });
+    }
+    document.getElementById('bloquear-btn').addEventListener('click', () => abrirModalBloqueo(document.getElementById('dia-actual').value));
 
     document.getElementById('link-reserva-btn').addEventListener('click', async () => {
       const url = `${window.location.origin}/reservar.html`;
@@ -818,8 +1125,9 @@
       document.getElementById('personal_id').innerHTML =
         '<option value="">Sin asignar</option>' + personalCache.map(p => `<option value="${p.id}">${p.nombre}</option>`).join('');
 
-      document.getElementById('dia-actual').value = new Date().toISOString().slice(0, 10);
-      await cargar();
+      document.getElementById('dia-actual').value = ymdLocal(new Date());
+      renderPanelBloqueos();
+      await aplicarVista(vista, false);
 
       // Si se llega desde "Agendar" en una cotización, abrir el formulario prellenado.
       const params = new URLSearchParams(window.location.search);

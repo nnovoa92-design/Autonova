@@ -238,6 +238,55 @@ function esperarImagenesImpresion(w) {
   }));
 }
 
+// ---------- Bloqueos de agenda (compartido por Agenda y Configuración) ----------
+// Ambas pantallas leen y escriben la misma tabla bloqueos_agenda, así que un
+// bloqueo creado en una aparece en la otra al cargarla.
+
+// Crea un bloqueo y devuelve las citas que ya existían en ese período (no se
+// borran: se avisa para que el taller las reubique).
+async function crearBloqueoAgenda({ desde, hasta, horaDesde, horaHasta, motivo }) {
+  const fin = hasta || desde;
+  const { error } = await supabaseClient.from('bloqueos_agenda').insert({
+    fecha_desde: desde, fecha_hasta: fin,
+    hora_desde: horaDesde || null, hora_hasta: horaHasta || null,
+    motivo: motivo || null,
+  });
+  if (error) return { error, afectadas: [] };
+
+  const inicio = new Date(`${desde}T00:00:00`);
+  const { data: citas } = await supabaseClient.from('citas')
+    .select('fecha_hora, nombre_contacto, clientes(nombre)')
+    .neq('estado', 'cancelado')
+    .gte('fecha_hora', new Date(Math.max(inicio.getTime(), Date.now())).toISOString())
+    .lte('fecha_hora', new Date(`${fin}T23:59:59`).toISOString())
+    .order('fecha_hora');
+  const afectadas = (citas || []).filter(c => {
+    if (!horaDesde) return true;
+    const f = new Date(c.fecha_hora);
+    const hm = `${String(f.getHours()).padStart(2, '0')}:${String(f.getMinutes()).padStart(2, '0')}`;
+    return hm >= horaDesde && hm < horaHasta;
+  });
+  return { error: null, afectadas };
+}
+
+// Texto del aviso "hay citas dentro del bloqueo" ('' si no hay ninguna).
+function textoCitasAfectadas(afectadas) {
+  if (!afectadas || !afectadas.length) return '';
+  const p2 = (n) => String(n).padStart(2, '0');
+  return `⚠ Bloqueo guardado, pero ya hay ${afectadas.length} cita(s) en ese período (no se borraron, avísales tú):\n` +
+    afectadas.map(c => {
+      const f = new Date(c.fecha_hora);
+      return `• ${p2(f.getDate())}-${p2(f.getMonth() + 1)} ${p2(f.getHours())}:${p2(f.getMinutes())} — ${(c.clientes && c.clientes.nombre) || c.nombre_contacto || 'Sin nombre'}`;
+    }).join('\n');
+}
+
+// Pide confirmación y elimina un bloqueo. Devuelve { quitado, error }.
+async function quitarBloqueoAgenda(id) {
+  if (!confirm('¿Quitar este bloqueo? Esas horas volverán a estar disponibles.')) return { quitado: false };
+  const { error } = await supabaseClient.from('bloqueos_agenda').delete().eq('id', id);
+  return { quitado: !error, error };
+}
+
 // Mes (1-12) de revisión técnica según el último dígito de la patente
 // (calendario para vehículos particulares).
 const RT_MES_POR_DIGITO = { '9': 1, '0': 2, '1': 4, '2': 5, '3': 6, '4': 7, '5': 8, '6': 9, '7': 10, '8': 11 };

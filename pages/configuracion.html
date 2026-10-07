@@ -653,10 +653,9 @@
         </div>`;
       }).join('');
       cont.querySelectorAll('.quitar-bloqueo').forEach(btn => btn.addEventListener('click', async () => {
-        if (!confirm('¿Quitar este bloqueo? Esas horas volverán a estar disponibles.')) return;
-        const { error: errDel } = await supabaseClient.from('bloqueos_agenda').delete().eq('id', btn.dataset.id);
+        const { quitado, error: errDel } = await quitarBloqueoAgenda(btn.dataset.id);
         if (errDel) { alert('Error: ' + errDel.message); return; }
-        cargarBloqueos();
+        if (quitado) cargarBloqueos();
       }));
     }
 
@@ -677,31 +676,9 @@
       if (hasta < desde) { errorEl.textContent = 'El día "hasta" no puede ser anterior al "desde".'; return; }
       if (!todoDia && (!hd || !hh || hd >= hh)) { errorEl.textContent = 'Indica la franja de horas (desde debe ser anterior a hasta).'; return; }
 
-      const { error } = await supabaseClient.from('bloqueos_agenda')
-        .insert({ fecha_desde: desde, fecha_hasta: hasta, hora_desde: hd, hora_hasta: hh, motivo });
+      const { error, afectadas } = await crearBloqueoAgenda({ desde, hasta, horaDesde: hd, horaHasta: hh, motivo });
       if (error) { errorEl.textContent = `Error: ${error.message} (¿ejecutaste sql/actualizacion-v31-agenda-horarios.sql?)`; return; }
-
-      // Aviso (no se borra nada): citas ya agendadas dentro del bloqueo
-      const inicio = new Date(`${desde}T00:00:00`);
-      const { data: citas } = await supabaseClient.from('citas')
-        .select('fecha_hora, nombre_contacto, clientes(nombre)')
-        .neq('estado', 'cancelado')
-        .gte('fecha_hora', new Date(Math.max(inicio.getTime(), Date.now())).toISOString())
-        .lte('fecha_hora', new Date(`${hasta}T23:59:59`).toISOString())
-        .order('fecha_hora');
-      const afectadas = (citas || []).filter(c => {
-        if (!hd) return true;
-        const f = new Date(c.fecha_hora);
-        const hm = `${String(f.getHours()).padStart(2, '0')}:${String(f.getMinutes()).padStart(2, '0')}`;
-        return hm >= hd && hm < hh;
-      });
-      if (afectadas.length) {
-        avisoEl.textContent = `⚠ Bloqueo guardado, pero ya hay ${afectadas.length} cita(s) en ese período (no se borraron, avísales tú):\n` +
-          afectadas.map(c => {
-            const f = new Date(c.fecha_hora);
-            return `• ${String(f.getDate()).padStart(2, '0')}-${String(f.getMonth() + 1).padStart(2, '0')} ${String(f.getHours()).padStart(2, '0')}:${String(f.getMinutes()).padStart(2, '0')} — ${(c.clientes && c.clientes.nombre) || c.nombre_contacto || 'Sin nombre'}`;
-          }).join('\n');
-      }
+      avisoEl.textContent = textoCitasAfectadas(afectadas);
 
       e.target.reset();
       document.getElementById('bloqueo-horas').style.display = 'none';
