@@ -189,11 +189,22 @@ function abrirVentanaImpresion(html, titulo) {
     alert('Tu navegador bloqueó la ventana de impresión. Permite ventanas emergentes para este sitio e intenta de nuevo.');
     return;
   }
+  // Barra superior con Volver / Imprimir: no se imprime, y deja una salida
+  // clara de la ventana (Esc también la cierra) en vez de un documento
+  // "a pelo" sin forma de volver a la app.
+  const estiloBoton = 'font:600 0.9rem system-ui,sans-serif; padding:0.45rem 1rem; border-radius:6px; cursor:pointer;';
   w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8" />
 <title>${titulo || 'Documento'}</title>
 <base href="${window.location.href}" />
-</head><body>
-<div class="print-area" id="print-area" style="display:block;">${html}</div>
+<style>@media print { .barra-impresion { display: none !important; } }</style>
+<script>document.addEventListener('keydown', function (e) { if (e.key === 'Escape') window.close(); });</script>
+</head><body style="margin:0;">
+<div class="barra-impresion" style="position:sticky; top:0; z-index:10; display:flex; align-items:center; justify-content:space-between; gap:0.75rem; padding:0.6rem 1rem; background:#15181e; color:#fff; font-family:system-ui,sans-serif;">
+  <button type="button" onclick="window.close()" style="${estiloBoton} background:transparent; color:#fff; border:1px solid #fff;">← Volver</button>
+  <span style="font-size:0.85rem; opacity:0.8;">${titulo || 'Documento'}</span>
+  <button type="button" onclick="window.print()" style="${estiloBoton} background:#fff; color:#15181e; border:1px solid #fff;">🖨 Imprimir / Guardar PDF</button>
+</div>
+<div class="print-area" id="print-area" style="display:block; max-width:900px; margin:0 auto;">${html}</div>
 </body></html>`);
   w.document.close();
 

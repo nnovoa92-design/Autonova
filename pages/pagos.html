@@ -91,9 +91,11 @@
     let ordenesCache = [];
     let config = null;
 
+    // Total real de la OT: subtotal - descuento, más IVA si corresponde.
     function totalOrden(o) {
-      const neto = (o.orden_items || []).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
-      return neto * (1 + Number(config.iva_pct) / 100);
+      const subtotal = (o.orden_items || []).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
+      const neto = subtotal * (1 - Math.min(100, Math.max(0, Number(o.descuento_pct || 0))) / 100);
+      return o.con_iva === false ? neto : neto * (1 + Number(config.iva_pct) / 100);
     }
 
     function pagadoOrden(o) {
@@ -113,7 +115,7 @@
     async function loadOrdenes() {
       const { data } = await supabaseClient
         .from('ordenes')
-        .select('id, numero, cliente_id, estado, clientes(nombre), vehiculos(patente), orden_items(cantidad, precio_unitario), pagos(monto)')
+        .select('id, numero, cliente_id, estado, con_iva, descuento_pct, clientes(nombre), vehiculos(patente), orden_items(cantidad, precio_unitario), pagos(monto)')
         .order('creado_en', { ascending: false });
       ordenesCache = data || [];
       document.getElementById('orden_id').innerHTML =

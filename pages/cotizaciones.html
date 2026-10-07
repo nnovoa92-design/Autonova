@@ -333,6 +333,19 @@
       const o = ordenVinculada(c);
       return o ? (o.orden_items || []) : (c.cotizacion_items || []);
     }
+    // Una vez que existe la OT, ella manda: descuento e IVA salen de la OT
+    // (igual que los ítems), así cotización y OT nunca muestran totales distintos.
+    function descuentoEfectivo(c) {
+      const o = ordenVinculada(c);
+      return (o && o.descuento_pct != null) ? o.descuento_pct : c.descuento_pct;
+    }
+    function conIvaEfectivo(c) {
+      const o = ordenVinculada(c);
+      return ((o && o.con_iva != null) ? o.con_iva : c.con_iva) !== false;
+    }
+    function totalesCotizacion(c) {
+      return calcularTotales(itemsEfectivos(c), descuentoEfectivo(c), conIvaEfectivo(c));
+    }
     function pagadoOrdenVinculada(c) {
       const o = ordenVinculada(c);
       if (!o) return 0;
@@ -532,6 +545,8 @@
       const conIva = document.getElementById('con_iva').value === 'true';
       const t = calcularTotales(itemsActuales, document.getElementById('descuento_pct').value, conIva);
       document.getElementById('totales').innerHTML = `
+        ${t.descuento > 0 ? `<div class="fila" style="color:var(--color-text-muted);"><span>Subtotal</span><span>${fmtMoneda(t.subtotal)}</span></div>
+        <div class="fila" style="color:var(--color-text-muted);"><span>Descuento (${Number(document.getElementById('descuento_pct').value)}%)</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
         <div class="fila"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
         ${conIva ? `<div class="fila"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>` : '<div class="fila" style="color:var(--color-text-muted);"><span>Sin IVA</span><span>–</span></div>'}
         <div class="fila total"><span>Total</span><span>${fmtMoneda(t.total)}</span></div>`;
@@ -597,7 +612,7 @@
         return;
       }
       tbody.innerHTML = lista.map(c => {
-        const t = calcularTotales(itemsEfectivos(c), c.descuento_pct, c.con_iva !== false);
+        const t = totalesCotizacion(c);
         const vehiculo = c.vehiculos ? `${c.vehiculos.patente}` : '–';
         const puedeConvertir = c.estado === 'aprobada';
         const editable = c.estado !== 'convertida';
@@ -729,6 +744,7 @@
         estado: 'recepcion',
         km_ingreso: vehiculo ? vehiculo.kilometraje : null,
         con_iva: c.con_iva !== false,
+        descuento_pct: Number(c.descuento_pct || 0),
         notas: c.notas,
       }).select('id, numero').single();
       if (error) { alert(`Error: ${error.message}`); return; }
@@ -761,7 +777,7 @@
       const tel = c.clientes && c.clientes.telefono;
       if (!tel) { alert('El cliente no tiene teléfono registrado.'); return; }
 
-      const t = calcularTotales(itemsEfectivos(c), c.descuento_pct, c.con_iva !== false);
+      const t = totalesCotizacion(c);
       const vehiculo = c.vehiculos ? ` para su vehículo ${c.vehiculos.patente} (${[c.vehiculos.marca, c.vehiculos.modelo].filter(Boolean).join(' ')})` : '';
       const detalle = itemsEfectivos(c).map(i => `• ${i.descripcion}`).join('\n');
       const mensaje =
@@ -778,7 +794,7 @@
       const email = c.clientes && c.clientes.email;
       if (!email) { alert('El cliente no tiene correo registrado.'); return; }
 
-      const t = calcularTotales(itemsEfectivos(c), c.descuento_pct, c.con_iva !== false);
+      const t = totalesCotizacion(c);
       const vehiculo = c.vehiculos ? `${c.vehiculos.patente} (${[c.vehiculos.marca, c.vehiculos.modelo].filter(Boolean).join(' ')})` : 'su vehículo';
       const detalle = itemsEfectivos(c).map(i => `- ${i.descripcion}: ${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}`).join('\n');
       const asunto = `Cotización ${fmtNumero('COT', c.numero)} - ${config.nombre}`;
@@ -801,7 +817,7 @@
 
     function construirPrintCotizacion(c) {
       const items = itemsEfectivos(c);
-      const t = calcularTotales(items, c.descuento_pct, c.con_iva !== false);
+      const t = totalesCotizacion(c);
       const cliente = c.clientes || {};
       const vehiculo = c.vehiculos;
       const orden = ordenVinculada(c);
@@ -852,6 +868,8 @@
           </tbody>
         </table>
         <div style="margin-top:1.5rem; margin-left:auto; max-width:300px;">
+          ${t.descuento > 0 ? `<div style="display:flex; justify-content:space-between; margin:0.5rem 0; color:#666;"><span>Subtotal</span><span>${fmtMoneda(t.subtotal)}</span></div>
+          <div style="display:flex; justify-content:space-between; margin:0.5rem 0; color:#666;"><span>Descuento (${Number(descuentoEfectivo(c))}%)</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
           <div style="display:flex; justify-content:space-between; margin:0.5rem 0;"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
           ${t.conIva ? `<div style="display:flex; justify-content:space-between; margin:0.5rem 0;"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>` : '<div style="display:flex; justify-content:space-between; margin:0.5rem 0; color:#999;"><span>Sin IVA</span><span>–</span></div>'}
           <div style="display:flex; justify-content:space-between; font-weight:bold; border-top:2px solid #000; margin-top:0.8rem; padding-top:0.8rem; font-size:1.1rem;">
@@ -905,7 +923,7 @@
     async function loadCotizaciones() {
       const { data, error } = await supabaseClient
         .from('cotizaciones')
-        .select('*, clientes(nombre, rut, telefono, email), vehiculos(patente, marca, modelo, anio), cotizacion_items(*), ordenes(id, numero, estado, orden_items(*), pagos(monto), abonos(monto))')
+        .select('*, clientes(nombre, rut, telefono, email), vehiculos(patente, marca, modelo, anio), cotizacion_items(*), ordenes(*, orden_items(*), pagos(monto), abonos(monto))')
         .order('creado_en', { ascending: false });
       if (error) {
         document.getElementById('cotizaciones-body').innerHTML = `<tr><td colspan="7">Error: ${error.message}</td></tr>`;
