@@ -5,6 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Configuración · Autonova</title>
   <link rel="stylesheet" href="../assets/css/style.css" />
+  <style>
+    .hs-fila { display: grid; grid-template-columns: 120px 100px repeat(4, minmax(90px, 1fr)); gap: 0.5rem; align-items: center; padding: 0.4rem 0; border-bottom: 1px solid var(--color-border); }
+    .hs-fila.hs-cab { font-size: 0.75rem; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 2px solid var(--color-border); }
+    .hs-fila label { margin: 0; color: var(--color-text); font-size: 0.9rem; display: flex; align-items: center; gap: 0.4rem; }
+    .hs-fila input[type="checkbox"] { width: auto; }
+    .hs-fila.cerrado .hs-hora { opacity: 0.35; }
+    .hs-dia { font-weight: 600; }
+    .hs-estado { font-size: 0.8rem; }
+    @media (max-width: 700px) {
+      .hs-fila { grid-template-columns: 1fr 1fr; }
+      .hs-fila.hs-cab { display: none; }
+    }
+    .bloqueo-item { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.55rem 0; border-bottom: 1px solid var(--color-border); font-size: 0.9rem; }
+  </style>
 </head>
 <body>
   <div class="app-shell">
@@ -58,41 +72,6 @@
             <p style="color:var(--color-text-muted); font-size:0.85rem;">
               El valor hora calcula el precio de los trabajos del catálogo que no tienen precio fijo.
             </p>
-
-            <h2>Horarios de atención</h2>
-            <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
-              Se usan en la agenda y en la página de reserva online para mostrar los slots disponibles.
-            </p>
-            <div class="form-row">
-              <div class="form-group">
-                <label for="hora_apertura">Lun–Vie apertura</label>
-                <input type="time" id="hora_apertura" />
-              </div>
-              <div class="form-group">
-                <label for="hora_cierre">Lun–Vie cierre</label>
-                <input type="time" id="hora_cierre" />
-              </div>
-              <div class="form-group">
-                <label for="sab_apertura">Sábado apertura</label>
-                <input type="time" id="sab_apertura" />
-              </div>
-              <div class="form-group">
-                <label for="sab_cierre">Sábado cierre</label>
-                <input type="time" id="sab_cierre" />
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label for="slot_min">Duración de cada slot</label>
-                <select id="slot_min">
-                  <option value="30">30 minutos</option>
-                  <option value="45">45 minutos</option>
-                  <option value="60">60 minutos (1 hora)</option>
-                  <option value="90">90 minutos</option>
-                  <option value="120">120 minutos (2 horas)</option>
-                </select>
-              </div>
-            </div>
 
             <h2>Reparto de mano de obra (opcional)</h2>
             <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
@@ -207,6 +186,74 @@
         </div>
 
         <div class="card">
+          <h2 style="margin-top:0;">Horario de atención</h2>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
+            Define qué días atiendes y en qué horas. Se usa en la agenda y en la reserva online:
+            el cliente ve toda la semana, pero solo las horas disponibles de los días abiertos
+            (los días cerrados o sin horas muestran "SIN HORAS DISPONIBLES").
+          </p>
+          <div id="horario-semana"><p style="color:var(--color-text-muted);">Cargando...</p></div>
+          <div class="form-row" style="margin-top:0.75rem;">
+            <div class="form-group">
+              <label for="slot_min">Duración de cada hora de atención</label>
+              <select id="slot_min">
+                <option value="30">30 minutos</option>
+                <option value="45">45 minutos</option>
+                <option value="60">60 minutos (1 hora)</option>
+                <option value="90">90 minutos</option>
+                <option value="120">120 minutos (2 horas)</option>
+              </select>
+            </div>
+          </div>
+          <button type="button" id="guardar-horario-btn">Guardar horario</button>
+          <p class="error-message" id="horario-error"></p>
+          <p id="horario-ok" style="color:#1b6e3c; font-size:0.85rem;"></p>
+
+          <h2 style="margin-top:1.75rem;">Bloqueos de agenda</h2>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
+            Cierra un día, un rango de días o unas horas por motivos internos (feriado, mantención, trámite...).
+            Mientras dure el bloqueo no se pueden reservar horas online.
+          </p>
+          <form id="bloqueo-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="bloqueo-desde">Desde (día) *</label>
+                <input type="date" id="bloqueo-desde" required />
+              </div>
+              <div class="form-group">
+                <label for="bloqueo-hasta">Hasta (día, opcional)</label>
+                <input type="date" id="bloqueo-hasta" />
+              </div>
+              <div class="form-group">
+                <label for="bloqueo-motivo">Motivo</label>
+                <input type="text" id="bloqueo-motivo" placeholder="Ej: Feriado, trámite, mantención..." />
+              </div>
+            </div>
+            <div class="form-row" style="align-items:end;">
+              <div class="form-group">
+                <label style="display:flex; align-items:center; gap:0.4rem; color:var(--color-text);">
+                  <input type="checkbox" id="bloqueo-todo-dia" checked style="width:auto;" /> Todo el día
+                </label>
+              </div>
+              <div class="form-group" id="bloqueo-horas" style="display:none;">
+                <label for="bloqueo-hora-desde">Desde (hora)</label>
+                <input type="time" id="bloqueo-hora-desde" />
+              </div>
+              <div class="form-group" id="bloqueo-horas-2" style="display:none;">
+                <label for="bloqueo-hora-hasta">Hasta (hora)</label>
+                <input type="time" id="bloqueo-hora-hasta" />
+              </div>
+              <div class="form-group">
+                <button type="submit" id="bloqueo-btn">+ Bloquear</button>
+              </div>
+            </div>
+            <p class="error-message" id="bloqueo-error"></p>
+            <p id="bloqueo-aviso" style="color:#92600a; font-size:0.85rem; white-space:pre-wrap;"></p>
+          </form>
+          <div id="bloqueos-lista"></div>
+        </div>
+
+        <div class="card">
           <h2 style="margin-top:0;">Políticas de Servicio</h2>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
             Define garantías, trabajos recomendados y repuestos típicos para cada categoría de servicio.
@@ -281,7 +328,7 @@
   <script src="../assets/js/supabaseClient.js"></script>
   <script src="../assets/js/layout.js"></script>
   <script>
-    const CAMPOS = ['nombre','rut','telefono','email','direccion','valor_hora','iva_pct','pct_mecanico','pct_dueno','pct_taller','hora_apertura','hora_cierre','sab_apertura','sab_cierre','slot_min','politicas_generales_texto','bodegaje_dias_gracia','bodegaje_monto_dia','politica_inspeccion_texto','politica_revision_tecnica_texto','msg_confirmacion_cita','msg_recordatorio_cita','msg_recordatorio_mantencion','msg_recordatorio_revision_tecnica','msg_modalidad_taller','msg_modalidad_retiro','msg_modalidad_terreno'];
+    const CAMPOS = ['nombre','rut','telefono','email','direccion','valor_hora','iva_pct','pct_mecanico','pct_dueno','pct_taller','politicas_generales_texto','bodegaje_dias_gracia','bodegaje_monto_dia','politica_inspeccion_texto','politica_revision_tecnica_texto','msg_confirmacion_cita','msg_recordatorio_cita','msg_recordatorio_mantencion','msg_recordatorio_revision_tecnica','msg_modalidad_taller','msg_modalidad_retiro','msg_modalidad_terreno'];
 
     function actualizarSuma() {
       const suma = ['pct_mecanico','pct_dueno','pct_taller']
@@ -312,7 +359,7 @@
       const payload = {};
       CAMPOS.forEach(id => {
         const v = document.getElementById(id).value;
-        payload[id] = ['valor_hora','iva_pct','pct_mecanico','pct_dueno','pct_taller','slot_min','bodegaje_dias_gracia','bodegaje_monto_dia'].includes(id)
+        payload[id] = ['valor_hora','iva_pct','pct_mecanico','pct_dueno','pct_taller','bodegaje_dias_gracia','bodegaje_monto_dia'].includes(id)
           ? Number(v || 0)
           : (v || null);
       });
@@ -504,6 +551,164 @@
       }
     });
 
+    // ---------- Horario de atención y bloqueos de agenda ----------
+    const ORDEN_DIAS = [1, 2, 3, 4, 5, 6, 0];
+    const NOMBRE_DIA = { 0: 'Domingo', 1: 'Lunes', 2: 'Martes', 3: 'Miércoles', 4: 'Jueves', 5: 'Viernes', 6: 'Sábado' };
+    const ABIERTO_POR_DEFECTO = { 0: false, 1: true, 2: true, 3: true, 4: true, 5: true, 6: false };
+
+    const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    // "2026-10-08" -> "08-10-2026" (sin pasar por Date, que lo correría un día por la zona horaria)
+    const fechaCL = (iso) => String(iso).split('-').reverse().join('-');
+    const hoyISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+
+    function renderHorarioSemana(filas) {
+      const porDia = {};
+      (filas || []).forEach(f => { porDia[f.dow] = f; });
+      document.getElementById('horario-semana').innerHTML =
+        `<div class="hs-fila hs-cab"><span>Día</span><span>Estado</span><span>Apertura</span><span>Cierre</span><span>Pausa desde</span><span>Pausa hasta</span></div>` +
+        ORDEN_DIAS.map(dow => {
+          const f = porDia[dow] || { abierto: ABIERTO_POR_DEFECTO[dow], apertura: '09:00', cierre: dow === 6 ? '13:00' : '18:00', pausa_desde: null, pausa_hasta: null };
+          const dis = f.abierto ? '' : 'disabled';
+          return `<div class="hs-fila ${f.abierto ? '' : 'cerrado'}" data-dow="${dow}">
+            <span class="hs-dia">${NOMBRE_DIA[dow]}</span>
+            <label><input type="checkbox" class="hs-abierto" ${f.abierto ? 'checked' : ''} /><span class="hs-estado">${f.abierto ? 'Abierto' : 'Cerrado'}</span></label>
+            <input type="time" class="hs-hora hs-apertura" value="${f.apertura || '09:00'}" ${dis} />
+            <input type="time" class="hs-hora hs-cierre" value="${f.cierre || '18:00'}" ${dis} />
+            <input type="time" class="hs-hora hs-pausa-desde" value="${f.pausa_desde || ''}" ${dis} />
+            <input type="time" class="hs-hora hs-pausa-hasta" value="${f.pausa_hasta || ''}" ${dis} />
+          </div>`;
+        }).join('');
+
+      document.querySelectorAll('#horario-semana .hs-abierto').forEach(chk => chk.addEventListener('change', () => {
+        const fila = chk.closest('.hs-fila');
+        fila.classList.toggle('cerrado', !chk.checked);
+        fila.querySelector('.hs-estado').textContent = chk.checked ? 'Abierto' : 'Cerrado';
+        fila.querySelectorAll('.hs-hora').forEach(i => { i.disabled = !chk.checked; });
+      }));
+    }
+
+    async function cargarHorario() {
+      const { data, error } = await supabaseClient.from('horario_atencion').select('*').order('dow');
+      if (error) {
+        document.getElementById('horario-semana').innerHTML =
+          `<p class="error-message">No se pudo cargar el horario (${esc(error.message)}). ¿Ejecutaste sql/actualizacion-v31-agenda-horarios.sql?</p>`;
+        document.getElementById('guardar-horario-btn').disabled = true;
+        return;
+      }
+      renderHorarioSemana(data);
+    }
+
+    document.getElementById('guardar-horario-btn').addEventListener('click', async () => {
+      const errorEl = document.getElementById('horario-error');
+      const okEl = document.getElementById('horario-ok');
+      errorEl.textContent = ''; okEl.textContent = '';
+
+      const filas = [];
+      for (const fila of document.querySelectorAll('#horario-semana .hs-fila[data-dow]')) {
+        const dow = Number(fila.dataset.dow);
+        const abierto = fila.querySelector('.hs-abierto').checked;
+        const apertura = fila.querySelector('.hs-apertura').value;
+        const cierre = fila.querySelector('.hs-cierre').value;
+        const pd = fila.querySelector('.hs-pausa-desde').value || null;
+        const ph = fila.querySelector('.hs-pausa-hasta').value || null;
+        if (abierto) {
+          if (!apertura || !cierre || apertura >= cierre) { errorEl.textContent = `${NOMBRE_DIA[dow]}: la apertura debe ser anterior al cierre.`; return; }
+          if ((pd && !ph) || (!pd && ph)) { errorEl.textContent = `${NOMBRE_DIA[dow]}: completa las dos horas de la pausa o deja ambas vacías.`; return; }
+          if (pd && (pd >= ph || pd < apertura || ph > cierre)) { errorEl.textContent = `${NOMBRE_DIA[dow]}: la pausa debe quedar dentro del horario de atención.`; return; }
+        }
+        filas.push({ dow, abierto, apertura: apertura || '09:00', cierre: cierre || '18:00', pausa_desde: abierto ? pd : null, pausa_hasta: abierto ? ph : null });
+      }
+
+      const { error } = await supabaseClient.from('horario_atencion').upsert(filas, { onConflict: 'dow' });
+      if (error) { errorEl.textContent = `Error: ${error.message}`; return; }
+      const { error: errSlot } = await supabaseClient.from('taller_config').update({ slot_min: Number(document.getElementById('slot_min').value) || 60 }).eq('id', 1);
+      if (errSlot) { errorEl.textContent = `Error: ${errSlot.message}`; return; }
+      tallerConfigCache = null;
+      okEl.textContent = 'Horario guardado. La agenda y la reserva online ya lo usan.';
+    });
+
+    document.getElementById('bloqueo-todo-dia').addEventListener('change', (e) => {
+      const horas = !e.target.checked;
+      document.getElementById('bloqueo-horas').style.display = horas ? 'block' : 'none';
+      document.getElementById('bloqueo-horas-2').style.display = horas ? 'block' : 'none';
+    });
+
+    async function cargarBloqueos() {
+      const cont = document.getElementById('bloqueos-lista');
+      const { data, error } = await supabaseClient.from('bloqueos_agenda').select('*').gte('fecha_hasta', hoyISO()).order('fecha_desde');
+      if (error) {
+        cont.innerHTML = `<p class="error-message">No se pudieron cargar los bloqueos (${esc(error.message)}).</p>`;
+        return;
+      }
+      if (!data.length) {
+        cont.innerHTML = '<p style="color:var(--color-text-muted); font-size:0.85rem;">No hay bloqueos vigentes ni próximos.</p>';
+        return;
+      }
+      cont.innerHTML = data.map(b => {
+        const dias = b.fecha_desde === b.fecha_hasta ? fechaCL(b.fecha_desde) : `${fechaCL(b.fecha_desde)} al ${fechaCL(b.fecha_hasta)}`;
+        const horas = b.hora_desde ? `de ${esc(b.hora_desde)} a ${esc(b.hora_hasta)}` : 'todo el día';
+        return `<div class="bloqueo-item">
+          <span><strong>${dias}</strong> · ${horas}${b.motivo ? ` · ${esc(b.motivo)}` : ''}</span>
+          <button type="button" class="btn-danger btn-mini quitar-bloqueo" data-id="${b.id}">Quitar</button>
+        </div>`;
+      }).join('');
+      cont.querySelectorAll('.quitar-bloqueo').forEach(btn => btn.addEventListener('click', async () => {
+        if (!confirm('¿Quitar este bloqueo? Esas horas volverán a estar disponibles.')) return;
+        const { error: errDel } = await supabaseClient.from('bloqueos_agenda').delete().eq('id', btn.dataset.id);
+        if (errDel) { alert('Error: ' + errDel.message); return; }
+        cargarBloqueos();
+      }));
+    }
+
+    document.getElementById('bloqueo-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorEl = document.getElementById('bloqueo-error');
+      const avisoEl = document.getElementById('bloqueo-aviso');
+      errorEl.textContent = ''; avisoEl.textContent = '';
+
+      const desde = document.getElementById('bloqueo-desde').value;
+      const hasta = document.getElementById('bloqueo-hasta').value || desde;
+      const todoDia = document.getElementById('bloqueo-todo-dia').checked;
+      const hd = todoDia ? null : (document.getElementById('bloqueo-hora-desde').value || null);
+      const hh = todoDia ? null : (document.getElementById('bloqueo-hora-hasta').value || null);
+      const motivo = document.getElementById('bloqueo-motivo').value.trim() || null;
+
+      if (!desde) { errorEl.textContent = 'Indica el día a bloquear.'; return; }
+      if (hasta < desde) { errorEl.textContent = 'El día "hasta" no puede ser anterior al "desde".'; return; }
+      if (!todoDia && (!hd || !hh || hd >= hh)) { errorEl.textContent = 'Indica la franja de horas (desde debe ser anterior a hasta).'; return; }
+
+      const { error } = await supabaseClient.from('bloqueos_agenda')
+        .insert({ fecha_desde: desde, fecha_hasta: hasta, hora_desde: hd, hora_hasta: hh, motivo });
+      if (error) { errorEl.textContent = `Error: ${error.message} (¿ejecutaste sql/actualizacion-v31-agenda-horarios.sql?)`; return; }
+
+      // Aviso (no se borra nada): citas ya agendadas dentro del bloqueo
+      const inicio = new Date(`${desde}T00:00:00`);
+      const { data: citas } = await supabaseClient.from('citas')
+        .select('fecha_hora, nombre_contacto, clientes(nombre)')
+        .neq('estado', 'cancelado')
+        .gte('fecha_hora', new Date(Math.max(inicio.getTime(), Date.now())).toISOString())
+        .lte('fecha_hora', new Date(`${hasta}T23:59:59`).toISOString())
+        .order('fecha_hora');
+      const afectadas = (citas || []).filter(c => {
+        if (!hd) return true;
+        const f = new Date(c.fecha_hora);
+        const hm = `${String(f.getHours()).padStart(2, '0')}:${String(f.getMinutes()).padStart(2, '0')}`;
+        return hm >= hd && hm < hh;
+      });
+      if (afectadas.length) {
+        avisoEl.textContent = `⚠ Bloqueo guardado, pero ya hay ${afectadas.length} cita(s) en ese período (no se borraron, avísales tú):\n` +
+          afectadas.map(c => {
+            const f = new Date(c.fecha_hora);
+            return `• ${String(f.getDate()).padStart(2, '0')}-${String(f.getMonth() + 1).padStart(2, '0')} ${String(f.getHours()).padStart(2, '0')}:${String(f.getMinutes()).padStart(2, '0')} — ${(c.clientes && c.clientes.nombre) || c.nombre_contacto || 'Sin nombre'}`;
+          }).join('\n');
+      }
+
+      e.target.reset();
+      document.getElementById('bloqueo-horas').style.display = 'none';
+      document.getElementById('bloqueo-horas-2').style.display = 'none';
+      cargarBloqueos();
+    });
+
     (async () => {
       const session = await initLayout('configuracion');
       if (!session) return;
@@ -517,6 +722,10 @@
         if (data[id] != null) document.getElementById(id).value = data[id];
       });
       actualizarSuma();
+
+      document.getElementById('slot_min').value = String(data.slot_min || 60);
+      cargarHorario().catch(e => console.error('Error en cargarHorario:', e));
+      cargarBloqueos().catch(e => console.error('Error en cargarBloqueos:', e));
 
       // Cargar políticas de servicio (sin await para no bloquear)
       loadPolicies().catch(e => console.error('Error en loadPolicies:', e));

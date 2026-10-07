@@ -16,6 +16,7 @@
       justify-content: center; letter-spacing: 0.5px;
     }
     .slot-content { flex: 1; padding: 0.4rem 0.75rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+    .slot-bloqueado { background: repeating-linear-gradient(135deg, rgba(0,0,0,0.035), rgba(0,0,0,0.035) 8px, transparent 8px, transparent 16px); }
     .slot-libre { cursor: pointer; }
     .slot-libre:hover { background: rgba(225, 52, 30, 0.05); }
     .slot-libre .add-hint {
@@ -176,24 +177,61 @@
       return `${String(fin.getHours()).padStart(2,'0')}:${String(fin.getMinutes()).padStart(2,'0')}`;
     }
 
-    // Calcula los slots del día según horarios del taller.
-    // Retorna null si el día no tiene atención (domingo sin config).
-    function getSlotsDelDia(dateStr) {
-      const dow = new Date(dateStr + 'T12:00:00').getDay(); // 0=dom, 6=sab
-      if (dow === 0) return null; // domingo — sin atención por defecto
+    // ---------- Horario semanal y bloqueos (Configuración → Horario de atención) ----------
+    const NOMBRE_DIA = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    let horarioSemana = null;   // { dow: { abierto, apertura, cierre, pausa_desde, pausa_hasta } }
+    let bloqueosAgenda = [];
+
+    const escapar = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const minDeHHMM = (s) => { const [h, m] = String(s).split(':').map(Number); return h * 60 + m; };
+    const hhmmDeMin = (n) => `${String(Math.floor(n / 60)).padStart(2, '0')}:${String(n % 60).padStart(2, '0')}`;
+    const slotMinTaller = () => Number(tallerHorarios && tallerHorarios.slot_min) || 60;
+
+    // Si la tabla horario_atencion aún no existe (falta correr v31), cae al horario antiguo.
+    function horarioDelDia(dow) {
+      if (horarioSemana && horarioSemana[dow]) return horarioSemana[dow];
       const h = tallerHorarios || {};
-      const slotMin  = Number(h.slot_min) || 60;
-      const apertura = dow === 6 ? (h.sab_apertura || '09:00') : (h.hora_apertura || '09:00');
-      const cierre   = dow === 6 ? (h.sab_cierre   || '13:00') : (h.hora_cierre   || '18:00');
+      if (dow === 0) return { abierto: false };
+      if (dow === 6) return { abierto: true, apertura: h.sab_apertura || '09:00', cierre: h.sab_cierre || '13:00' };
+      return { abierto: true, apertura: h.hora_apertura || '09:00', cierre: h.hora_cierre || '18:00' };
+    }
+
+    // Calcula los slots del día según el horario semanal.
+    // Retorna null si el día está cerrado.
+    function getSlotsDelDia(dateStr) {
+      const dia = horarioDelDia(new Date(dateStr + 'T12:00:00').getDay());
+      if (!dia.abierto) return null;
       const slots = [];
-      let [hh, mm] = apertura.split(':').map(Number);
-      const [eh, em] = cierre.split(':').map(Number);
-      while (hh < eh || (hh === eh && mm < em)) {
-        slots.push(`${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`);
-        mm += slotMin;
-        if (mm >= 60) { hh += Math.floor(mm / 60); mm %= 60; }
-      }
+      for (let m = minDeHHMM(dia.apertura); m < minDeHHMM(dia.cierre); m += slotMinTaller()) slots.push(hhmmDeMin(m));
       return slots;
+    }
+
+    function bloqueosDelDia(dateStr) {
+      return bloqueosAgenda.filter(b => dateStr >= b.fecha_desde && dateStr <= b.fecha_hasta);
+    }
+
+    // Por qué un bloque del día no se ofrece online: pausa o bloqueo por horas.
+    function motivoSlot(dateStr, slot) {
+      const dia = horarioDelDia(new Date(dateStr + 'T12:00:00').getDay());
+      const m = minDeHHMM(slot), largo = slotMinTaller();
+      if (dia.pausa_desde && dia.pausa_hasta && m < minDeHHMM(dia.pausa_hasta) && minDeHHMM(dia.pausa_desde) < m + largo) return { tipo: 'pausa' };
+      const b = bloqueosDelDia(dateStr).find(x => x.hora_desde && m < minDeHHMM(x.hora_hasta) && minDeHHMM(x.hora_desde) < m + largo);
+      return b ? { tipo: 'bloqueo', motivo: b.motivo } : null;
+    }
+
+    // Texto de aviso si una cita nueva cae en un día/hora cerrado o bloqueado (null si todo bien).
+    function avisoFueraDeHorario(dateStr, hora) {
+      const dow = new Date(dateStr + 'T12:00:00').getDay();
+      const dia = horarioDelDia(dow);
+      if (!dia.abierto) return `${NOMBRE_DIA[dow]} está cerrado en el horario de atención.`;
+      const completo = bloqueosDelDia(dateStr).find(b => !b.hora_desde);
+      if (completo) return `Ese día está bloqueado${completo.motivo ? ` (${completo.motivo})` : ''}.`;
+      const m = minDeHHMM(hora);
+      if (m < minDeHHMM(dia.apertura) || m >= minDeHHMM(dia.cierre)) return `Las ${hora} están fuera del horario de atención (${dia.apertura}–${dia.cierre}).`;
+      if (dia.pausa_desde && dia.pausa_hasta && m >= minDeHHMM(dia.pausa_desde) && m < minDeHHMM(dia.pausa_hasta)) return `Las ${hora} caen en la pausa (${dia.pausa_desde}–${dia.pausa_hasta}).`;
+      const b = bloqueosDelDia(dateStr).find(x => x.hora_desde && m >= minDeHHMM(x.hora_desde) && m < minDeHHMM(x.hora_hasta));
+      if (b) return `Esa hora está bloqueada${b.motivo ? ` (${b.motivo})` : ''}.`;
+      return null;
     }
 
     function actualizarVehiculos() {
@@ -285,6 +323,11 @@
       const fecha = document.getElementById('fecha').value;
       const hora  = document.getElementById('hora').value;
       if (!fecha || !hora) { errorEl.textContent = 'Ingresa fecha y hora.'; return; }
+      // Una cita nueva en un día cerrado / bloqueado se puede hacer, pero con aviso.
+      if (!document.getElementById('cita-id').value) {
+        const aviso = avisoFueraDeHorario(fecha, hora);
+        if (aviso && !confirm(`${aviso}\n\n¿Agendar igual?`)) return;
+      }
       const fechaHora = new Date(`${fecha}T${hora}:00`).toISOString();
       const payload = {
         cliente_id:  document.getElementById('cliente_id').value  || null,
@@ -469,8 +512,18 @@
       </div>`;
     }
 
-    function slotRow(slot, citas, continua) {
+    function slotRow(slot, citas, continua, bloqueo) {
       const ocupado = citas.length || (continua && continua.length);
+      if (!ocupado && bloqueo) {
+        const etiqueta = bloqueo.tipo === 'pausa' ? '☕ Pausa' : `🔒 Bloqueado${bloqueo.motivo ? ' — ' + escapar(bloqueo.motivo) : ''}`;
+        return `<div class="horario-slot">
+          <div class="slot-hora">${slot}</div>
+          <div class="slot-content slot-bloqueado">
+            <span style="flex:1; color:var(--color-text-muted); font-size:0.85rem;">${etiqueta}</span>
+            <button type="button" class="btn-secondary btn-mini agregar-mas-btn" data-slot="${slot}">+ Agregar igual</button>
+          </div>
+        </div>`;
+      }
       if (!ocupado) {
         return `<div class="horario-slot">
           <div class="slot-hora">${slot}</div>
@@ -499,12 +552,16 @@
       const slots = getSlotsDelDia(dia);
       const dow = new Date(dia + 'T12:00:00').getDay();
 
-      if (slots === null) {
-        // Domingo
+      const bloqueoDia = bloqueosDelDia(dia).find(b => !b.hora_desde);
+      if (slots === null || bloqueoDia) {
+        // Día cerrado en el horario semanal, o bloqueado completo
         const extra = citasDia.length
           ? citasDia.map(c => `<div class="horario-slot"><div class="slot-hora">${fmtHora(c.fecha_hora)}</div><div class="slot-content">${renderCitaCard(c)}</div></div>`).join('')
           : '';
-        grid.innerHTML = `<div class="sin-horario">Domingo — sin atención.${citasDia.length ? '<br>Hay cita(s) registrada(s) fuera de horario:' : ''}</div>${extra}`;
+        const titulo = bloqueoDia
+          ? `🔒 Día bloqueado${bloqueoDia.motivo ? ': ' + escapar(bloqueoDia.motivo) : ''}.`
+          : `${NOMBRE_DIA[dow]} — sin atención. <a href="configuracion.html">Configuración → Horario de atención</a> para abrirlo.`;
+        grid.innerHTML = `<div class="sin-horario">${titulo}${citasDia.length ? '<br>Hay cita(s) registrada(s) ese día:' : ''}</div>${extra}`;
         if (citasDia.length) wireAcciones(grid);
         return;
       }
@@ -538,11 +595,11 @@
 
       let html = '';
       if (!slots.length) {
-        html = `<div class="sin-horario">Sin horario configurado para ${dow === 6 ? 'el sábado' : 'este día'}.<br>
-          Revisa <a href="configuracion.html">Configuración → Horarios</a>.</div>`;
+        html = `<div class="sin-horario">Sin horario configurado para el ${NOMBRE_DIA[dow].toLowerCase()}.<br>
+          Revisa <a href="configuracion.html">Configuración → Horario de atención</a>.</div>`;
       } else {
         for (const slot of slots) {
-          html += slotRow(slot, citasPorSlot[slot] || [], continuaciones[slot] || []);
+          html += slotRow(slot, citasPorSlot[slot] || [], continuaciones[slot] || [], motivoSlot(dia, slot));
         }
       }
 
@@ -731,14 +788,22 @@
     (async () => {
       const session = await initLayout('agenda');
       if (!session) return;
-      const [clientes, vehiculos, trabajos, personal, cotizaciones, config] = await Promise.all([
+      const [clientes, vehiculos, trabajos, personal, cotizaciones, config, horario, bloqueos] = await Promise.all([
         supabaseClient.from('clientes').select('id, nombre, direccion').eq('activo', true).order('nombre'),
         supabaseClient.from('vehiculos').select('*').eq('activo', true).order('patente'),
         supabaseClient.from('trabajos').select('*').eq('activo', true).order('nombre'),
         supabaseClient.from('personal').select('*').eq('activo', true).order('nombre'),
         supabaseClient.from('cotizaciones').select('id, numero, cliente_id, estado, descuento_pct, con_iva, cotizacion_items(cantidad, precio_unitario)').order('creado_en', { ascending: false }),
         getTallerConfig(),
+        supabaseClient.from('horario_atencion').select('*'),
+        supabaseClient.from('bloqueos_agenda').select('*').order('fecha_desde'),
       ]);
+      // Sin las tablas de v31 estos devuelven error: se usa el horario antiguo de taller_config.
+      if (!horario.error && horario.data && horario.data.length) {
+        horarioSemana = {};
+        horario.data.forEach(h => { horarioSemana[h.dow] = h; });
+      }
+      bloqueosAgenda = (!bloqueos.error && bloqueos.data) || [];
       clientesCache  = clientes.data  || [];
       vehiculosCache = vehiculos.data || [];
       trabajosCache  = trabajos.data  || [];
