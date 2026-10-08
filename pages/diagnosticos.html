@@ -1,0 +1,1089 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Diagnósticos · Autonova</title>
+  <link rel="stylesheet" href="../assets/css/style.css" />
+  <style>
+    .h-card { border-bottom: 1px solid var(--color-border); padding-bottom: 0.6rem; margin-bottom: 0.6rem; }
+    .h-fotos { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.4rem; }
+    .h-foto { position: relative; }
+    .h-foto img { width: 52px; height: 52px; object-fit: cover; border-radius: 4px; border: 1px solid var(--color-border); display: block; }
+    .h-foto button { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; line-height: 16px; padding: 0; border-radius: 50%; font-size: 0.65rem; }
+    .banner-conversion { background: #eef4ff; border-left: 3px solid #1d4ed8; padding: 0.7rem 0.9rem; border-radius: var(--radius); margin-bottom: 1rem; font-size: 0.9rem; }
+    .opcion-convertir { display: block; width: 100%; text-align: left; margin: 0.5rem 0; padding: 0.8rem 1rem; background: #fff; color: var(--color-text); border: 1px solid var(--color-border); font-weight: 400; }
+    .opcion-convertir:hover { border-color: var(--color-primary); background: #fff; color: var(--color-text); }
+    .opcion-convertir strong { display: block; font-size: 0.95rem; margin-bottom: 0.15rem; }
+    .opcion-convertir span { font-size: 0.82rem; color: var(--color-text-muted); }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar">
+        <h1>Diagnósticos</h1>
+        <button id="nueva-btn">+ Nuevo diagnóstico</button>
+      </header>
+      <div class="content">
+
+        <!-- Editor -->
+        <div class="card" id="editor-card" style="display:none;">
+          <h2 id="editor-title" style="margin-top:0;">Nuevo diagnóstico</h2>
+          <div id="estado-conversion"></div>
+
+          <h3>1. Cliente y vehículo</h3>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="cliente-buscar">Cliente *</label>
+              <div class="combobox-wrap">
+                <div class="select-con-boton">
+                  <input type="text" id="cliente-buscar" placeholder="Escribe para buscar..." autocomplete="off" />
+                  <button type="button" class="btn-secondary btn-mini" id="nuevo-cliente-btn">+ Nuevo</button>
+                </div>
+                <div class="combobox-lista" id="cliente-lista" style="display:none;"></div>
+              </div>
+              <select id="cliente_id" style="display:none;"></select>
+            </div>
+            <div class="form-group">
+              <label for="vehiculo_id">Vehículo</label>
+              <div class="select-con-boton">
+                <select id="vehiculo_id"><option value="">Sin vehículo</option></select>
+                <button type="button" class="btn-secondary btn-mini" id="nuevo-vehiculo-btn">+ Nuevo</button>
+              </div>
+            </div>
+            <div class="form-group" style="max-width:160px;">
+              <label for="km">Kilometraje</label>
+              <input type="number" id="km" min="0" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="motivo">Motivo de consulta (lo que reporta el cliente)</label>
+            <textarea id="motivo" rows="2" placeholder="Ej: ruido al frenar, testigo de motor encendido..."></textarea>
+          </div>
+
+          <h3>2. Revisión del vehículo</h3>
+          <p style="color:var(--color-text-muted); font-size:0.82rem; margin-top:0;">
+            Marca cada punto revisado como Óptimo u Observación, y agrega nota y fotos si hace falta.
+            Los puntos que no revisaste no aparecen en el informe.
+          </p>
+          <div id="hallazgos-body"></div>
+          <button type="button" id="agregar-hallazgo-btn" class="btn-secondary btn-mini">+ Agregar ítem</button>
+
+          <h3 style="margin-top:1.5rem;">3. Diagnóstico</h3>
+          <div class="form-group">
+            <textarea id="conclusion" rows="3" placeholder="Qué tiene el vehículo y qué se recomienda hacer..."></textarea>
+          </div>
+
+          <h3>4. Trabajos recomendados</h3>
+          <div id="aviso-lineas"></div>
+          <div id="agregar-lineas">
+            <div class="form-row" style="align-items:end;">
+              <div class="form-group">
+                <label for="item-tipo">Tipo de ítem</label>
+                <select id="item-tipo">
+                  <option value="mano_obra">Trabajo del catálogo (carga insumos)</option>
+                  <option value="repuesto">Repuesto del inventario</option>
+                  <option value="insumo_taller">Insumo de taller (libre)</option>
+                  <option value="insumo_vehiculo">Insumo de vehículo (libre)</option>
+                  <option value="otro">Otro (libre)</option>
+                </select>
+              </div>
+              <div class="form-group" id="grupo-trabajo">
+                <label for="trabajo-buscar">Trabajo precargado</label>
+                <div class="combobox-wrap">
+                  <input type="text" id="trabajo-buscar" placeholder="Escribe para buscar..." autocomplete="off" />
+                  <div class="combobox-lista" id="trabajo-lista" style="display:none;"></div>
+                </div>
+                <select id="item-trabajo" style="display:none;"></select>
+              </div>
+              <div class="form-group" id="grupo-repuesto" style="display:none;">
+                <label for="repuesto-buscar">Repuesto</label>
+                <div class="combobox-wrap">
+                  <input type="text" id="repuesto-buscar" placeholder="Escribe para buscar..." autocomplete="off" />
+                  <div class="combobox-lista" id="repuesto-lista" style="display:none;"></div>
+                </div>
+                <select id="item-repuesto" style="display:none;"></select>
+              </div>
+              <div class="form-group" id="grupo-descripcion" style="display:none;">
+                <label for="item-descripcion">Descripción</label>
+                <input type="text" id="item-descripcion" />
+              </div>
+              <div class="form-group" id="grupo-tipo-otro" style="display:none; max-width:150px;">
+                <label for="item-tipo-otro">Clasificar como</label>
+                <select id="item-tipo-otro">
+                  <option value="">Otro</option>
+                  <option value="repuesto">Repuesto</option>
+                  <option value="trabajo">Trabajo externo</option>
+                  <option value="mano_obra">Mano de obra</option>
+                  <option value="insumo">Insumo</option>
+                </select>
+              </div>
+              <div class="form-group" style="max-width:110px;">
+                <label for="item-cantidad" id="item-cantidad-label">Cantidad</label>
+                <input type="number" id="item-cantidad" value="1" min="0" step="0.25" />
+              </div>
+              <div class="form-group" id="grupo-horas-trabajo" style="display:none; max-width:140px;">
+                <label for="item-horas">Horas por trabajo</label>
+                <input type="number" id="item-horas" min="0" step="0.25" />
+              </div>
+              <div class="form-group" style="max-width:150px;">
+                <label for="item-precio">Precio unitario</label>
+                <input type="number" id="item-precio" min="0" step="1" />
+              </div>
+              <div class="form-group" style="flex:0;">
+                <button type="button" id="agregar-item-btn">Agregar</button>
+              </div>
+            </div>
+            <p id="item-preview" style="color:var(--color-text-muted); font-weight:600; margin:0.4rem 0 0;"></p>
+            <p style="color:var(--color-text-muted); font-size:0.82rem; margin:0.5rem 0 0.25rem;">
+              Al elegir un trabajo se cargan su mano de obra y los insumos que requiere.
+              <strong>Todos los valores son sin IVA</strong> (el IVA se agrega en el total).
+            </p>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Tipo</th>
+                <th>Descripción</th>
+                <th style="width:110px;">Cant./Horas</th>
+                <th style="width:140px;">Precio unit.</th>
+                <th style="width:120px;">Total</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="items-body">
+              <tr><td colspan="6">Sin trabajos recomendados todavía.</td></tr>
+            </tbody>
+          </table>
+          <div class="form-row" style="margin-top:0.75rem;">
+            <div class="form-group" style="max-width:160px;">
+              <label for="descuento_pct">Descuento %</label>
+              <input type="number" id="descuento_pct" value="0" min="0" max="100" step="0.5" />
+            </div>
+            <div class="form-group" style="max-width:200px;">
+              <label for="con_iva">IVA</label>
+              <select id="con_iva">
+                <option value="true">Con IVA</option>
+                <option value="false">Sin IVA (solo neto)</option>
+              </select>
+            </div>
+          </div>
+          <div class="totales" id="totales"></div>
+          <div id="desglose-categorias"></div>
+
+          <div style="margin-top:1.25rem; display:flex; gap:0.5rem; flex-wrap:wrap;">
+            <button type="button" id="guardar-btn">Guardar diagnóstico</button>
+            <button type="button" id="informe-btn" class="btn-secondary">📄 Informe PDF</button>
+            <button type="button" id="convertir-btn" class="btn-secondary">🔁 Convertir…</button>
+            <button type="button" id="cerrar-btn" class="btn-secondary">Cerrar</button>
+          </div>
+          <p class="error-message" id="editor-error"></p>
+          <p id="editor-ok" style="color:#1b6e3c; font-size:0.85rem;"></p>
+        </div>
+
+        <!-- Listado -->
+        <div class="card" style="margin-top:1rem;">
+          <div class="toolbar">
+            <h2 style="margin:0;">Listado</h2>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>N°</th>
+                <th>Fecha</th>
+                <th>Cliente</th>
+                <th>Vehículo</th>
+                <th>Estimado</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="diagnosticos-body">
+              <tr><td colspan="7">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal genérico -->
+  <div class="modal-backdrop" id="modal-backdrop">
+    <div class="modal" id="modal"></div>
+  </div>
+
+  <script src="../assets/vendor/supabase.min.js"></script>
+  <script src="../assets/js/supabaseClient.js"></script>
+  <script src="../assets/js/layout.js"></script>
+  <script>
+    let clientesCache = [], vehiculosCache = [], trabajosCache = [], repuestosCache = [];
+    let diagnosticosCache = [];
+    let diagActual = null;          // { id, numero, esNuevo, cotizacion }
+    let hallazgosActuales = [];
+    let itemsActuales = [];
+    let config = null;
+
+    const HALLAZGOS_ESTANDAR = [
+      'Motor (ruidos, fugas, humo)',
+      'Aceite y filtros',
+      'Refrigeración (radiador, mangueras, líquido)',
+      'Frenos (pastillas, discos, líquido)',
+      'Suspensión y dirección',
+      'Neumáticos y alineación',
+      'Batería y sistema eléctrico',
+      'Luces',
+      'Transmisión y embrague',
+      'Escape',
+      'Aire acondicionado',
+      'Códigos de falla (scanner)',
+    ];
+
+    const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const escMulti = (s) => esc(s).replace(/\n/g, '<br>');
+    function irA(url) { window.location.href = url; }
+
+    // ---------- Cálculos (mismos que cotizaciones y OT) ----------
+    function categoriaItem(i) {
+      const sub = (i.tipo === 'otro' && i.tipo_otro) ? i.tipo_otro : i.tipo;
+      if (sub === 'mano_obra') return 'mano_obra';
+      if (sub === 'repuesto' || sub === 'insumo_vehiculo') return 'repuestos';
+      if (sub === 'insumo_taller' || sub === 'insumo') return 'insumo_taller';
+      return 'trabajo_externo';
+    }
+
+    function calcularTotales(items, descuentoPct, conIva = true) {
+      const sumaCat = (cat) => items.filter(i => categoriaItem(i) === cat).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
+      const subtotalMOBruto = sumaCat('mano_obra');
+      const subtotalRepuestosBruto = sumaCat('repuestos');
+      const subtotalTrabajoExternoBruto = sumaCat('trabajo_externo');
+      const subtotalInsumosTallerBruto = sumaCat('insumo_taller');
+      const subtotal = subtotalMOBruto + subtotalRepuestosBruto + subtotalTrabajoExternoBruto + subtotalInsumosTallerBruto;
+      const pct = Math.min(100, Math.max(0, Number(descuentoPct || 0)));
+      const descuento = subtotal * (pct / 100);
+      const neto = subtotal - descuento;
+      const iva = conIva ? neto * (Number(config.iva_pct) / 100) : 0;
+      const factor = subtotal > 0 ? neto / subtotal : 1;
+      return {
+        subtotal, descuento, descuentoPct: pct, neto, iva, conIva, total: neto + iva,
+        subtotalMO: subtotalMOBruto * factor,
+        subtotalRepuestos: subtotalRepuestosBruto * factor,
+        subtotalTrabajoExterno: subtotalTrabajoExternoBruto * factor,
+        subtotalInsumosTaller: subtotalInsumosTallerBruto * factor,
+      };
+    }
+
+    const CATEGORIAS_DESGLOSE = [
+      { key: 'subtotalMO', label: 'Mano de obra', color: '#1d4ed8' },
+      { key: 'subtotalRepuestos', label: 'Repuestos', color: '#6b3fa0' },
+      { key: 'subtotalTrabajoExterno', label: 'Trabajo externo', color: '#4b5563' },
+      { key: 'subtotalInsumosTaller', label: 'Insumos de taller', color: '#92600a' },
+    ];
+    function renderDesgloseHTML(t) {
+      const cats = CATEGORIAS_DESGLOSE.filter(c => t[c.key] > 0);
+      if (!cats.length) return '';
+      const totalCats = cats.reduce((s, c) => s + t[c.key], 0);
+      const barra = cats.map(c => `<div style="width:${(t[c.key] / totalCats * 100).toFixed(2)}%; background:${c.color};"></div>`).join('');
+      const filas = cats.map(c => `
+        <div class="fila" style="font-size:0.85rem; color:var(--color-text-muted);">
+          <span><span class="punto" style="background:${c.color};"></span>${c.label}</span>
+          <span>${fmtMoneda(t[c.key])}</span>
+        </div>`).join('');
+      return `<div class="desglose-categorias" style="max-width:320px;"><div class="titulo">Desglose por categoría</div><div class="barra">${barra}</div>${filas}</div>`;
+    }
+
+    // ---------- Quién manda sobre las líneas (Diagnóstico -> Cotización -> OT) ----------
+    const ordenar = (arr) => (arr || []).slice().sort((a, b) => (a.orden || 0) - (b.orden || 0));
+    function cotDe(d) { return d.cotizaciones || null; }
+    function otDe(d) { const c = cotDe(d); return c ? ((c.ordenes || [])[0] || null) : null; }
+    function itemsEfectivos(d) {
+      const o = otDe(d), c = cotDe(d);
+      return ordenar(o ? o.orden_items : (c ? c.cotizacion_items : d.diagnostico_items));
+    }
+    function descuentoEfectivo(d) {
+      const o = otDe(d), c = cotDe(d);
+      if (o && o.descuento_pct != null) return o.descuento_pct;
+      if (c && c.descuento_pct != null) return c.descuento_pct;
+      return d.descuento_pct;
+    }
+    function conIvaEfectivo(d) {
+      const o = otDe(d), c = cotDe(d);
+      if (o && o.con_iva != null) return o.con_iva !== false;
+      if (c && c.con_iva != null) return c.con_iva !== false;
+      return d.con_iva !== false;
+    }
+    function totalesDe(d) { return calcularTotales(itemsEfectivos(d), descuentoEfectivo(d), conIvaEfectivo(d)); }
+    function estadoDe(d) {
+      const o = otDe(d), c = cotDe(d);
+      if (o) return { label: `En ${fmtNumero('OT', o.numero)}`, badge: 'badge-purple' };
+      if (c) return { label: `Cotizado ${fmtNumero('COT', c.numero)}`, badge: 'badge-blue' };
+      return { label: 'Borrador', badge: 'badge-gray' };
+    }
+    const lineasBloqueadas = () => !!(diagActual && diagActual.cotizacion);
+
+    // ---------- Selectores ----------
+    function poblarClientes(sel) {
+      document.getElementById('cliente_id').innerHTML =
+        '<option value="">Seleccionar cliente...</option>' +
+        clientesCache.map(c => `<option value="${c.id}">${esc(c.nombre)}</option>`).join('');
+      if (sel) {
+        document.getElementById('cliente_id').value = sel;
+        const c = clientesCache.find(x => x.id === sel);
+        document.getElementById('cliente-buscar').value = c ? c.nombre : '';
+      }
+    }
+    function poblarTrabajos() {
+      document.getElementById('item-trabajo').innerHTML =
+        trabajosCache.map(t => `<option value="${t.id}">${esc(t.nombre)} (${t.horas_estimadas} h)</option>`).join('');
+    }
+    function poblarRepuestos() {
+      document.getElementById('item-repuesto').innerHTML =
+        repuestosCache.map(r => `<option value="${r.id}">${r.sku ? esc(r.sku) + ' · ' : ''}${esc(r.nombre)}</option>`).join('');
+    }
+    function actualizarVehiculos(sel) {
+      const clienteId = document.getElementById('cliente_id').value;
+      const propios = vehiculosCache.filter(v => v.cliente_id === clienteId);
+      document.getElementById('vehiculo_id').innerHTML =
+        '<option value="">Sin vehículo</option>' +
+        propios.map(v => `<option value="${v.id}">${esc(v.patente)} · ${esc([v.marca, v.modelo].filter(Boolean).join(' '))}</option>`).join('');
+      if (sel) document.getElementById('vehiculo_id').value = sel;
+    }
+    function onVehiculoChange() {
+      const v = vehiculosCache.find(x => x.id === document.getElementById('vehiculo_id').value);
+      const kmEl = document.getElementById('km');
+      if (v && v.kilometraje != null && !kmEl.value) kmEl.value = v.kilometraje;
+    }
+
+    // ---------- Hallazgos (revisión) ----------
+    function renderHallazgos() {
+      document.getElementById('hallazgos-body').innerHTML = hallazgosActuales.map((h, idx) => `
+        <div class="h-card">
+          <div style="display:flex; align-items:center; gap:0.5rem;">
+            <input type="text" class="h-item" data-idx="${idx}" value="${esc(h.item)}" style="flex:1; min-width:0;" />
+            <button type="button" class="btn-danger h-quitar" data-idx="${idx}" style="padding:0.3rem 0.6rem; flex-shrink:0;">✕</button>
+          </div>
+          <div style="display:flex; gap:0.4rem; margin-top:0.4rem; flex-wrap:wrap;">
+            <button type="button" class="chk-estado-btn estado-optimo${h.estado === 'optimo' ? ' activo' : ''}" data-idx="${idx}" data-estado="optimo">✓ Óptimo</button>
+            <button type="button" class="chk-estado-btn estado-observacion${h.estado === 'observacion' ? ' activo' : ''}" data-idx="${idx}" data-estado="observacion">⚠ Observación</button>
+          </div>
+          <input type="text" class="h-nota" data-idx="${idx}" value="${esc(h.nota)}" placeholder="Nota (opcional)" style="width:100%; margin-top:0.4rem; font-size:0.82rem; padding:0.4rem 0.6rem;" />
+          <div class="h-fotos">
+            ${(h.fotos || []).map((u, fi) => `
+              <div class="h-foto">
+                <a href="${u}" target="_blank"><img src="${u}" alt="" /></a>
+                <button type="button" class="h-foto-quitar" data-idx="${idx}" data-fi="${fi}">✕</button>
+              </div>`).join('')}
+            <label class="btn btn-secondary btn-mini" style="cursor:pointer;">
+              📷 Foto
+              <input type="file" accept="image/*" multiple class="h-foto-input" data-idx="${idx}" style="display:none;" />
+            </label>
+          </div>
+        </div>`).join('');
+    }
+
+    // Un solo juego de listeners (delegación): escribir en un campo no vuelve a pintar la lista.
+    (function wireHallazgos() {
+      const body = document.getElementById('hallazgos-body');
+      body.addEventListener('input', (e) => {
+        const idx = e.target.dataset.idx;
+        if (e.target.classList.contains('h-item')) hallazgosActuales[idx].item = e.target.value;
+        else if (e.target.classList.contains('h-nota')) hallazgosActuales[idx].nota = e.target.value;
+      });
+      body.addEventListener('click', (e) => {
+        const btn = e.target.closest('button');
+        if (!btn) return;
+        const idx = Number(btn.dataset.idx);
+        if (btn.classList.contains('chk-estado-btn')) {
+          // Volver a tocar el estado activo lo deja sin revisar
+          hallazgosActuales[idx].estado = hallazgosActuales[idx].estado === btn.dataset.estado ? null : btn.dataset.estado;
+          renderHallazgos();
+        } else if (btn.classList.contains('h-quitar')) {
+          hallazgosActuales.splice(idx, 1);
+          renderHallazgos();
+        } else if (btn.classList.contains('h-foto-quitar')) {
+          hallazgosActuales[idx].fotos.splice(Number(btn.dataset.fi), 1);
+          renderHallazgos();
+        }
+      });
+      body.addEventListener('change', async (e) => {
+        if (!e.target.classList.contains('h-foto-input')) return;
+        const idx = Number(e.target.dataset.idx);
+        const errorEl = document.getElementById('editor-error');
+        errorEl.textContent = '';
+        for (const file of Array.from(e.target.files)) {
+          const path = `diagnosticos/${diagActual.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9_.-]/g, '_')}`;
+          const { error } = await supabaseClient.storage.from('fotos-ot').upload(path, file);
+          if (error) { errorEl.textContent = `No se pudo subir la foto: ${error.message}`; continue; }
+          hallazgosActuales[idx].fotos.push(supabaseClient.storage.from('fotos-ot').getPublicUrl(path).data.publicUrl);
+        }
+        renderHallazgos();
+      });
+    })();
+    document.getElementById('agregar-hallazgo-btn').addEventListener('click', () => {
+      hallazgosActuales.push({ item: '', estado: null, nota: '', fotos: [] });
+      renderHallazgos();
+    });
+
+    // ---------- Trabajos recomendados (mismo editor de líneas que cotizaciones) ----------
+    function matchInventario(desc) {
+      const d = (desc || '').toLowerCase();
+      const r = repuestosCache.find(x => {
+        const n = (x.nombre || '').toLowerCase();
+        return n && (d.includes(n) || n.includes(d));
+      });
+      return r ? { repuesto_id: r.id, precio: Number(r.precio_venta || 0) } : { repuesto_id: null, precio: 0 };
+    }
+
+    function agregarTrabajoCompleto(t, n = 1, horasPorTrabajo = null) {
+      n = Math.max(1, Number(n) || 1);
+      const sufijo = n > 1 ? ` (x${n})` : '';
+      const moPrecio = t.precio_fijo != null ? Number(t.precio_fijo) : Number(config.valor_hora);
+      const horas = horasPorTrabajo != null ? Number(horasPorTrabajo) : Number(t.horas_estimadas || 0);
+      const moCantidad = (t.precio_fijo != null ? 1 : horas) * n;
+      itemsActuales.push({ tipo: 'mano_obra', trabajo_id: t.id, repuesto_id: null, descripcion: t.nombre + sufijo, cantidad: moCantidad, precio_unitario: moPrecio });
+      (t.insumos || []).forEach(ins => {
+        const m = matchInventario(ins.descripcion);
+        itemsActuales.push({ tipo: ins.categoria || 'otro', trabajo_id: null, repuesto_id: m.repuesto_id, descripcion: ins.descripcion, cantidad: n, precio_unitario: m.precio });
+      });
+      renderItems();
+    }
+
+    function onTipoChange() {
+      const tipo = document.getElementById('item-tipo').value;
+      const libre = (tipo === 'otro' || tipo === 'insumo_taller' || tipo === 'insumo_vehiculo');
+      document.getElementById('grupo-trabajo').style.display = tipo === 'mano_obra' ? 'block' : 'none';
+      document.getElementById('grupo-repuesto').style.display = tipo === 'repuesto' ? 'block' : 'none';
+      document.getElementById('grupo-descripcion').style.display = libre ? 'block' : 'none';
+      document.getElementById('grupo-tipo-otro').style.display = tipo === 'otro' ? 'block' : 'none';
+      document.getElementById('item-precio').parentElement.style.display = tipo === 'mano_obra' ? 'none' : 'block';
+      if (tipo === 'mano_obra') document.getElementById('item-cantidad').value = '1';
+      else if (tipo === 'repuesto') onRepuestoChange();
+      else if (libre) {
+        document.getElementById('item-cantidad').value = '1';
+        document.getElementById('item-precio').value = '';
+      }
+      actualizarCamposTrabajo();
+    }
+
+    function onTrabajoChange() {
+      const t = trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value);
+      if (!t) return;
+      document.getElementById('item-cantidad').value = '1';
+      if (t.precio_fijo != null) {
+        document.getElementById('item-precio').value = Number(t.precio_fijo);
+      } else {
+        document.getElementById('item-precio').value = Number(config.valor_hora);
+        document.getElementById('item-horas').value = Number(t.horas_estimadas || 0);
+      }
+      actualizarCamposTrabajo();
+    }
+
+    // "Horas por trabajo" solo aplica a trabajos que se cobran por hora.
+    function actualizarCamposTrabajo() {
+      const tipo = document.getElementById('item-tipo').value;
+      const t = tipo === 'mano_obra' ? trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value) : null;
+      document.getElementById('grupo-horas-trabajo').style.display = (t && t.precio_fijo == null) ? 'block' : 'none';
+      actualizarPreviewTrabajo();
+    }
+
+    function actualizarPreviewTrabajo() {
+      const previewEl = document.getElementById('item-preview');
+      const tipo = document.getElementById('item-tipo').value;
+      const t = tipo === 'mano_obra' ? trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value) : null;
+      if (!t) { previewEl.textContent = ''; return; }
+      const cantidad = Math.max(1, Number(document.getElementById('item-cantidad').value) || 1);
+      if (t.precio_fijo != null) {
+        previewEl.textContent = `Total: ${cantidad} × ${fmtMoneda(t.precio_fijo)} = ${fmtMoneda(Number(t.precio_fijo) * cantidad)}`;
+      } else {
+        const horas = Math.max(0, Number(document.getElementById('item-horas').value) || 0);
+        const totalHoras = horas * cantidad;
+        previewEl.textContent = `Total: ${cantidad} × ${horas} h = ${totalHoras} h · ${fmtMoneda(totalHoras * Number(config.valor_hora))}`;
+      }
+    }
+
+    function onRepuestoChange() {
+      const r = repuestosCache.find(x => x.id === document.getElementById('item-repuesto').value);
+      if (!r) return;
+      document.getElementById('item-cantidad').value = '1';
+      document.getElementById('item-precio').value = r.precio_venta != null ? Number(r.precio_venta) : '';
+    }
+
+    function agregarItem() {
+      const tipo = document.getElementById('item-tipo').value;
+      if (tipo === 'mano_obra') {
+        const t = trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value);
+        if (!t) return;
+        const n = Math.max(1, Number(document.getElementById('item-cantidad').value) || 1);
+        const horas = t.precio_fijo != null ? null : Math.max(0, Number(document.getElementById('item-horas').value) || 0);
+        agregarTrabajoCompleto(t, n, horas);
+        document.getElementById('item-preview').textContent = '';
+        return;
+      }
+      const cantidad = Number(document.getElementById('item-cantidad').value) || 0;
+      const precio = Number(document.getElementById('item-precio').value) || 0;
+      let descripcion = '', repuesto_id = null, tipo_otro = null;
+      if (tipo === 'repuesto') {
+        const r = repuestosCache.find(x => x.id === document.getElementById('item-repuesto').value);
+        if (!r) return;
+        descripcion = r.nombre;
+        repuesto_id = r.id;
+      } else {
+        descripcion = document.getElementById('item-descripcion').value.trim();
+        if (!descripcion) return;
+        if (tipo === 'otro') tipo_otro = document.getElementById('item-tipo-otro').value || 'otro';
+      }
+      itemsActuales.push({ tipo, trabajo_id: null, repuesto_id, descripcion, cantidad, precio_unitario: precio, tipo_otro });
+      document.getElementById('item-descripcion').value = '';
+      document.getElementById('item-tipo-otro').value = '';
+      renderItems();
+    }
+
+    function renderItems() {
+      const bloqueado = lineasBloqueadas();
+      const tbody = document.getElementById('items-body');
+      if (!itemsActuales.length) {
+        tbody.innerHTML = '<tr><td colspan="6">Sin trabajos recomendados todavía.</td></tr>';
+        renderTotales();
+        return;
+      }
+      tbody.innerHTML = itemsActuales.map((i, idx) => bloqueado ? `
+        <tr>
+          <td>${badgeItem(i.tipo_otro && i.tipo === 'otro' ? i.tipo_otro : i.tipo)}</td>
+          <td>${esc(i.descripcion)}</td>
+          <td>${Number(i.cantidad).toLocaleString('es-CL')}</td>
+          <td>${fmtMoneda(i.precio_unitario)}</td>
+          <td>${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td>
+          <td></td>
+        </tr>` : `
+        <tr>
+          <td>${badgeItem(i.tipo_otro && i.tipo === 'otro' ? i.tipo_otro : i.tipo)}</td>
+          <td><input type="text" class="cell-desc" data-idx="${idx}" value="${esc(i.descripcion)}" style="min-width:150px;" /></td>
+          <td><input type="number" class="cell-cant" data-idx="${idx}" value="${i.cantidad}" min="0" step="0.25" /></td>
+          <td><input type="number" class="cell-precio" data-idx="${idx}" value="${i.precio_unitario}" min="0" step="1" /></td>
+          <td class="cell-total" data-idx="${idx}">${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td>
+          <td><button type="button" class="btn-danger quitar-btn" data-idx="${idx}" style="padding:0.2rem 0.5rem;">✕</button></td>
+        </tr>`).join('');
+
+      if (!bloqueado) {
+        const recalcRow = (idx) => {
+          const i = itemsActuales[idx];
+          const cell = tbody.querySelector(`.cell-total[data-idx="${idx}"]`);
+          if (cell) cell.textContent = fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario));
+          renderTotales();
+        };
+        tbody.querySelectorAll('.cell-desc').forEach(inp =>
+          inp.addEventListener('input', () => { itemsActuales[inp.dataset.idx].descripcion = inp.value; }));
+        tbody.querySelectorAll('.cell-cant').forEach(inp =>
+          inp.addEventListener('input', () => { itemsActuales[inp.dataset.idx].cantidad = Number(inp.value) || 0; recalcRow(inp.dataset.idx); }));
+        tbody.querySelectorAll('.cell-precio').forEach(inp =>
+          inp.addEventListener('input', () => { itemsActuales[inp.dataset.idx].precio_unitario = Number(inp.value) || 0; recalcRow(inp.dataset.idx); }));
+        tbody.querySelectorAll('.quitar-btn').forEach(btn =>
+          btn.addEventListener('click', () => { itemsActuales.splice(Number(btn.dataset.idx), 1); renderItems(); }));
+      }
+      renderTotales();
+    }
+
+    function renderTotales() {
+      const conIva = document.getElementById('con_iva').value === 'true';
+      const t = calcularTotales(itemsActuales, document.getElementById('descuento_pct').value, conIva);
+      document.getElementById('totales').innerHTML = `
+        ${t.descuento > 0 ? `<div class="fila" style="color:var(--color-text-muted);"><span>Subtotal</span><span>${fmtMoneda(t.subtotal)}</span></div>
+        <div class="fila" style="color:var(--color-text-muted);"><span>Descuento (${t.descuentoPct}%)</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
+        <div class="fila"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
+        ${conIva ? `<div class="fila"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>` : '<div class="fila" style="color:var(--color-text-muted);"><span>Sin IVA</span><span>–</span></div>'}
+        <div class="fila total"><span>Total estimado</span><span>${fmtMoneda(t.total)}</span></div>`;
+      const desglose = renderDesgloseHTML(t);
+      document.getElementById('desglose-categorias').innerHTML = desglose ? `<div style="margin-top:0.75rem;">${desglose}</div>` : '';
+    }
+
+    // ---------- Editor ----------
+    function renderEstadoConversion() {
+      const cont = document.getElementById('estado-conversion');
+      const c = diagActual.cotizacion;
+      if (!c) { cont.innerHTML = ''; return; }
+      const o = (c.ordenes || [])[0];
+      cont.innerHTML = `<div class="banner-conversion">
+        ${o
+          ? `Este diagnóstico ya está en la <strong>OT ${fmtNumero('OT', o.numero)}</strong> (cotización ${fmtNumero('COT', c.numero)}).`
+          : `Este diagnóstico ya tiene la <strong>cotización ${fmtNumero('COT', c.numero)}</strong> (${esc(c.estado)}).`}
+        Los trabajos, el descuento y el IVA ahora se editan allí; el informe de este diagnóstico se actualiza solo.
+        <div style="margin-top:0.5rem; display:flex; gap:0.5rem; flex-wrap:wrap;">
+          ${o ? '<a href="ordenes.html" class="btn btn-secondary" style="text-decoration:none;">Ver órdenes de trabajo</a>'
+              : '<button type="button" id="crear-ot-btn">Crear OT ahora</button>'}
+          <a href="cotizaciones.html" class="btn btn-secondary" style="text-decoration:none;">Ver cotizaciones</a>
+        </div>
+      </div>`;
+      const crearOt = document.getElementById('crear-ot-btn');
+      if (crearOt) crearOt.addEventListener('click', () => convertir('ot-desde-cotizacion'));
+    }
+
+    function abrirEditor(d) {
+      const nuevo = !d;
+      diagActual = nuevo
+        ? { id: crypto.randomUUID(), numero: null, esNuevo: true, cotizacion: null }
+        : { id: d.id, numero: d.numero, esNuevo: false, cotizacion: cotDe(d) };
+
+      document.getElementById('editor-card').style.display = 'block';
+      document.getElementById('editor-error').textContent = '';
+      document.getElementById('editor-ok').textContent = '';
+      document.getElementById('editor-title').textContent = nuevo ? 'Nuevo diagnóstico' : `Editar ${fmtNumero('DIAG', d.numero)}`;
+
+      document.getElementById('cliente_id').value = nuevo ? '' : d.cliente_id;
+      document.getElementById('cliente-buscar').value = nuevo ? '' : ((d.clientes && d.clientes.nombre) || (clientesCache.find(c => c.id === d.cliente_id) || {}).nombre || '');
+      actualizarVehiculos(nuevo ? null : d.vehiculo_id);
+      document.getElementById('km').value = nuevo ? '' : (d.km ?? '');
+      document.getElementById('motivo').value = nuevo ? '' : (d.motivo ?? '');
+      document.getElementById('conclusion').value = nuevo ? '' : (d.conclusion ?? '');
+
+      hallazgosActuales = nuevo
+        ? HALLAZGOS_ESTANDAR.map(item => ({ item, estado: null, nota: '', fotos: [] }))
+        : (d.hallazgos || []).map(h => ({ item: h.item, estado: h.estado || null, nota: h.nota || '', fotos: h.fotos || [] }));
+
+      itemsActuales = nuevo ? [] : itemsEfectivos(d).map(i => ({ ...i }));
+      document.getElementById('descuento_pct').value = nuevo ? 0 : Number(descuentoEfectivo(d) || 0);
+      document.getElementById('con_iva').value = nuevo ? 'true' : (conIvaEfectivo(d) ? 'true' : 'false');
+
+      const bloqueado = lineasBloqueadas();
+      document.getElementById('agregar-lineas').style.display = bloqueado ? 'none' : 'block';
+      document.getElementById('descuento_pct').disabled = bloqueado;
+      document.getElementById('con_iva').disabled = bloqueado;
+      document.getElementById('convertir-btn').style.display = bloqueado ? 'none' : '';
+
+      renderEstadoConversion();
+      renderHallazgos();
+      onTipoChange();
+      renderItems();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function cerrarEditor() {
+      document.getElementById('editor-card').style.display = 'none';
+      diagActual = null; itemsActuales = []; hallazgosActuales = [];
+    }
+
+    // Guarda el diagnóstico; devuelve la fila guardada (con sus relaciones) o null si falló.
+    async function guardarDiagnostico() {
+      const errorEl = document.getElementById('editor-error');
+      errorEl.textContent = '';
+      const clienteId = document.getElementById('cliente_id').value;
+      if (!clienteId) { errorEl.textContent = 'Selecciona un cliente.'; return null; }
+      const bloqueado = lineasBloqueadas();
+
+      const payload = {
+        cliente_id: clienteId,
+        vehiculo_id: document.getElementById('vehiculo_id').value || null,
+        km: Number(document.getElementById('km').value) || null,
+        motivo: document.getElementById('motivo').value.trim() || null,
+        conclusion: document.getElementById('conclusion').value.trim() || null,
+        hallazgos: hallazgosActuales
+          .filter(h => h.item.trim())
+          .map(h => ({ item: h.item.trim(), estado: h.estado || null, nota: (h.nota || '').trim(), fotos: h.fotos || [] })),
+      };
+      // Con cotización/OT creada, descuento e IVA ya no se tocan desde acá
+      if (!bloqueado) {
+        payload.descuento_pct = Math.min(100, Math.max(0, Number(document.getElementById('descuento_pct').value) || 0));
+        payload.con_iva = document.getElementById('con_iva').value === 'true';
+      }
+
+      let error;
+      if (diagActual.esNuevo) ({ error } = await supabaseClient.from('diagnosticos').insert({ id: diagActual.id, ...payload }));
+      else ({ error } = await supabaseClient.from('diagnosticos').update(payload).eq('id', diagActual.id));
+      if (error) { errorEl.textContent = `Error: ${error.message} (¿ejecutaste sql/actualizacion-v32-diagnosticos.sql?)`; return null; }
+      diagActual.esNuevo = false;
+
+      if (!bloqueado) {
+        const del = await supabaseClient.from('diagnostico_items').delete().eq('diagnostico_id', diagActual.id);
+        if (del.error) { errorEl.textContent = `Error en trabajos: ${del.error.message}`; return null; }
+        if (itemsActuales.length) {
+          const { error: errItems } = await supabaseClient.from('diagnostico_items').insert(itemsActuales.map((i, idx) => ({
+            diagnostico_id: diagActual.id,
+            tipo: i.tipo,
+            tipo_otro: i.tipo_otro || null,
+            trabajo_id: i.trabajo_id || null,
+            repuesto_id: i.repuesto_id || null,
+            descripcion: i.descripcion,
+            cantidad: i.cantidad,
+            precio_unitario: i.precio_unitario,
+            orden: idx + 1,
+          })));
+          if (errItems) { errorEl.textContent = `Error en trabajos: ${errItems.message}`; return null; }
+        }
+      }
+
+      await cargarDiagnosticos();
+      const fila = diagnosticosCache.find(x => x.id === diagActual.id) || null;
+      if (fila) {
+        diagActual.numero = fila.numero;
+        document.getElementById('editor-title').textContent = `Editar ${fmtNumero('DIAG', fila.numero)}`;
+      }
+      return fila;
+    }
+
+    // ---------- Listado ----------
+    async function cargarDiagnosticos() {
+      const { data, error } = await supabaseClient
+        .from('diagnosticos')
+        .select('*, clientes(nombre, rut, telefono, email), vehiculos(patente, marca, modelo, anio), diagnostico_items(*), cotizaciones(id, numero, estado, descuento_pct, con_iva, cotizacion_items(*), ordenes(id, numero, estado, descuento_pct, con_iva, orden_items(*)))')
+        .order('creado_en', { ascending: false });
+      if (error) {
+        document.getElementById('diagnosticos-body').innerHTML =
+          `<tr><td colspan="7">Error: ${esc(error.message)} (¿ejecutaste sql/actualizacion-v32-diagnosticos.sql?)</td></tr>`;
+        return;
+      }
+      diagnosticosCache = data || [];
+      renderDiagnosticos();
+    }
+
+    function renderDiagnosticos() {
+      const tbody = document.getElementById('diagnosticos-body');
+      if (!diagnosticosCache.length) {
+        tbody.innerHTML = '<tr><td colspan="7">Aún no hay diagnósticos. Crea el primero con "+ Nuevo diagnóstico".</td></tr>';
+        return;
+      }
+      tbody.innerHTML = diagnosticosCache.map(d => {
+        const t = totalesDe(d);
+        const est = estadoDe(d);
+        return `<tr>
+          <td style="white-space:nowrap;">${fmtNumero('DIAG', d.numero)}</td>
+          <td style="white-space:nowrap;">${fmtFecha(d.fecha)}</td>
+          <td>${d.clientes ? esc(d.clientes.nombre) : '–'}</td>
+          <td style="white-space:nowrap;">${d.vehiculos ? esc(d.vehiculos.patente) : '–'}</td>
+          <td style="white-space:nowrap;">${itemsEfectivos(d).length ? fmtMoneda(t.total) : '–'}</td>
+          <td style="white-space:nowrap;"><span class="badge ${est.badge}">${esc(est.label)}</span></td>
+          <td class="table-actions">
+            <button type="button" class="btn-secondary abrir-btn" data-id="${d.id}">Abrir</button>
+            <button type="button" class="btn-secondary informe-fila-btn" data-id="${d.id}">📄 Informe</button>
+            <button type="button" class="btn-danger eliminar-btn" data-id="${d.id}">Eliminar</button>
+          </td>
+        </tr>`;
+      }).join('');
+
+      tbody.querySelectorAll('.abrir-btn').forEach(b => b.addEventListener('click', () => {
+        const d = diagnosticosCache.find(x => x.id === b.dataset.id);
+        if (d) abrirEditor(d);
+      }));
+      tbody.querySelectorAll('.informe-fila-btn').forEach(b => b.addEventListener('click', () => {
+        const d = diagnosticosCache.find(x => x.id === b.dataset.id);
+        if (d) abrirVentanaImpresion(construirInforme(d), fmtNumero('DIAG', d.numero));
+      }));
+      tbody.querySelectorAll('.eliminar-btn').forEach(b => b.addEventListener('click', async () => {
+        const d = diagnosticosCache.find(x => x.id === b.dataset.id);
+        if (!d) return;
+        const aviso = cotDe(d) ? `\n\nOjo: la cotización ${fmtNumero('COT', cotDe(d).numero)} (y su OT, si existe) NO se borra.` : '';
+        if (!confirm(`¿Eliminar el diagnóstico ${fmtNumero('DIAG', d.numero)}? No se puede deshacer.${aviso}`)) return;
+        const { error } = await supabaseClient.from('diagnosticos').delete().eq('id', d.id);
+        if (error) { alert('Error: ' + error.message); return; }
+        if (diagActual && diagActual.id === d.id) cerrarEditor();
+        await cargarDiagnosticos();
+      }));
+    }
+
+    // ---------- Informe PDF ----------
+    function construirInforme(d) {
+      const items = itemsEfectivos(d);
+      const t = calcularTotales(items, descuentoEfectivo(d), conIvaEfectivo(d));
+      const cli = d.clientes || {};
+      const veh = d.vehiculos;
+      const revisados = (d.hallazgos || []).filter(h => h.estado || h.nota || (h.fotos || []).length);
+
+      const filasRevision = revisados.map(h => {
+        const estado = h.estado === 'optimo' ? '<span style="color:#1b6e3c; font-weight:bold;">✓ Óptimo</span>'
+          : h.estado === 'observacion' ? '<span style="color:#a93b33; font-weight:bold;">⚠ Observación</span>'
+          : '<span style="color:#666;">—</span>';
+        const fotos = (h.fotos || []).length
+          ? `<div style="display:flex; flex-wrap:wrap; gap:0.3rem; margin-top:0.3rem;">${h.fotos.map(u => `<img src="${u}" style="width:90px; height:68px; object-fit:cover; border:1px solid #ccc; border-radius:3px;" />`).join('')}</div>` : '';
+        return `<tr style="border-bottom:1px solid #ccc;">
+          <td style="padding:4px; vertical-align:top;">${esc(h.item)}</td>
+          <td style="padding:4px; vertical-align:top; white-space:nowrap;">${estado}</td>
+          <td style="padding:4px; vertical-align:top;">${esc(h.nota || '')}${fotos}</td>
+        </tr>`;
+      }).join('');
+
+      const filasTrabajos = items.map(i => `<tr style="border-bottom:1px solid #ccc;">
+          <td style="padding:4px;">${esc(i.descripcion)}</td>
+          <td style="text-align:right; padding:4px;">${Number(i.cantidad).toLocaleString('es-CL')}</td>
+          <td style="text-align:right; padding:4px;">${fmtMoneda(i.precio_unitario)}</td>
+          <td style="text-align:right; padding:4px;">${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td>
+        </tr>`).join('');
+
+      return `
+        <div class="print-brand"><img src="../assets/img/logo.png" alt="" onerror="this.style.display='none'" /><span class="print-brand-name">${esc(config.nombre)}</span></div>
+        <div class="print-header">
+          <div><div>${esc(config.rut ?? '')}</div><div>${esc(config.direccion ?? '')}</div><div>${esc(config.telefono ?? '')}</div></div>
+          <div style="text-align:right;">
+            <h2 style="margin:0;">INFORME DE DIAGNÓSTICO</h2>
+            <div>${fmtNumero('DIAG', d.numero)}</div>
+            <div>Fecha: ${fmtFecha(d.fecha)}</div>
+          </div>
+        </div>
+        <p>
+          <strong>Cliente:</strong> ${esc(cli.nombre || '–')}${cli.rut ? ` · RUT ${esc(cli.rut)}` : ''}<br>
+          ${veh ? `<strong>Vehículo:</strong> ${esc(veh.patente)} · ${esc([veh.marca, veh.modelo, veh.anio].filter(Boolean).join(' '))}` : ''}${d.km ? ` · ${Number(d.km).toLocaleString('es-CL')} km` : ''}
+        </p>
+        ${d.motivo ? `<p><strong>Motivo de consulta:</strong> ${escMulti(d.motivo)}</p>` : ''}
+
+        ${revisados.length ? `
+        <h3 style="margin-top:1.25rem;">Revisión del vehículo</h3>
+        <table style="width:100%; border-collapse:collapse;">
+          <thead><tr style="border-bottom:1px solid #000;"><th style="text-align:left; padding:4px;">Punto revisado</th><th style="text-align:left; padding:4px;">Estado</th><th style="text-align:left; padding:4px;">Observaciones</th></tr></thead>
+          <tbody>${filasRevision}</tbody>
+        </table>` : ''}
+
+        ${d.conclusion ? `<h3 style="margin-top:1.25rem;">Diagnóstico</h3><p>${escMulti(d.conclusion)}</p>` : ''}
+
+        ${items.length ? `
+        <h3 style="margin-top:1.25rem;">Trabajos recomendados (valor estimado)</h3>
+        <table style="width:100%; border-collapse:collapse;">
+          <thead><tr style="border-bottom:1px solid #000;"><th style="text-align:left; padding:4px;">Descripción</th><th style="text-align:right; padding:4px;">Cant.</th><th style="text-align:right; padding:4px;">P. unit.</th><th style="text-align:right; padding:4px;">Total</th></tr></thead>
+          <tbody>${filasTrabajos}</tbody>
+        </table>
+        <div style="margin-top:1rem; margin-left:auto; max-width:300px;">
+          ${t.descuento > 0 ? `<div style="display:flex; justify-content:space-between; color:#666;"><span>Subtotal</span><span>${fmtMoneda(t.subtotal)}</span></div>
+          <div style="display:flex; justify-content:space-between; color:#666;"><span>Descuento (${t.descuentoPct}%)</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
+          <div style="display:flex; justify-content:space-between;"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
+          ${t.conIva ? `<div style="display:flex; justify-content:space-between;"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>` : '<div style="display:flex; justify-content:space-between;"><span>Sin IVA</span><span>–</span></div>'}
+          <div style="display:flex; justify-content:space-between; font-weight:bold; border-top:2px solid #000; margin-top:4px; padding-top:4px;"><span>TOTAL ESTIMADO</span><span>${fmtMoneda(t.total)}</span></div>
+        </div>
+        <p style="font-size:0.8rem; color:#666; margin-top:0.75rem;">Valores referenciales según lo observado a la fecha del informe. Cualquier hallazgo adicional se informará y cotizará antes de realizarse.</p>` : ''}
+
+        ${config.politica_inspeccion_texto ? `<div style="margin-top:1.5rem; background:#fef3c7; padding:0.75rem 1rem; border-radius:6px; font-size:0.78rem; white-space:pre-wrap;">${esc(config.politica_inspeccion_texto)}</div>` : ''}`;
+    }
+
+    document.getElementById('informe-btn').addEventListener('click', async () => {
+      const fila = await guardarDiagnostico();   // el informe sale de lo guardado: lo que ves es lo que queda registrado
+      if (!fila) return;
+      abrirVentanaImpresion(construirInforme(fila), fmtNumero('DIAG', fila.numero));
+    });
+
+    // ---------- Convertir en cotización y/o OT ----------
+    function notasParaCotizacion(fila, items) {
+      const lineas = [];
+      const vistos = new Set();
+      items.filter(i => i.trabajo_id).forEach(i => {
+        const t = trabajosCache.find(x => x.id === i.trabajo_id);
+        if (t && t.descripcion && !vistos.has(t.id)) { vistos.add(t.id); lineas.push(`${t.nombre}: ${t.descripcion}`); }
+      });
+      lineas.push(`Origen: ${fmtNumero('DIAG', fila.numero)}${fila.conclusion ? ` — ${fila.conclusion}` : ''}`);
+      return lineas.join('\n');
+    }
+
+    function textoMotivoOT(fila) {
+      return [fila.motivo && `Motivo de consulta: ${fila.motivo}`, fila.conclusion && `Diagnóstico ${fmtNumero('DIAG', fila.numero)}: ${fila.conclusion}`]
+        .filter(Boolean).join('\n') || null;
+    }
+
+    // Crea la OT a partir de la cotización (con lo que tenga hoy la cotización: puede haberse editado).
+    async function crearOTDesdeCotizacion(cotId, fila) {
+      const { data: cot, error: e0 } = await supabaseClient.from('cotizaciones').select('*, cotizacion_items(*)').eq('id', cotId).single();
+      if (e0 || !cot) throw new Error(e0 ? e0.message : 'No se encontró la cotización.');
+      const { data: orden, error: e1 } = await supabaseClient.from('ordenes').insert({
+        cotizacion_id: cot.id,
+        cliente_id: cot.cliente_id,
+        vehiculo_id: cot.vehiculo_id,
+        estado: 'recepcion',
+        km_ingreso: fila.km || null,
+        con_iva: cot.con_iva !== false,
+        descuento_pct: Number(cot.descuento_pct || 0),
+        diagnostico: textoMotivoOT(fila),
+        notas: cot.notas,
+      }).select('id, numero').single();
+      if (e1) throw new Error(e1.message);
+
+      const items = ordenar(cot.cotizacion_items).map((i, idx) => ({
+        orden_id: orden.id, tipo: i.tipo, tipo_otro: i.tipo_otro || null, trabajo_id: i.trabajo_id, repuesto_id: i.repuesto_id,
+        descripcion: i.descripcion, cantidad: i.cantidad, precio_unitario: i.precio_unitario, orden: idx + 1,
+      }));
+      if (items.length) {
+        const { error: e2 } = await supabaseClient.from('orden_items').insert(items);
+        if (e2) throw new Error(e2.message);
+      }
+      await supabaseClient.from('ordenes_historial').insert({ orden_id: orden.id, estado_anterior: null, estado_nuevo: 'recepcion' });
+      await supabaseClient.from('cotizaciones').update({ estado: 'convertida' }).eq('id', cot.id);
+      return orden;
+    }
+
+    // modo: 'cotizacion' | 'ot' (cotización + OT) | 'ot-desde-cotizacion' (ya existe la cotización)
+    async function convertir(modo) {
+      const errorEl = document.getElementById('editor-error');
+      errorEl.textContent = '';
+      const fila = await guardarDiagnostico();
+      if (!fila) return;
+
+      try {
+        if (modo === 'ot-desde-cotizacion') {
+          if (!confirm(`¿Crear la orden de trabajo desde la cotización ${fmtNumero('COT', cotDe(fila).numero)}?`)) return;
+          const orden = await crearOTDesdeCotizacion(cotDe(fila).id, fila);
+          alert(`Orden ${fmtNumero('OT', orden.numero)} creada.`);
+          irA('ordenes.html');
+          return;
+        }
+
+        const items = ordenar(fila.diagnostico_items);
+        if (!items.length) { errorEl.textContent = 'Agrega al menos un trabajo recomendado antes de convertir.'; return; }
+
+        const { data: cot, error: e1 } = await supabaseClient.from('cotizaciones').insert({
+          cliente_id: fila.cliente_id,
+          vehiculo_id: fila.vehiculo_id,
+          descuento_pct: Number(fila.descuento_pct || 0),
+          con_iva: fila.con_iva !== false,
+          notas: notasParaCotizacion(fila, items),
+          estado: 'borrador',
+        }).select('id, numero').single();
+        if (e1) throw new Error(e1.message);
+
+        const { error: e2 } = await supabaseClient.from('cotizacion_items').insert(items.map((i, idx) => ({
+          cotizacion_id: cot.id, tipo: i.tipo, tipo_otro: i.tipo_otro || null, trabajo_id: i.trabajo_id, repuesto_id: i.repuesto_id,
+          descripcion: i.descripcion, cantidad: i.cantidad, precio_unitario: i.precio_unitario, orden: idx + 1,
+        })));
+        if (e2) throw new Error(e2.message);
+
+        // Desde acá la cotización manda sobre las líneas
+        const { error: e3 } = await supabaseClient.from('diagnosticos').update({ cotizacion_id: cot.id }).eq('id', fila.id);
+        if (e3) throw new Error(e3.message);
+
+        if (modo === 'ot') {
+          const orden = await crearOTDesdeCotizacion(cot.id, fila);
+          alert(`Cotización ${fmtNumero('COT', cot.numero)} y orden ${fmtNumero('OT', orden.numero)} creadas.`);
+          irA('ordenes.html');
+          return;
+        }
+
+        await cargarDiagnosticos();
+        const actualizada = diagnosticosCache.find(x => x.id === fila.id);
+        if (actualizada) abrirEditor(actualizada);
+        document.getElementById('editor-ok').textContent = `Cotización ${fmtNumero('COT', cot.numero)} creada (borrador). Puedes enviarla desde Cotizaciones.`;
+      } catch (err) {
+        errorEl.textContent = `No se pudo convertir: ${err.message}`;
+        await cargarDiagnosticos();   // por si alguna parte alcanzó a crearse
+      }
+    }
+
+    document.getElementById('convertir-btn').addEventListener('click', () => {
+      document.getElementById('modal').innerHTML = `
+        <h3>Convertir diagnóstico</h3>
+        <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
+          Se copian los trabajos recomendados. Desde ahí se editan en la cotización u OT y este informe se actualiza solo.
+        </p>
+        <button type="button" class="opcion-convertir" id="conv-cotizacion">
+          <strong>📄 Solo cotización</strong>
+          <span>Para enviársela al cliente y esperar su aprobación. La OT la creas después.</span>
+        </button>
+        <button type="button" class="opcion-convertir" id="conv-ot">
+          <strong>🔧 OT + cotización</strong>
+          <span>El cliente ya dijo que sí: se crean ambas y el vehículo entra a taller.</span>
+        </button>
+        <div class="modal-acciones"><button type="button" class="btn-secondary" id="conv-cancelar">Cancelar</button></div>`;
+      $backdrop.classList.add('abierto');
+      document.getElementById('conv-cancelar').addEventListener('click', cerrarModal);
+      document.getElementById('conv-cotizacion').addEventListener('click', () => { cerrarModal(); convertir('cotizacion'); });
+      document.getElementById('conv-ot').addEventListener('click', () => { cerrarModal(); convertir('ot'); });
+    });
+
+    // ---------- Modales "+ Nuevo" (cliente y vehículo) ----------
+    const $backdrop = document.getElementById('modal-backdrop');
+    const val = (id) => { const e = document.getElementById(id); return e && e.value.trim() ? e.value.trim() : null; };
+    const modalError = (m) => { document.getElementById('modal-error').textContent = m; };
+    const campo = (id, label, type = 'text', extra = '') => `<div class="form-group"><label for="m-${id}">${label}</label><input type="${type}" id="m-${id}" ${extra} /></div>`;
+    function cerrarModal() { $backdrop.classList.remove('abierto'); document.getElementById('modal').innerHTML = ''; }
+    function abrirModal(titulo, camposHtml, onGuardar) {
+      document.getElementById('modal').innerHTML = `
+        <h3>${titulo}</h3>
+        ${camposHtml}
+        <p class="error-message" id="modal-error"></p>
+        <div class="modal-acciones">
+          <button type="button" id="modal-guardar">Guardar</button>
+          <button type="button" class="btn-secondary" id="modal-cancelar">Cancelar</button>
+        </div>`;
+      $backdrop.classList.add('abierto');
+      document.getElementById('modal-cancelar').addEventListener('click', cerrarModal);
+      document.getElementById('modal-guardar').addEventListener('click', onGuardar);
+    }
+    $backdrop.addEventListener('click', (e) => { if (e.target === $backdrop) cerrarModal(); });
+
+    document.getElementById('nuevo-cliente-btn').addEventListener('click', () => {
+      abrirModal('Nuevo cliente',
+        `<div class="form-row">${campo('cl-nombre', 'Nombre o razón social *')}${campo('cl-rut', 'RUT')}</div>
+         <div class="form-row">${campo('cl-tel', 'Teléfono', 'tel')}${campo('cl-email', 'Email', 'email')}</div>
+         ${campo('cl-dir', 'Dirección')}`,
+        async () => {
+          const nombre = val('m-cl-nombre');
+          if (!nombre) { modalError('Ingresa el nombre.'); return; }
+          const { data, error } = await supabaseClient.from('clientes')
+            .insert({ nombre, rut: val('m-cl-rut'), telefono: val('m-cl-tel'), email: val('m-cl-email'), direccion: val('m-cl-dir') })
+            .select('id, nombre, rut, telefono, email').single();
+          if (error) { modalError('Error: ' + error.message); return; }
+          clientesCache.push(data); clientesCache.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+          poblarClientes(data.id); actualizarVehiculos();
+          cerrarModal();
+        });
+    });
+
+    document.getElementById('nuevo-vehiculo-btn').addEventListener('click', () => {
+      const clienteId = document.getElementById('cliente_id').value;
+      if (!clienteId) { alert('Primero selecciona (o crea) el cliente al que pertenece el vehículo.'); return; }
+      const cli = clientesCache.find(c => c.id === clienteId);
+      abrirModal(`Nuevo vehículo de ${esc(cli ? cli.nombre : '')}`,
+        `<div class="form-row">${campo('v-pat', 'Patente *', 'text', 'style="text-transform:uppercase;"')}${campo('v-marca', 'Marca')}${campo('v-modelo', 'Modelo')}</div>
+         <div class="form-row">${campo('v-anio', 'Año', 'number')}${campo('v-km', 'Kilometraje', 'number')}</div>`,
+        async () => {
+          const patente = (val('m-v-pat') || '').toUpperCase();
+          if (!patente) { modalError('Ingresa la patente.'); return; }
+          const { data, error } = await supabaseClient.from('vehiculos')
+            .insert({ cliente_id: clienteId, patente, marca: val('m-v-marca'), modelo: val('m-v-modelo'), anio: val('m-v-anio'), kilometraje: val('m-v-km') })
+            .select('*').single();
+          if (error) { modalError('Error: ' + error.message); return; }
+          vehiculosCache.push(data);
+          actualizarVehiculos(data.id);
+          onVehiculoChange();
+          cerrarModal();
+        });
+    });
+
+    // ---------- Eventos e inicio ----------
+    document.getElementById('nueva-btn').addEventListener('click', () => abrirEditor(null));
+    document.getElementById('cerrar-btn').addEventListener('click', cerrarEditor);
+    document.getElementById('guardar-btn').addEventListener('click', async () => {
+      const fila = await guardarDiagnostico();
+      if (fila) document.getElementById('editor-ok').textContent = `Guardado (${fmtNumero('DIAG', fila.numero)}).`;
+    });
+    document.getElementById('agregar-item-btn').addEventListener('click', agregarItem);
+    document.getElementById('cliente_id').addEventListener('change', () => actualizarVehiculos());
+    document.getElementById('vehiculo_id').addEventListener('change', onVehiculoChange);
+    document.getElementById('item-tipo').addEventListener('change', onTipoChange);
+    document.getElementById('item-trabajo').addEventListener('change', onTrabajoChange);
+    document.getElementById('item-repuesto').addEventListener('change', onRepuestoChange);
+    document.getElementById('item-cantidad').addEventListener('input', actualizarPreviewTrabajo);
+    document.getElementById('item-horas').addEventListener('input', actualizarPreviewTrabajo);
+    document.getElementById('descuento_pct').addEventListener('input', renderTotales);
+    document.getElementById('con_iva').addEventListener('change', renderTotales);
+
+    (async () => {
+      const session = await initLayout('diagnosticos');
+      if (!session) return;
+      config = await getTallerConfig();
+
+      const [clientes, vehiculos, trabajos, repuestos] = await Promise.all([
+        supabaseClient.from('clientes').select('id, nombre, rut, telefono, email').eq('activo', true).order('nombre'),
+        supabaseClient.from('vehiculos').select('*').eq('activo', true).order('patente'),
+        supabaseClient.from('trabajos').select('*').eq('activo', true).order('nombre'),
+        supabaseClient.from('repuestos').select('*').eq('activo', true).order('nombre'),
+      ]);
+      clientesCache = clientes.data || [];
+      vehiculosCache = vehiculos.data || [];
+      trabajosCache = trabajos.data || [];
+      repuestosCache = repuestos.data || [];
+
+      poblarClientes();
+      poblarTrabajos();
+      poblarRepuestos();
+      setupCombobox('cliente-buscar', 'cliente_id', 'cliente-lista', clientesCache, c => c.nombre);
+      setupCombobox('trabajo-buscar', 'item-trabajo', 'trabajo-lista', trabajosCache, t => `${t.nombre} (${t.horas_estimadas} h)`);
+      setupCombobox('repuesto-buscar', 'item-repuesto', 'repuesto-lista', repuestosCache, r => `${r.sku ? r.sku + ' · ' : ''}${r.nombre}`);
+
+      await cargarDiagnosticos();
+    })();
+  </script>
+</body>
+</html>

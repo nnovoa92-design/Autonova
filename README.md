@@ -14,6 +14,7 @@ estático (Netlify, Vercel, Cloudflare Pages).
 |---|---|
 | `index.html` | Login (Supabase Auth) |
 | `pages/dashboard.html` | KPIs: OTs activas, cotizaciones pendientes, stock bajo, horas e ingresos del mes |
+| `pages/diagnosticos.html` | Diagnóstico de un vehículo sin cotización ni OT: motivo de consulta, revisión (Óptimo/Observación con notas y fotos), conclusión, trabajos recomendados con valor estimado e informe PDF. Se convierte en cotización y/o OT; desde ahí manda la cotización/OT y el diagnóstico las muestra (requiere `sql/actualizacion-v32-diagnosticos.sql`) |
 | `pages/cotizaciones.html` | Crear/editar cotizaciones eligiendo **trabajos precargados** o repuestos, descuento, IVA, impresión y conversión a OT |
 | `pages/ordenes.html` | Órdenes de trabajo con estados (recepción → diagnóstico → en proceso → listo → entregado), ítems, **registro de horas por mecánico** y descuento automático de stock |
 | `pages/clientes.html` | Clientes con sus vehículos |

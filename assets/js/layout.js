@@ -2,6 +2,7 @@
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'Inicio', href: 'dashboard.html' },
   { key: 'agenda', label: 'Agenda', href: 'agenda.html' },
+  { key: 'diagnosticos', label: 'Diagnósticos', href: 'diagnosticos.html' },
   { key: 'cotizaciones', label: 'Cotizaciones', href: 'cotizaciones.html' },
   { key: 'ordenes', label: 'Órdenes de trabajo', href: 'ordenes.html' },
   { key: 'inspecciones', label: 'Inspecciones', href: 'inspecciones.html' },
