@@ -16,6 +16,14 @@
     .opcion-convertir:hover { border-color: var(--color-primary); background: #fff; color: var(--color-text); }
     .opcion-convertir strong { display: block; font-size: 0.95rem; margin-bottom: 0.15rem; }
     .opcion-convertir span { font-size: 0.82rem; color: var(--color-text-muted); }
+    .dropdown { position: relative; display: inline-block; }
+    .dropdown-menu { position: absolute; right: 0; top: 100%; background: #fff; border: 1px solid #ddd; border-radius: 4px; min-width: 190px; z-index: 10; display: none; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .dropdown-menu.arriba { top: auto; bottom: 100%; right: auto; left: 0; }
+    .dropdown-menu.abierto { display: block; }
+    .dropdown-menu .dropdown-item { display: block; width: 100%; text-align: left; padding: 8px 12px; border: none; border-radius: 0; background: none; cursor: pointer; color: var(--color-text); font-weight: 400; }
+    .dropdown-menu .dropdown-item + .dropdown-item { border-top: 1px solid #eee; }
+    .dropdown-menu .dropdown-item:hover { background: #f5f5f5; color: var(--color-text); }
+    .dropdown-nota { padding: 6px 12px; font-size: 0.72rem; color: var(--color-text-muted); border-top: 1px solid #eee; }
   </style>
 </head>
 <body>
@@ -176,6 +184,7 @@
           <div style="margin-top:1.25rem; display:flex; gap:0.5rem; flex-wrap:wrap;">
             <button type="button" id="guardar-btn">Guardar diagnóstico</button>
             <button type="button" id="informe-btn" class="btn-secondary">📄 Informe PDF</button>
+            <span id="compartir-editor"></span>
             <button type="button" id="convertir-btn" class="btn-secondary">🔁 Convertir…</button>
             <button type="button" id="cerrar-btn" class="btn-secondary">Cerrar</button>
           </div>
@@ -610,9 +619,9 @@
           : `Este diagnóstico ya tiene la <strong>cotización ${fmtNumero('COT', c.numero)}</strong> (${esc(c.estado)}).`}
         Los trabajos, el descuento y el IVA ahora se editan allí; el informe de este diagnóstico se actualiza solo.
         <div style="margin-top:0.5rem; display:flex; gap:0.5rem; flex-wrap:wrap;">
-          ${o ? '<a href="ordenes.html" class="btn btn-secondary" style="text-decoration:none;">Ver órdenes de trabajo</a>'
+          ${o ? `<a href="ordenes.html?id=${o.id}" class="btn btn-secondary" style="text-decoration:none;">Ver ${fmtNumero('OT', o.numero)}</a>`
               : '<button type="button" id="crear-ot-btn">Crear OT ahora</button>'}
-          <a href="cotizaciones.html" class="btn btn-secondary" style="text-decoration:none;">Ver cotizaciones</a>
+          <a href="cotizaciones.html?id=${c.id}" class="btn btn-secondary" style="text-decoration:none;">Ver ${fmtNumero('COT', c.numero)}</a>
         </div>
       </div>`;
       const crearOt = document.getElementById('crear-ot-btn');
@@ -651,6 +660,7 @@
       document.getElementById('con_iva').disabled = bloqueado;
       document.getElementById('convertir-btn').style.display = bloqueado ? 'none' : '';
 
+      document.getElementById('compartir-editor').innerHTML = menuCompartirHTML(diagActual.id, true);
       renderEstadoConversion();
       renderHallazgos();
       onTipoChange();
@@ -755,6 +765,7 @@
           <td class="table-actions">
             <button type="button" class="btn-secondary abrir-btn" data-id="${d.id}">Abrir</button>
             <button type="button" class="btn-secondary informe-fila-btn" data-id="${d.id}">📄 Informe</button>
+            ${menuCompartirHTML(d.id, false)}
             <button type="button" class="btn-danger eliminar-btn" data-id="${d.id}">Eliminar</button>
           </td>
         </tr>`;
@@ -855,6 +866,111 @@
       const fila = await guardarDiagnostico();   // el informe sale de lo guardado: lo que ves es lo que queda registrado
       if (!fila) return;
       abrirVentanaImpresion(construirInforme(fila), fmtNumero('DIAG', fila.numero));
+    });
+
+    // ---------- Compartir con el cliente (link público, WhatsApp, correo) ----------
+    function linkPublicoDiagnostico(id) {
+      return `${window.location.origin}/diagnostico.html?id=${id}`;
+    }
+
+    function menuCompartirHTML(id, arriba) {
+      return `<div class="dropdown">
+        <button type="button" class="btn-secondary compartir-btn" data-id="${id}">📤 Compartir</button>
+        <div class="dropdown-menu${arriba ? ' arriba' : ''}">
+          <button type="button" class="dropdown-item compartir-accion" data-accion="whatsapp" data-id="${id}">📱 WhatsApp</button>
+          <button type="button" class="dropdown-item compartir-accion" data-accion="correo" data-id="${id}">✉️ Correo</button>
+          <button type="button" class="dropdown-item compartir-accion" data-accion="link" data-id="${id}">🔗 Copiar link</button>
+          <div class="dropdown-nota">El cliente ve lo último guardado.</div>
+        </div>
+      </div>`;
+    }
+
+    function descripcionVehiculo(d) {
+      const v = d.vehiculos;
+      return v ? `su vehículo ${v.patente} (${[v.marca, v.modelo].filter(Boolean).join(' ')})` : 'su vehículo';
+    }
+
+    // Resumen corto para el mensaje: puntos con observación y total estimado
+    function resumenParaMensaje(d, formatoItem) {
+      const obs = (d.hallazgos || []).filter(h => h.estado === 'observacion').map(h => h.item);
+      const lineas = [];
+      if (obs.length) {
+        lineas.push('Puntos con observación:');
+        obs.slice(0, 6).forEach(o => lineas.push(formatoItem(o)));
+        if (obs.length > 6) lineas.push(formatoItem(`y ${obs.length - 6} más (ver informe)`));
+      }
+      const t = totalesDe(d);
+      if (itemsEfectivos(d).length) {
+        lineas.push(`Total estimado de los trabajos recomendados: ${fmtMoneda(t.total)} (${t.conIva ? 'IVA incluido' : 'sin IVA'}).`);
+      }
+      return lineas.join('\n');
+    }
+
+    function compartirWhatsApp(d) {
+      const tel = d.clientes && d.clientes.telefono;
+      if (!tel) { alert('El cliente no tiene teléfono registrado.'); return; }
+      const resumen = resumenParaMensaje(d, t => `• ${t}`);
+      const mensaje =
+        `Hola ${d.clientes.nombre}, le saluda ${config.nombre}.\n` +
+        `Revisamos ${descripcionVehiculo(d)} y le enviamos el informe de diagnóstico ${fmtNumero('DIAG', d.numero)}.\n` +
+        (resumen ? resumen + '\n' : '') +
+        `Puede ver el informe completo, con fotos, aquí: ${linkPublicoDiagnostico(d.id)}`;
+      abrirEnlace(linkWhatsApp(tel, mensaje));
+    }
+
+    function compartirCorreo(d) {
+      const email = d.clientes && d.clientes.email;
+      if (!email) { alert('El cliente no tiene correo registrado.'); return; }
+      const resumen = resumenParaMensaje(d, t => `- ${t}`);
+      const asunto = `Informe de diagnóstico ${fmtNumero('DIAG', d.numero)} - ${config.nombre}`;
+      const cuerpo =
+        `Hola ${d.clientes.nombre},\n\n` +
+        `En ${config.nombre} revisamos ${descripcionVehiculo(d)} y preparamos el informe de diagnóstico ${fmtNumero('DIAG', d.numero)}.\n\n` +
+        (resumen ? resumen + '\n\n' : '') +
+        `Puede ver el informe completo, con fotos, aquí:\n${linkPublicoDiagnostico(d.id)}\n\n` +
+        `Saludos,\n${config.nombre}`;
+      abrirEnlace(linkGmail(email, asunto, cuerpo));
+    }
+
+    async function copiarLinkDiagnostico(d) {
+      const url = linkPublicoDiagnostico(d.id);
+      try {
+        await navigator.clipboard.writeText(url);
+        alert('Link copiado:\n' + url);
+      } catch {
+        prompt('Copia el link manualmente:', url);
+      }
+    }
+
+    function cerrarMenusCompartir() {
+      document.querySelectorAll('.dropdown-menu.abierto').forEach(m => m.classList.remove('abierto'));
+    }
+
+    document.addEventListener('click', (e) => {
+      const toggle = e.target.closest('.compartir-btn');
+      const accion = e.target.closest('.compartir-accion');
+      if (toggle) {
+        const menu = toggle.parentElement.querySelector('.dropdown-menu');
+        const estabaAbierto = menu.classList.contains('abierto');
+        cerrarMenusCompartir();
+        if (!estabaAbierto) menu.classList.add('abierto');
+        return;
+      }
+      if (accion) {
+        cerrarMenusCompartir();
+        const id = accion.dataset.id;
+        if (diagActual && diagActual.id === id && diagActual.esNuevo) {
+          alert('Primero guarda el diagnóstico para poder compartirlo.');
+          return;
+        }
+        const d = diagnosticosCache.find(x => x.id === id);
+        if (!d) { alert('Guarda el diagnóstico para poder compartirlo.'); return; }
+        if (accion.dataset.accion === 'whatsapp') compartirWhatsApp(d);
+        else if (accion.dataset.accion === 'correo') compartirCorreo(d);
+        else copiarLinkDiagnostico(d);
+        return;
+      }
+      cerrarMenusCompartir();
     });
 
     // ---------- Convertir en cotización y/o OT ----------
@@ -1083,6 +1199,13 @@
       setupCombobox('repuesto-buscar', 'item-repuesto', 'repuesto-lista', repuestosCache, r => `${r.sku ? r.sku + ' · ' : ''}${r.nombre}`);
 
       await cargarDiagnosticos();
+
+      // Enlace directo desde cotización/OT: diagnosticos.html?id=...
+      const idParam = new URLSearchParams(window.location.search).get('id');
+      if (idParam) {
+        const d = diagnosticosCache.find(x => x.id === idParam);
+        if (d) abrirEditor(d);
+      }
     })();
   </script>
 </body>

@@ -751,10 +751,15 @@
       const o = ordenActual;
       document.getElementById('detalle-title').textContent = fmtNumero('OT', o.numero);
       const vehiculo = o.vehiculos ? `${o.vehiculos.patente} · ${[o.vehiculos.marca, o.vehiculos.modelo].filter(Boolean).join(' ')}` : 'Sin vehículo';
+      const origen = o.cotizacion_id ? diagPorCotizacion[o.cotizacion_id] : null;
       document.getElementById('detalle-info').innerHTML =
         `<strong>${o.clientes ? o.clientes.nombre : '–'}</strong> · ${vehiculo}` +
         ` · Ingreso: ${fmtFechaHora(o.fecha_ingreso)}` +
-        (o.km_ingreso ? ` · ${Number(o.km_ingreso).toLocaleString('es-CL')} km` : '');
+        (o.km_ingreso ? ` · ${Number(o.km_ingreso).toLocaleString('es-CL')} km` : '') +
+        (origen
+          ? `<br>Origen: <a href="diagnosticos.html?id=${origen.id}">${fmtNumero('DIAG', origen.numero)}</a>` +
+            (origen.cotizaciones ? ` → <a href="cotizaciones.html?id=${origen.cotizaciones.id}">${fmtNumero('COT', origen.cotizaciones.numero)}</a>` : '')
+          : '');
       document.getElementById('detalle-diagnostico').value = o.diagnostico ?? '';
       // Si no hay garantía especial guardada, se sugiere según la Política de
       // Servicio de cada categoría presente en la OT; el usuario la confirma o ajusta.
@@ -1248,7 +1253,19 @@
       });
     }
 
+    // Diagnóstico del que nació la OT (vía su cotización). Se consulta aparte para
+    // que las OT sigan funcionando aunque no exista la tabla de diagnósticos.
+    let diagPorCotizacion = {};
+    async function cargarOrigenesDiagnostico() {
+      diagPorCotizacion = {};
+      const { data, error } = await supabaseClient.from('diagnosticos')
+        .select('id, numero, cotizacion_id, cotizaciones(id, numero)')
+        .not('cotizacion_id', 'is', null);
+      if (!error) (data || []).forEach(d => { diagPorCotizacion[d.cotizacion_id] = d; });
+    }
+
     async function loadOrdenes() {
+      await cargarOrigenesDiagnostico();
       const { data, error } = await supabaseClient
         .from('ordenes')
         .select('*, clientes(nombre, telefono, email, rut), vehiculos(patente, marca, modelo, anio), orden_items(*), registro_horas(*), pagos(*), abonos(*), ordenes_historial(*)')
@@ -1702,6 +1719,10 @@
 
       onTipoChange();
       await loadOrdenes();
+
+      // Enlace directo desde un diagnóstico o cotización: ordenes.html?id=...
+      const idParam = new URLSearchParams(window.location.search).get('id');
+      if (idParam && ordenesCache.some(o => o.id === idParam)) await abrirDetalle(idParam);
     })();
   </script>
 </body>

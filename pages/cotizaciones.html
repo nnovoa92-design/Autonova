@@ -19,6 +19,7 @@
         <!-- Editor -->
         <div class="card" id="editor-card" style="display:none;">
           <h2 id="editor-title" style="margin-top:0;">Nueva cotización</h2>
+          <div id="origen-diagnostico"></div>
           <input type="hidden" id="cotizacion-id" />
           <div class="form-row">
             <div class="form-group">
@@ -355,9 +356,25 @@
     }
 
     // ---------- Editor ----------
+    // Diagnóstico del que nació la cotización (si lo hay): se consulta aparte para
+    // que Cotizaciones siga funcionando aunque no exista la tabla de diagnósticos.
+    let diagPorCotizacion = {};
+    async function cargarOrigenesDiagnostico() {
+      diagPorCotizacion = {};
+      const { data, error } = await supabaseClient.from('diagnosticos').select('id, numero, cotizacion_id').not('cotizacion_id', 'is', null);
+      if (!error) (data || []).forEach(d => { diagPorCotizacion[d.cotizacion_id] = d; });
+    }
+    function enlaceDiagnostico(cotId, estilo) {
+      const d = diagPorCotizacion[cotId];
+      return d ? `<a href="diagnosticos.html?id=${d.id}" title="Ver el diagnóstico de origen" style="${estilo || ''}">← ${fmtNumero('DIAG', d.numero)}</a>` : '';
+    }
+
     function abrirEditor(cot) {
       document.getElementById('editor-card').style.display = 'block';
       document.getElementById('editor-error').textContent = '';
+      const enlaceOrigen = cot ? enlaceDiagnostico(cot.id) : '';
+      document.getElementById('origen-diagnostico').innerHTML = enlaceOrigen
+        ? `<p style="margin:0 0 0.75rem; font-size:0.88rem; color:var(--color-text-muted);">Creada desde el diagnóstico ${enlaceOrigen}</p>` : '';
       if (cot) {
         document.getElementById('editor-title').textContent = `Editar ${fmtNumero('COT', cot.numero)}`;
         document.getElementById('cotizacion-id').value = cot.id;
@@ -617,8 +634,8 @@
         const puedeConvertir = c.estado === 'aprobada';
         const editable = c.estado !== 'convertida';
         return `
-        <tr>
-          <td style="white-space:nowrap;">${fmtNumero('COT', c.numero)}</td>
+        <tr id="cot-${c.id}">
+          <td style="white-space:nowrap;">${fmtNumero('COT', c.numero)}${diagPorCotizacion[c.id] ? '<br>' + enlaceDiagnostico(c.id, 'font-size:0.75rem;') : ''}</td>
           <td style="white-space:nowrap;">${fmtFecha(c.fecha)}</td>
           <td>${c.clientes ? c.clientes.nombre : '–'}</td>
           <td style="white-space:nowrap;">${vehiculo}</td>
@@ -930,6 +947,7 @@
         return;
       }
       cotizacionesCache = data;
+      await cargarOrigenesDiagnostico();
       renderCotizaciones();
     }
 
@@ -1104,6 +1122,20 @@
 
       onTipoChange();
       await loadCotizaciones();
+
+      // Enlace directo desde un diagnóstico u OT: cotizaciones.html?id=...
+      const idParam = new URLSearchParams(window.location.search).get('id');
+      const cotParam = idParam && cotizacionesCache.find(c => c.id === idParam);
+      if (cotParam) {
+        if (cotParam.estado !== 'convertida') abrirEditor(cotParam);   // las convertidas ya no se editan: se resaltan en el listado
+        else {
+          const fila = document.getElementById('cot-' + cotParam.id);
+          if (fila) {
+            fila.scrollIntoView({ block: 'center' });
+            fila.style.background = '#fff8d6';
+          }
+        }
+      }
     })();
   </script>
 </body>

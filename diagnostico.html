@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Informe de diagnóstico · Autonova</title>
+  <link rel="stylesheet" href="assets/css/style.css" />
+  <style>
+    .resumen-rev { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0 0 0.75rem; }
+    .resumen-rev span { padding: 0.25rem 0.7rem; border-radius: 999px; font-size: 0.82rem; font-weight: 600; }
+    .resumen-rev .ok { background: #e6f4ea; color: #1b6e3c; }
+    .resumen-rev .obs { background: #fdecea; color: #a93b33; }
+    .rev-item { border: 1px solid #e5e5e5; border-left-width: 4px; border-radius: 6px; padding: 0.6rem 0.8rem; margin-bottom: 0.5rem; background: #fff; }
+    .rev-item.rev-optimo { border-left-color: #1b6e3c; }
+    .rev-item.rev-observacion { border-left-color: #a93b33; background: #fffaf9; }
+    .rev-item.rev-sin { border-left-color: #bbb; }
+    .rev-cab { display: flex; justify-content: space-between; align-items: baseline; gap: 0.75rem; flex-wrap: wrap; }
+    .rev-cab strong { font-size: 0.95rem; }
+    .rev-estado { font-size: 0.8rem; font-weight: 700; white-space: nowrap; }
+    .rev-optimo .rev-estado { color: #1b6e3c; }
+    .rev-observacion .rev-estado { color: #a93b33; }
+    .rev-nota { margin: 0.35rem 0 0; font-size: 0.9rem; color: var(--color-text); }
+    .rev-fotos { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
+    .rev-fotos img { width: 96px; height: 72px; object-fit: cover; border-radius: 4px; border: 1px solid #ccc; display: block; }
+    .caja-conclusion { background: #eef4ff; border-left: 3px solid #1d4ed8; padding: 0.8rem 1rem; border-radius: 6px; }
+    .siguiente-paso { background: #f4f9f5; border: 1px solid #cfe6d4; border-radius: 8px; padding: 1rem; margin-top: 1.5rem; text-align: center; }
+    .siguiente-paso p { margin: 0 0 0.75rem; }
+    .acciones-cliente { display: flex; gap: 0.6rem; flex-wrap: wrap; justify-content: center; }
+    .acciones-cliente a, .acciones-cliente button { text-decoration: none; display: inline-block; padding: 0.55rem 1.1rem; border-radius: 4px; font-size: 0.92rem; cursor: pointer; border: none; }
+    .tabla-trabajos td, .tabla-trabajos th { padding: 0.55rem 0.5rem; }
+    @media (max-width: 560px) {
+      .tabla-trabajos th:nth-child(3), .tabla-trabajos td:nth-child(3) { display: none; }
+    }
+    @media print {
+      .no-print { display: none !important; }
+      .rev-item { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body class="portal-page">
+  <div class="brand-band" style="max-width:760px; width:100%; margin-bottom:1rem;">
+    <img src="assets/img/logo.png" alt="Autonova" onerror="this.style.display='none'" />
+    <div class="brand-band-text">
+      <div class="brand-band-name" id="taller-nombre">Autonova</div>
+      <div class="brand-band-sub">Informe de diagnóstico</div>
+    </div>
+  </div>
+
+  <div class="portal-card" id="contenido">
+    <p>Cargando informe...</p>
+  </div>
+
+  <script src="assets/vendor/supabase.min.js"></script>
+  <script src="assets/js/supabaseClient.js"></script>
+  <script src="assets/js/layout.js"></script>
+  <script>
+    const diagId = new URLSearchParams(window.location.search).get('id');
+
+    const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const escMulti = (s) => esc(s).replace(/\n/g, '<br>');
+    const urlSegura = (u) => /^https?:\/\//i.test(String(u || ''));
+
+    function categoriaItem(i) {
+      const sub = (i.tipo === 'otro' && i.tipo_otro) ? i.tipo_otro : i.tipo;
+      if (sub === 'mano_obra') return 'mano_obra';
+      if (sub === 'repuesto' || sub === 'insumo_vehiculo') return 'repuestos';
+      if (sub === 'insumo_taller' || sub === 'insumo') return 'insumo_taller';
+      return 'trabajo_externo';
+    }
+
+    function calcular(d) {
+      const ivaPct = Number((d.taller && d.taller.iva_pct) ?? 19);
+      const items = d.items || [];
+      const sumaCat = (cat) => items.filter(i => categoriaItem(i) === cat).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
+      const mo = sumaCat('mano_obra'), rep = sumaCat('repuestos'), ext = sumaCat('trabajo_externo'), ins = sumaCat('insumo_taller');
+      const subtotal = mo + rep + ext + ins;
+      const descuento = subtotal * (Number(d.descuento_pct || 0) / 100);
+      const neto = subtotal - descuento;
+      const conIva = d.con_iva !== false;
+      const iva = conIva ? neto * (ivaPct / 100) : 0;
+      const factor = subtotal > 0 ? neto / subtotal : 1;
+      return {
+        ivaPct, subtotal, descuento, neto, iva, conIva, total: neto + iva,
+        subtotalMO: mo * factor, subtotalRepuestos: rep * factor,
+        subtotalTrabajoExterno: ext * factor, subtotalInsumosTaller: ins * factor,
+      };
+    }
+
+    const CATEGORIAS_DESGLOSE = [
+      { key: 'subtotalMO', label: 'Mano de obra', color: '#1d4ed8' },
+      { key: 'subtotalRepuestos', label: 'Repuestos', color: '#6b3fa0' },
+      { key: 'subtotalTrabajoExterno', label: 'Trabajo externo', color: '#4b5563' },
+      { key: 'subtotalInsumosTaller', label: 'Insumos de taller', color: '#92600a' },
+    ];
+    function renderDesgloseHTML(t, maxWidth) {
+      const cats = CATEGORIAS_DESGLOSE.filter(c => t[c.key] > 0);
+      if (!cats.length) return '';
+      const totalCats = cats.reduce((s, c) => s + t[c.key], 0);
+      const barra = cats.map(c => `<div style="width:${(t[c.key] / totalCats * 100).toFixed(2)}%; background:${c.color};"></div>`).join('');
+      const filas = cats.map(c => `
+        <div class="fila" style="font-size:0.85rem; color:var(--color-text-muted);">
+          <span><span class="punto" style="background:${c.color};"></span>${c.label}</span>
+          <span>${fmtMoneda(t[c.key])}</span>
+        </div>`).join('');
+      return `<div class="desglose-categorias" style="max-width:${maxWidth || 320}px;"><div class="titulo">Desglose por categoría</div><div class="barra">${barra}</div>${filas}</div>`;
+    }
+
+    // ---------- Revisión del vehículo ----------
+    function renderRevision(hallazgos) {
+      const revisados = (hallazgos || []).filter(h => h.estado || h.nota || (h.fotos || []).length);
+      if (!revisados.length) return '';
+      const peso = (h) => h.estado === 'observacion' ? 0 : (h.estado === 'optimo' ? 2 : 1);   // lo que requiere atención, primero
+      const ordenados = revisados.map((h, i) => ({ h, i })).sort((a, b) => peso(a.h) - peso(b.h) || a.i - b.i).map(x => x.h);
+      const nOpt = revisados.filter(h => h.estado === 'optimo').length;
+      const nObs = revisados.filter(h => h.estado === 'observacion').length;
+
+      const tarjetas = ordenados.map(h => {
+        const clase = h.estado === 'observacion' ? 'rev-observacion' : h.estado === 'optimo' ? 'rev-optimo' : 'rev-sin';
+        const etiqueta = h.estado === 'observacion' ? '⚠ Observación' : h.estado === 'optimo' ? '✓ Óptimo' : '';
+        const fotos = (h.fotos || []).filter(urlSegura);
+        return `<div class="rev-item ${clase}">
+          <div class="rev-cab"><strong>${esc(h.item)}</strong>${etiqueta ? `<span class="rev-estado">${etiqueta}</span>` : ''}</div>
+          ${h.nota ? `<p class="rev-nota">${escMulti(h.nota)}</p>` : ''}
+          ${fotos.length ? `<div class="rev-fotos">${fotos.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" loading="lazy" alt="Foto de ${esc(h.item)}" /></a>`).join('')}</div>` : ''}
+        </div>`;
+      }).join('');
+
+      return `
+        <h3 style="margin:1.5rem 0 0.6rem;">Revisión del vehículo</h3>
+        <div class="resumen-rev">
+          ${nOpt ? `<span class="ok">✓ ${nOpt} en buen estado</span>` : ''}
+          ${nObs ? `<span class="obs">⚠ ${nObs} con observación</span>` : ''}
+        </div>
+        ${tarjetas}`;
+    }
+
+    // ---------- Qué sigue ----------
+    function renderSiguientePaso(d) {
+      const taller = d.taller || {};
+      const veh = d.vehiculo;
+      const mensajeConsulta = `Hola, revisé el informe de diagnóstico ${fmtNumero('DIAG', d.numero)}${veh ? ` de mi vehículo ${veh.patente}` : ''} y quisiera consultar.`;
+      const waTaller = taller.telefono ? linkWhatsApp(taller.telefono, mensajeConsulta) : null;
+      const btnWa = waTaller
+        ? `<a href="${esc(waTaller)}" target="_blank" rel="noopener" style="background:#25d366; color:#fff;">💬 Consultar por WhatsApp</a>` : '';
+
+      if (d.orden) {
+        const seguimiento = veh
+          ? `<a href="portal.html?patente=${encodeURIComponent(veh.patente)}&ot=${encodeURIComponent(d.orden.numero)}" style="background:var(--color-primary); color:#fff;">Ver el avance de la reparación</a>` : '';
+        return `<div class="siguiente-paso no-print">
+          <p><strong>Su vehículo ya está en taller:</strong> ${fmtNumero('OT', d.orden.numero)} ${badgeEstado(d.orden.estado, ESTADOS_ORDEN)}</p>
+          <div class="acciones-cliente">${seguimiento}${btnWa}</div>
+        </div>`;
+      }
+
+      const cot = d.cotizacion;
+      if (cot && cot.estado === 'enviada') {
+        return `<div class="siguiente-paso no-print">
+          <p>Le enviamos la cotización <strong>${fmtNumero('COT', cot.numero)}</strong> con estos trabajos. Puede revisarla y aprobarla en línea.</p>
+          <div class="acciones-cliente">
+            <a href="cotizacion.html?id=${encodeURIComponent(cot.id)}" style="background:var(--color-primary); color:#fff;">Revisar y aprobar la cotización</a>${btnWa}
+          </div>
+        </div>`;
+      }
+      if (cot && (cot.estado === 'aprobada' || cot.estado === 'rechazada' || cot.estado === 'convertida')) {
+        return `<div class="siguiente-paso no-print">
+          <p>Cotización <strong>${fmtNumero('COT', cot.numero)}</strong>: ${badgeEstado(cot.estado, ESTADOS_COTIZACION)}</p>
+          <div class="acciones-cliente">
+            <a href="cotizacion.html?id=${encodeURIComponent(cot.id)}" style="background:var(--color-primary); color:#fff;">Ver cotización</a>
+            ${cot.estado === 'aprobada' ? `<a href="reservar.html" style="background:#1b5e20; color:#fff;">📅 Agendar cita online</a>` : ''}${btnWa}
+          </div>
+        </div>`;
+      }
+      // Sin cotización (o aún en borrador, que el cliente no debe ver)
+      return `<div class="siguiente-paso no-print">
+        <p>¿Quiere que realicemos los trabajos recomendados? Agende su cita o escríbanos.</p>
+        <div class="acciones-cliente">
+          <a href="reservar.html" style="background:#1b5e20; color:#fff;">📅 Agendar cita online</a>${btnWa}
+        </div>
+      </div>`;
+    }
+
+    function render(d) {
+      if (d.taller && d.taller.nombre) document.getElementById('taller-nombre').textContent = d.taller.nombre;
+      const t = calcular(d);
+      const items = d.items || [];
+      const veh = d.vehiculo;
+      const taller = d.taller || {};
+      const desglose = renderDesgloseHTML(t, 300);
+
+      document.getElementById('contenido').innerHTML = `
+        <div style="max-width:680px; margin:0 auto;">
+          <div style="text-align:center; margin-bottom:1.25rem;">
+            <h2 style="margin:0 0 0.75rem;">INFORME DE DIAGNÓSTICO ${fmtNumero('DIAG', d.numero)}</h2>
+            <p style="color:var(--color-text-muted); margin:0; font-size:0.9rem;">
+              <strong>${esc(d.cliente ? d.cliente.nombre : '–')}</strong>
+              ${veh ? `<br>${esc(veh.patente)} · ${esc([veh.marca, veh.modelo, veh.anio].filter(Boolean).join(' '))}${d.km ? ` · ${Number(d.km).toLocaleString('es-CL')} km` : ''}` : ''}
+              <br><span style="font-size:0.85rem;">Fecha: ${fmtFecha(d.fecha)}</span>
+            </p>
+          </div>
+
+          ${d.motivo ? `<p style="background:#f9f9f9; padding:0.75rem 1rem; border-left:3px solid var(--color-primary); border-radius:4px;"><strong>Motivo de consulta:</strong> ${escMulti(d.motivo)}</p>` : ''}
+
+          ${renderRevision(d.hallazgos)}
+
+          ${d.conclusion ? `<h3 style="margin:1.5rem 0 0.6rem;">Diagnóstico</h3><div class="caja-conclusion">${escMulti(d.conclusion)}</div>` : ''}
+
+          ${items.length ? `
+          <h3 style="margin:1.5rem 0 0.6rem;">Trabajos recomendados</h3>
+          <table class="tabla-trabajos" style="width:100%; border-collapse:collapse; margin-bottom:1rem;">
+            <thead>
+              <tr style="border-bottom:2px solid var(--color-primary);">
+                <th style="text-align:left;">Descripción</th>
+                <th style="text-align:center; width:70px;">Cant.</th>
+                <th style="text-align:right; width:100px;">P. unitario</th>
+                <th style="text-align:right; width:100px;">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${items.map((i, idx) => `<tr style="border-bottom:${idx === items.length - 1 ? '2px solid var(--color-primary)' : '1px solid #eee'};">
+                <td>${esc(i.descripcion)}</td>
+                <td style="text-align:center;">${Number(i.cantidad).toLocaleString('es-CL')}</td>
+                <td style="text-align:right; white-space:nowrap;">${fmtMoneda(i.precio_unitario)}</td>
+                <td style="text-align:right; white-space:nowrap;"><strong>${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</strong></td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+
+          <div style="max-width:300px; margin-left:auto;">
+            ${t.descuento > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid #eee;"><span>Descuento (${Number(d.descuento_pct)}%)</span><span style="color:#c33;">-${fmtMoneda(t.descuento)}</span></div>` : ''}
+            <div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid #eee;"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
+            ${t.conIva ? `<div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:2px solid var(--color-primary);"><span>IVA ${t.ivaPct}%</span><span>${fmtMoneda(t.iva)}</span></div>` : ''}
+            <div style="display:flex; justify-content:space-between; padding:0.6rem 0; font-weight:700; font-size:1.1rem;"><span>TOTAL ESTIMADO</span><span style="color:var(--color-primary);">${fmtMoneda(t.total)}</span></div>
+          </div>
+          ${desglose ? `<div style="margin-top:0.5rem;">${desglose}</div>` : ''}
+          <p style="font-size:0.8rem; color:var(--color-text-muted); margin-top:0.75rem;">Valores referenciales según lo observado a la fecha del informe. Cualquier hallazgo adicional se informará y cotizará antes de realizarse.</p>` : ''}
+
+          ${renderSiguientePaso(d)}
+
+          <div class="no-print" style="text-align:center; margin-top:1rem;">
+            <button type="button" class="btn-secondary" onclick="window.print()">🖨 Imprimir / Guardar PDF</button>
+          </div>
+
+          <div style="text-align:center; color:var(--color-text-muted); font-size:0.8rem; margin-top:2rem; padding-top:1rem; border-top:1px solid #eee;">
+            <p style="margin:0.25rem 0;"><strong>${esc(taller.nombre || '')}</strong></p>
+            <p style="margin:0.1rem 0; font-size:0.75rem;">${esc(taller.direccion ?? '')}${taller.direccion && taller.telefono ? ' · ' : ''}${esc(taller.telefono ?? '')}</p>
+          </div>
+          ${taller.politica_inspeccion_texto ? `<div style="margin-top:1.5rem; background:#fef3c7; padding:0.75rem 1rem; border-radius:6px; font-size:0.78rem; white-space:pre-wrap;">${esc(taller.politica_inspeccion_texto)}</div>` : ''}
+          ${taller.politicas_generales_texto ? `<div style="margin-top:1.5rem; padding-top:0.75rem; border-top:1px solid #eee; font-size:0.7rem; color:#999; white-space:pre-wrap;">${esc(taller.politicas_generales_texto)}</div>` : ''}
+        </div>`;
+    }
+
+    (async () => {
+      const contenido = document.getElementById('contenido');
+      if (!diagId) {
+        contenido.innerHTML = '<p class="error-message">Link inválido: falta el identificador del informe.</p>';
+        return;
+      }
+      const { data, error } = await supabaseClient.rpc('portal_consultar_diagnostico', { p_id: diagId });
+      if (error || !data) {
+        contenido.innerHTML = '<p class="error-message">No encontramos este informe. Verifica el link o contacta al taller.</p>';
+        return;
+      }
+      render(data);
+    })();
+  </script>
+</body>
+</html>
