@@ -956,6 +956,23 @@
     }
 
 
+    // Trabajos y repuestos nuevos o editados en el catálogo/inventario aparecen aquí al volver
+    // a la pestaña, sin recargar la página ni perder lo que se está editando.
+    async function recargarCatalogo() {
+      const [t, r] = await Promise.all([
+        supabaseClient.from('trabajos').select('*').eq('activo', true).order('nombre'),
+        supabaseClient.from('repuestos').select('*').eq('activo', true).order('nombre'),
+      ]);
+      if (t.error || r.error) return;
+      const selT = document.getElementById('item-trabajo'), selR = document.getElementById('item-repuesto');
+      const vT = selT.value, vR = selR.value;
+      reemplazarEnSitio(trabajosCache, t.data);
+      reemplazarEnSitio(repuestosCache, r.data);
+      poblarTrabajos(); poblarRepuestos();
+      if (vT) selT.value = vT;
+      if (vR) selR.value = vR;
+    }
+
     // ---------- Modales "+ Nuevo" ----------
     const $backdrop = document.getElementById('modal-backdrop');
     const val = (id) => { const e = document.getElementById(id); return e && e.value.trim() ? e.value.trim() : null; };
@@ -1095,6 +1112,7 @@
       setupCombobox('repuesto-buscar', 'item-repuesto', 'repuesto-lista', repuestosCache, r => `${r.sku ? r.sku + ' · ' : ''}${r.nombre}`);
 
       onTipoChange();
+      mantenerCatalogoAlDia(recargarCatalogo);
       await loadCotizaciones();
 
       // Enlace directo desde un diagnóstico u OT: cotizaciones.html?id=...

@@ -1092,6 +1092,22 @@
       catch { prompt('Link de reserva para tus clientes:', url); }
     });
 
+    // Lista de trabajos del formulario de cita (conserva lo elegido si se vuelve a pintar)
+    function poblarTrabajosCita() {
+      const sel = document.getElementById('trabajo_id');
+      const actual = sel.value;
+      sel.innerHTML = '<option value="">Sin especificar</option>' + trabajosCache.map(t => `<option value="${t.id}">${htmlSeguro(t.nombre)}</option>`).join('');
+      sel.value = actual;
+    }
+
+    // Trabajos nuevos o editados en el catálogo aparecen aquí al volver a la pestaña, sin recargar
+    async function recargarCatalogo() {
+      const { data, error } = await supabaseClient.from('trabajos').select('*').eq('activo', true).order('nombre');
+      if (error || !data) return;
+      reemplazarEnSitio(trabajosCache, data);
+      poblarTrabajosCita();
+    }
+
     (async () => {
       const session = await initLayout('agenda');
       if (!session) return;
@@ -1120,8 +1136,8 @@
 
       document.getElementById('cliente_id').innerHTML =
         '<option value="">Sin cliente</option>' + clientesCache.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
-      document.getElementById('trabajo_id').innerHTML =
-        '<option value="">Sin especificar</option>' + trabajosCache.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('');
+      poblarTrabajosCita();
+      mantenerCatalogoAlDia(recargarCatalogo);
       document.getElementById('personal_id').innerHTML =
         '<option value="">Sin asignar</option>' + personalCache.map(p => `<option value="${p.id}">${p.nombre}</option>`).join('');
 

@@ -13,8 +13,9 @@
     }
     .slot-btn:hover { border-color: var(--color-primary); }
     .slot-btn.sel { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
-    .trab-btn { display: block; width: 100%; text-align: left; margin: 0.3rem 0; background: #fff; color: var(--color-text); border: 1px solid var(--color-border); }
-    .trab-btn.sel, .trab-btn:hover { border-color: var(--color-primary); }
+    .ayuda-servicio { color: var(--color-text-muted); font-size: 0.82rem; margin: 0.5rem 0 0; }
+    .servicio-elegido { margin: 0.6rem 0 0; padding: 0.5rem 0.75rem; background: #eef7ee; border-left: 3px solid #1b5e20; border-radius: var(--radius); font-size: 0.9rem; }
+    #otro-box { margin-top: 0.75rem; }
     .paso { margin-top: 1rem; }
     .paso[hidden] { display: none; }
     .semana-nav { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.5rem; }
@@ -41,7 +42,19 @@
       <!-- Paso 1: servicio -->
       <div class="paso" id="p-servicio">
         <h3 style="margin-top:0;">1. ¿Qué necesitas?</h3>
-        <div id="trabajos-lista"></div>
+        <div class="combobox-wrap">
+          <input type="text" id="trabajo-buscar" placeholder="Escribe para buscar: aceite, frenos, scanner..." autocomplete="off" />
+          <div class="combobox-lista" id="trabajo-lista" style="display:none; max-height:300px;"></div>
+        </div>
+        <select id="r-trabajo" style="display:none;"></select>
+        <p class="ayuda-servicio">
+          Escribe una o más palabras y te mostramos los servicios que coinciden. Si no encuentras lo que necesitas, elige <strong>«Otro»</strong> al final de la lista.
+        </p>
+        <div id="otro-box" hidden>
+          <label for="r-otro">Cuéntanos con tus palabras qué necesitas *</label>
+          <textarea id="r-otro" rows="3" maxlength="500" placeholder="Ej: ruido al girar el volante, el auto se calienta..."></textarea>
+        </div>
+        <p id="servicio-elegido" class="servicio-elegido" hidden></p>
       </div>
 
       <!-- Paso 2: día y hora (toda la semana) -->
@@ -86,7 +99,7 @@
   <script>
     const SEMANAS_MAX = 8;   // hasta cuántas semanas hacia adelante se puede reservar
     let INFO = null;
-    let selTrabajo = null, selYmd = null, selSlot = null;
+    let selTrabajo = null, selOtro = false, selYmd = null, selSlot = null;
     let semanaDesde = null, hoy = null, semanaCargada = false;
 
     // Fecha de hoy en Chile (YYYY-MM-DD), sin depender de la zona horaria del dispositivo.
@@ -101,18 +114,48 @@
 
     function mostrarPaso(id) { document.getElementById(id).hidden = false; }
 
+    const etiquetaTrabajo = (t) => `${t.nombre}${t.precio_fijo != null ? ` — ${fmtMoneda(t.precio_fijo)}` : ''}`;
+    const OPCION_OTRO = { id: '__otro__', label: 'Otro (no está en la lista)…' };
+
+    // Buscador de servicios: se escribe y la lista se va acotando (todas las palabras, sin
+    // importar tildes ni el orden). Al final siempre queda «Otro» para describirlo con palabras propias.
     function renderTrabajos() {
-      document.getElementById('trabajos-lista').innerHTML = (INFO.trabajos || []).map(t =>
-        `<button type="button" class="btn trab-btn" data-id="${t.id}">${t.nombre}${t.precio_fijo != null ? ` — ${fmtMoneda(t.precio_fijo)}` : ''}</button>`
-      ).join('') || '<p>No hay servicios disponibles.</p>';
-      document.querySelectorAll('.trab-btn').forEach(b => b.addEventListener('click', () => {
-        selTrabajo = (INFO.trabajos || []).find(t => t.id === b.dataset.id);
-        document.querySelectorAll('.trab-btn').forEach(x => x.classList.remove('sel'));
-        b.classList.add('sel');
+      INFO.trabajos = INFO.trabajos || [];
+      setupCombobox('trabajo-buscar', 'r-trabajo', 'trabajo-lista', INFO.trabajos, etiquetaTrabajo, { limite: 500, extra: OPCION_OTRO });
+      const sel = document.getElementById('r-trabajo');
+      const input = document.getElementById('trabajo-buscar');
+      const elegido = document.getElementById('servicio-elegido');
+
+      sel.addEventListener('change', () => {
+        selOtro = sel.value === OPCION_OTRO.id;
+        selTrabajo = selOtro ? null : (INFO.trabajos.find(t => t.id === sel.value) || null);
+        document.getElementById('otro-box').hidden = !selOtro;
+        elegido.hidden = !selTrabajo;
+        if (selTrabajo) elegido.innerHTML = `Servicio elegido: <strong>${htmlSeguro(etiquetaTrabajo(selTrabajo))}</strong>`;
+        if (!selTrabajo && !selOtro) return;
         mostrarPaso('p-fecha');
         if (!semanaCargada) cargarSemana();
-        document.getElementById('p-fecha').scrollIntoView({ behavior: 'smooth' });
-      }));
+        if (selOtro) document.getElementById('r-otro').focus();
+        else document.getElementById('p-fecha').scrollIntoView({ behavior: 'smooth' });
+      });
+
+      // Si vuelve a escribir en el buscador, la elección anterior ya no vale
+      input.addEventListener('input', () => {
+        selTrabajo = null; selOtro = false;
+        document.getElementById('otro-box').hidden = true;
+        elegido.hidden = true;
+      });
+
+      // Servicios nuevos del catálogo: se actualizan al abrir el buscador y al volver a la pestaña
+      input.addEventListener('focus', () => { if (Date.now() - catalogoCargadoEn > 30000) recargarServicios(); });
+      mantenerCatalogoAlDia(recargarServicios, 30);
+    }
+
+    let catalogoCargadoEn = Date.now();
+    async function recargarServicios() {
+      catalogoCargadoEn = Date.now();
+      const { data, error } = await supabaseClient.rpc('reservar_info');
+      if (!error && data && Array.isArray(data.trabajos)) reemplazarEnSitio(INFO.trabajos, data.trabajos);
     }
 
     // Toda la semana: cada día con sus horas libres, o "SIN HORAS DISPONIBLES"
@@ -170,18 +213,29 @@
       const nombre = document.getElementById('r-nombre').value.trim();
       const tel = document.getElementById('r-tel').value.trim();
       if (!nombre || !tel) { errorEl.textContent = 'Completa nombre y teléfono.'; return; }
-      if (!selTrabajo || !selYmd || !selSlot) { errorEl.textContent = 'Elige servicio, día y hora.'; return; }
+      if ((!selTrabajo && !selOtro) || !selYmd || !selSlot) { errorEl.textContent = 'Elige servicio, día y hora.'; return; }
+      const otroTexto = document.getElementById('r-otro').value.trim();
+      if (selOtro && otroTexto.length < 3) {
+        errorEl.textContent = 'Cuéntanos qué necesitas en el recuadro de «Otro».';
+        document.getElementById('r-otro').focus();
+        return;
+      }
 
       const btn = document.getElementById('reservar-btn');
       btn.disabled = true; btn.textContent = 'Reservando...';
       // Día y hora viajan por separado: el servidor los interpreta en hora de Chile
       // (no depende de la zona horaria del celular del cliente).
-      const { data, error } = await supabaseClient.rpc('reservar_cita_v2', {
+      const params = {
         p_nombre: nombre, p_telefono: tel,
         p_patente: document.getElementById('r-patente').value.trim() || null,
-        p_fecha: selYmd, p_hora: selSlot, p_trabajo_id: selTrabajo.id,
-        p_notas: document.getElementById('r-notas').value.trim() || null,
-      });
+        p_fecha: selYmd, p_hora: selSlot, p_trabajo_id: selTrabajo ? selTrabajo.id : null,
+      };
+      const notas = document.getElementById('r-notas').value.trim() || null;
+      let { data, error } = await supabaseClient.rpc('reservar_cita_v3', { ...params, p_servicio_otro: selOtro ? otroTexto : null, p_notas: notas });
+      // Si el servidor aún no tiene la versión con «Otro» (falta ejecutar v35), un servicio del listado se reserva igual
+      if (error && !selOtro && (error.code === 'PGRST202' || /reservar_cita_v3/.test(error.message || ''))) {
+        ({ data, error } = await supabaseClient.rpc('reservar_cita_v2', { ...params, p_notas: notas }));
+      }
       btn.disabled = false; btn.textContent = 'Confirmar reserva';
       if (error || !data || data.ok === false) {
         errorEl.textContent = (data && data.error) || 'No se pudo reservar. Intenta de nuevo.';
@@ -189,10 +243,10 @@
         return;
       }
       document.getElementById('confirm-detalle').innerHTML = `
-        <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>Servicio</span><strong>${selTrabajo.nombre}</strong></div>
+        <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>Servicio</span><strong style="text-align:right;">${htmlSeguro(selOtro ? `Otro: ${otroTexto}` : selTrabajo.nombre)}</strong></div>
         <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>Día</span><strong>${textoDia(selYmd, { weekday: 'long', day: 'numeric', month: 'long' })}</strong></div>
         <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>Hora</span><strong>${selSlot} hrs</strong></div>
-        <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>A nombre de</span><strong>${nombre}</strong></div>`;
+        <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>A nombre de</span><strong>${htmlSeguro(nombre)}</strong></div>`;
       document.getElementById('wizard').style.display = 'none';
       document.getElementById('confirmacion').style.display = 'block';
       document.getElementById('confirmacion').scrollIntoView({ behavior: 'smooth' });

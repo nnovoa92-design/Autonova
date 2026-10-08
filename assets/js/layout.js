@@ -87,17 +87,57 @@ function fmtNumero(prefijo, numero) {
 // dataArray se lee por referencia en cada apertura, así que basta con que
 // el array se actualice en el sitio (push/sort) para que el buscador vea
 // los cambios sin tener que volver a llamar a esta función.
-function setupCombobox(inputId, selectId, listId, dataArray, labelFn) {
+// Minúsculas y sin tildes, para comparar textos al buscar ("Cámbio" = "cambio").
+function normalizarBusqueda(s) {
+  return String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+// Busca por TODAS las palabras escritas (en cualquier orden, sin importar tildes ni
+// mayúsculas; "frenos" también encuentra "freno") y ordena por parecido: primero las
+// que empiezan con lo escrito o con la frase completa, luego las que lo contienen.
+// Sin texto devuelve la lista tal cual.
+function buscarCoincidencias(items, query, labelFn, limite = 30) {
+  const frase = normalizarBusqueda(query).trim();
+  const palabras = frase.split(/\s+/).filter(Boolean).map(p => (p.length > 3 && p.endsWith('s')) ? p.slice(0, -1) : p);
+  if (!palabras.length) return items.slice(0, limite);
+  const res = [];
+  items.forEach((item, idx) => {
+    const etiqueta = normalizarBusqueda(labelFn(item));
+    let puntaje = 0;
+    for (const p of palabras) {
+      const i = etiqueta.indexOf(p);
+      if (i < 0) return;                                              // falta una palabra: no coincide
+      puntaje += i === 0 ? 30 : (/[\s(\-·/]/.test(etiqueta[i - 1]) ? 20 : 5);   // inicio de palabra vale más
+    }
+    if (etiqueta.startsWith(frase)) puntaje += 40;
+    else if (etiqueta.includes(frase)) puntaje += 15;
+    puntaje -= etiqueta.length / 200;                                 // a igual parecido, el más corto primero
+    res.push({ item, puntaje, idx });
+  });
+  res.sort((a, b) => b.puntaje - a.puntaje || a.idx - b.idx);
+  return res.slice(0, limite).map(r => r.item);
+}
+
+// opciones (todas opcionales):
+//   limite: máximo de resultados a mostrar (30 por defecto).
+//   extra: { id, label } opción fija al final de la lista, aunque nada coincida (ej. "Otro...").
+function setupCombobox(inputId, selectId, listId, dataArray, labelFn, opciones = {}) {
   const input = document.getElementById(inputId);
   const select = document.getElementById(selectId);
   const list = document.getElementById(listId);
   if (!input || !select || !list) return;
+  const { limite = 30, extra = null } = opciones;
   let resultados = [];
   let resaltado = -1;
 
   function seleccionar(item) {
+    const esExtra = !!extra && item === extra;
+    const etiqueta = esExtra ? extra.label : labelFn(item);
+    // Si el <select> oculto no tiene esa opción (ej. la opción fija, o un <select> sin poblar), se crea
+    // para poder guardar su valor
+    if (![...select.options].some(o => o.value === item.id)) select.add(new Option(etiqueta, item.id));
     select.value = item.id;
-    input.value = labelFn(item);
+    input.value = etiqueta;
     list.style.display = 'none';
     select.dispatchEvent(new Event('change'));
   }
@@ -107,13 +147,15 @@ function setupCombobox(inputId, selectId, listId, dataArray, labelFn) {
   }
 
   function render(query) {
-    const q = query.trim().toLowerCase();
-    resultados = (q ? dataArray.filter(d => labelFn(d).toLowerCase().includes(q)) : dataArray).slice(0, 30);
+    const encontrados = buscarCoincidencias(dataArray, query, labelFn, limite);
+    resultados = extra ? [...encontrados, extra] : encontrados;
     resaltado = -1;
     if (!resultados.length) {
       list.innerHTML = '<div class="combobox-vacio">Sin coincidencias</div>';
     } else {
-      list.innerHTML = resultados.map(d => `<div class="combobox-item">${labelFn(d)}</div>`).join('');
+      list.innerHTML =
+        (!encontrados.length ? '<div class="combobox-vacio">Sin coincidencias en la lista</div>' : '') +
+        resultados.map(d => `<div class="combobox-item${d === extra ? ' combobox-extra' : ''}">${htmlSeguro(d === extra ? extra.label : labelFn(d))}</div>`).join('');
       list.querySelectorAll('.combobox-item').forEach((el, i) =>
         el.addEventListener('mousedown', (e) => { e.preventDefault(); seleccionar(resultados[i]); }));
     }
@@ -130,6 +172,31 @@ function setupCombobox(inputId, selectId, listId, dataArray, labelFn) {
     else if (e.key === 'Enter') { if (resaltado >= 0) { e.preventDefault(); seleccionar(resultados[resaltado]); } }
     else if (e.key === 'Escape') { list.style.display = 'none'; }
   });
+}
+
+// Reemplaza el contenido de un array "en el sitio": los buscadores (setupCombobox) leen
+// su lista por referencia, así ven los cambios sin tener que volver a configurarse.
+function reemplazarEnSitio(arr, nuevos) {
+  arr.splice(0, arr.length, ...(nuevos || []));
+  return arr;
+}
+
+// Mantiene al día, en pantallas que ya están abiertas, datos que cambian en otro lado
+// (ej. trabajos o repuestos nuevos): vuelve a ejecutar `recargar` cuando la persona
+// regresa a la pestaña, como máximo cada `minSegundos`. Un error al refrescar no
+// molesta a quien está trabajando.
+function mantenerCatalogoAlDia(recargar, minSegundos = 20) {
+  let ultimo = Date.now(), corriendo = false;
+  const ejecutar = async () => {
+    if (corriendo || document.visibilityState === 'hidden') return;
+    if (Date.now() - ultimo < minSegundos * 1000) return;
+    corriendo = true;
+    try { await recargar(); } catch (e) { console.warn('No se pudo refrescar el catálogo', e); }
+    ultimo = Date.now();
+    corriendo = false;
+  };
+  document.addEventListener('visibilitychange', ejecutar);
+  window.addEventListener('focus', ejecutar);
 }
 
 // Link wa.me con el mensaje prellenado. Acepta teléfonos chilenos

@@ -1845,6 +1845,31 @@
       document.getElementById('detalle-garantia-especial').value = sugerencia;
     });
 
+    // Trabajos y repuestos nuevos o editados en el catálogo/inventario aparecen aquí al volver
+    // a la pestaña, sin recargar la página ni perder lo que se está editando.
+    const etiquetaTrabajo = (t) => `${t.nombre} (${t.horas_estimadas} h)`;
+    const etiquetaRepuesto = (r) => `${r.sku ? r.sku + ' · ' : ''}${r.nombre} (stock: ${r.stock_actual})`;
+    function poblarCatalogoSelects() {
+      document.getElementById('item-trabajo').innerHTML =
+        trabajosCache.map(t => `<option value="${t.id}">${htmlSeguro(etiquetaTrabajo(t))}</option>`).join('');
+      document.getElementById('item-repuesto').innerHTML =
+        repuestosCache.map(r => `<option value="${r.id}">${htmlSeguro(etiquetaRepuesto(r))}</option>`).join('');
+    }
+    async function recargarCatalogo() {
+      const [t, r] = await Promise.all([
+        supabaseClient.from('trabajos').select('*').eq('activo', true).order('nombre'),
+        supabaseClient.from('repuestos').select('*').eq('activo', true).order('nombre'),
+      ]);
+      if (t.error || r.error) return;
+      const selT = document.getElementById('item-trabajo'), selR = document.getElementById('item-repuesto');
+      const vT = selT.value, vR = selR.value;
+      reemplazarEnSitio(trabajosCache, t.data);
+      reemplazarEnSitio(repuestosCache, r.data);
+      poblarCatalogoSelects();
+      if (vT) selT.value = vT;
+      if (vR) selR.value = vR;
+    }
+
     (async () => {
       const session = await initLayout('ordenes');
       if (!session) return;
@@ -1870,10 +1895,7 @@
       document.getElementById('nueva-cliente').innerHTML =
         '<option value="">Seleccionar cliente...</option>' +
         clientesCache.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
-      document.getElementById('item-trabajo').innerHTML =
-        trabajosCache.map(t => `<option value="${t.id}">${t.nombre} (${t.horas_estimadas} h)</option>`).join('');
-      document.getElementById('item-repuesto').innerHTML =
-        repuestosCache.map(r => `<option value="${r.id}">${r.sku ? r.sku + ' · ' : ''}${r.nombre} (stock: ${r.stock_actual})</option>`).join('');
+      poblarCatalogoSelects();
       document.getElementById('hora-mecanico').innerHTML =
         personalCache.map(p => `<option value="${p.id}">${p.nombre}</option>`).join('');
 
@@ -1883,6 +1905,7 @@
       document.getElementById('item-horas').addEventListener('input', actualizarPreviewTrabajo);
 
       onTipoChange();
+      mantenerCatalogoAlDia(recargarCatalogo);
       await loadOrdenes();
 
       // Enlace directo desde un diagnóstico o cotización: ordenes.html?id=...
