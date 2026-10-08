@@ -6,20 +6,10 @@
   <title>Informe de diagnóstico · Autonova</title>
   <link rel="stylesheet" href="assets/css/style.css" />
   <style>
-    .resumen-rev { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0 0 0.75rem; }
-    .resumen-rev span { padding: 0.25rem 0.7rem; border-radius: 999px; font-size: 0.82rem; font-weight: 600; }
-    .resumen-rev .ok { background: #e6f4ea; color: #1b6e3c; }
-    .resumen-rev .obs { background: #fdecea; color: #a93b33; }
-    .rev-item { border: 1px solid #e5e5e5; border-left-width: 4px; border-radius: 6px; padding: 0.6rem 0.8rem; margin-bottom: 0.5rem; background: #fff; }
-    .rev-item.rev-optimo { border-left-color: #1b6e3c; }
-    .rev-item.rev-observacion { border-left-color: #a93b33; background: #fffaf9; }
-    .rev-item.rev-sin { border-left-color: #bbb; }
-    .rev-cab { display: flex; justify-content: space-between; align-items: baseline; gap: 0.75rem; flex-wrap: wrap; }
+    .rev-item { border: 1px solid #e5e5e5; border-left: 4px solid var(--color-primary); border-radius: 6px; padding: 0.6rem 0.8rem; margin-bottom: 0.5rem; background: #fff; }
     .rev-cab strong { font-size: 0.95rem; }
-    .rev-estado { font-size: 0.8rem; font-weight: 700; white-space: nowrap; }
-    .rev-optimo .rev-estado { color: #1b6e3c; }
-    .rev-observacion .rev-estado { color: #a93b33; }
     .rev-nota { margin: 0.35rem 0 0; font-size: 0.9rem; color: var(--color-text); }
+    .aviso-rechazo { background: #fff8e6; border-left: 3px solid #d97706; padding: 0.6rem 0.9rem; border-radius: 6px; margin-top: 0.75rem; font-size: 0.9rem; }
     .rev-fotos { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
     .rev-fotos img { width: 96px; height: 72px; object-fit: cover; border-radius: 4px; border: 1px solid #ccc; display: block; }
     .caja-conclusion { background: #eef4ff; border-left: 3px solid #1d4ed8; padding: 0.8rem 1rem; border-radius: 6px; }
@@ -59,6 +49,7 @@
     const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     const escMulti = (s) => esc(s).replace(/\n/g, '<br>');
     const urlSegura = (u) => /^https?:\/\//i.test(String(u || ''));
+    const fmtHoras = (h) => Number(h).toLocaleString('es-CL', { maximumFractionDigits: 2 });
 
     function categoriaItem(i) {
       const sub = (i.tipo === 'otro' && i.tipo_otro) ? i.tipo_otro : i.tipo;
@@ -105,33 +96,26 @@
       return `<div class="desglose-categorias" style="max-width:${maxWidth || 320}px;"><div class="titulo">Desglose por categoría</div><div class="barra">${barra}</div>${filas}</div>`;
     }
 
-    // ---------- Revisión del vehículo ----------
-    function renderRevision(hallazgos) {
-      const revisados = (hallazgos || []).filter(h => h.estado || h.nota || (h.fotos || []).length);
-      if (!revisados.length) return '';
-      const peso = (h) => h.estado === 'observacion' ? 0 : (h.estado === 'optimo' ? 2 : 1);   // lo que requiere atención, primero
-      const ordenados = revisados.map((h, i) => ({ h, i })).sort((a, b) => peso(a.h) - peso(b.h) || a.i - b.i).map(x => x.h);
-      const nOpt = revisados.filter(h => h.estado === 'optimo').length;
-      const nObs = revisados.filter(h => h.estado === 'observacion').length;
+    // ---------- Pruebas y monitoreos ----------
+    // Los diagnósticos antiguos tenían estado Óptimo/Observación: pasa a ser parte del resultado.
+    function resultadoPrueba(h) {
+      const estado = h.estado === 'optimo' ? 'Óptimo' : h.estado === 'observacion' ? 'Observación' : '';
+      return [estado, h.nota].filter(Boolean).join(' — ');
+    }
 
-      const tarjetas = ordenados.map(h => {
-        const clase = h.estado === 'observacion' ? 'rev-observacion' : h.estado === 'optimo' ? 'rev-optimo' : 'rev-sin';
-        const etiqueta = h.estado === 'observacion' ? '⚠ Observación' : h.estado === 'optimo' ? '✓ Óptimo' : '';
+    function renderPruebas(hallazgos) {
+      const pruebas = (hallazgos || []).filter(h => h.item);
+      if (!pruebas.length) return '';
+      const tarjetas = pruebas.map(h => {
         const fotos = (h.fotos || []).filter(urlSegura);
-        return `<div class="rev-item ${clase}">
-          <div class="rev-cab"><strong>${esc(h.item)}</strong>${etiqueta ? `<span class="rev-estado">${etiqueta}</span>` : ''}</div>
-          ${h.nota ? `<p class="rev-nota">${escMulti(h.nota)}</p>` : ''}
+        const resultado = resultadoPrueba(h);
+        return `<div class="rev-item">
+          <div class="rev-cab"><strong>${esc(h.item)}</strong></div>
+          ${resultado ? `<p class="rev-nota">${escMulti(resultado)}</p>` : ''}
           ${fotos.length ? `<div class="rev-fotos">${fotos.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" loading="lazy" alt="Foto de ${esc(h.item)}" /></a>`).join('')}</div>` : ''}
         </div>`;
       }).join('');
-
-      return `
-        <h3 style="margin:1.5rem 0 0.6rem;">Revisión del vehículo</h3>
-        <div class="resumen-rev">
-          ${nOpt ? `<span class="ok">✓ ${nOpt} en buen estado</span>` : ''}
-          ${nObs ? `<span class="obs">⚠ ${nObs} con observación</span>` : ''}
-        </div>
-        ${tarjetas}`;
+      return `<h3 style="margin:1.5rem 0 0.6rem;">Pruebas y monitoreos realizados</h3>${tarjetas}`;
     }
 
     // ---------- Qué sigue ----------
@@ -186,6 +170,13 @@
       const veh = d.vehiculo;
       const taller = d.taller || {};
       const desglose = renderDesgloseHTML(t, 300);
+      // Mientras no haya cotización/OT, la línea del diagnóstico viene aparte de los trabajos recomendados
+      const lineaDiag = items.find(i => i.es_diagnostico);
+      const valorDiag = lineaDiag ? Number(lineaDiag.cantidad) * Number(lineaDiag.precio_unitario) : 0;
+      const hayTrabajos = items.some(i => !i.es_diagnostico);
+      const factorIva = t.conIva ? 1 + t.ivaPct / 100 : 1;
+      const totalSoloDiag = valorDiag * factorIva;   // rechazando los trabajos se cobra el diagnóstico completo, sin descuento
+      const descripcionItem = (i) => i.es_diagnostico ? `Diagnóstico (${fmtHoras(i.cantidad)} h de taller)` : i.descripcion;
 
       document.getElementById('contenido').innerHTML = `
         <div style="max-width:680px; margin:0 auto;">
@@ -200,12 +191,12 @@
 
           ${d.motivo ? `<p style="background:#f9f9f9; padding:0.75rem 1rem; border-left:3px solid var(--color-primary); border-radius:4px;"><strong>Motivo de consulta:</strong> ${escMulti(d.motivo)}</p>` : ''}
 
-          ${renderRevision(d.hallazgos)}
+          ${renderPruebas(d.hallazgos)}
 
-          ${d.conclusion ? `<h3 style="margin:1.5rem 0 0.6rem;">Diagnóstico</h3><div class="caja-conclusion">${escMulti(d.conclusion)}</div>` : ''}
+          ${d.conclusion ? `<h3 style="margin:1.5rem 0 0.6rem;">Conclusión del diagnóstico</h3><div class="caja-conclusion">${escMulti(d.conclusion)}</div>` : ''}
 
           ${items.length ? `
-          <h3 style="margin:1.5rem 0 0.6rem;">Trabajos recomendados</h3>
+          <h3 style="margin:1.5rem 0 0.6rem;">${d.cotizacion ? 'Detalle de trabajos' : (lineaDiag && hayTrabajos ? 'Valor del diagnóstico y trabajos recomendados' : lineaDiag ? 'Valor del diagnóstico' : 'Trabajos recomendados')}</h3>
           <table class="tabla-trabajos" style="width:100%; border-collapse:collapse; margin-bottom:1rem;">
             <thead>
               <tr style="border-bottom:2px solid var(--color-primary);">
@@ -217,7 +208,7 @@
             </thead>
             <tbody>
               ${items.map((i, idx) => `<tr style="border-bottom:${idx === items.length - 1 ? '2px solid var(--color-primary)' : '1px solid #eee'};">
-                <td>${esc(i.descripcion)}</td>
+                <td>${esc(descripcionItem(i))}</td>
                 <td style="text-align:center;">${Number(i.cantidad).toLocaleString('es-CL')}</td>
                 <td style="text-align:right; white-space:nowrap;">${fmtMoneda(i.precio_unitario)}</td>
                 <td style="text-align:right; white-space:nowrap;"><strong>${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</strong></td>
@@ -225,12 +216,16 @@
             </tbody>
           </table>
 
-          <div style="max-width:300px; margin-left:auto;">
+          <div style="max-width:320px; margin-left:auto;">
+            ${(lineaDiag && hayTrabajos) ? `
+            <div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid #eee;"><span>Diagnóstico</span><span>${fmtMoneda(valorDiag)}</span></div>
+            <div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid #eee;"><span>Trabajos recomendados</span><span>${fmtMoneda(t.subtotal - valorDiag)}</span></div>` : ''}
             ${t.descuento > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid #eee;"><span>Descuento (${Number(d.descuento_pct)}%)</span><span style="color:#c33;">-${fmtMoneda(t.descuento)}</span></div>` : ''}
             <div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid #eee;"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
             ${t.conIva ? `<div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:2px solid var(--color-primary);"><span>IVA ${t.ivaPct}%</span><span>${fmtMoneda(t.iva)}</span></div>` : ''}
-            <div style="display:flex; justify-content:space-between; padding:0.6rem 0; font-weight:700; font-size:1.1rem;"><span>TOTAL ESTIMADO</span><span style="color:var(--color-primary);">${fmtMoneda(t.total)}</span></div>
+            <div style="display:flex; justify-content:space-between; padding:0.6rem 0; font-weight:700; font-size:1.1rem;"><span>${d.cotizacion ? 'TOTAL' : hayTrabajos ? 'TOTAL SI SE REALIZAN LOS TRABAJOS' : lineaDiag ? 'TOTAL DEL DIAGNÓSTICO' : 'TOTAL ESTIMADO'}</span><span style="color:var(--color-primary);">${fmtMoneda(t.total)}</span></div>
           </div>
+          ${(!d.cotizacion && lineaDiag && hayTrabajos) ? `<div class="aviso-rechazo">Si decide <strong>no realizar</strong> los trabajos, solo se cobra el diagnóstico: <strong>${fmtMoneda(totalSoloDiag)}</strong>${t.conIva ? ' (IVA incluido)' : ''}.</div>` : ''}
           ${desglose ? `<div style="margin-top:0.5rem;">${desglose}</div>` : ''}
           <p style="font-size:0.8rem; color:var(--color-text-muted); margin-top:0.75rem;">Valores referenciales según lo observado a la fecha del informe. Cualquier hallazgo adicional se informará y cotizará antes de realizarse.</p>` : ''}
 

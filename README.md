@@ -14,7 +14,7 @@ estático (Netlify, Vercel, Cloudflare Pages).
 |---|---|
 | `index.html` | Login (Supabase Auth) |
 | `pages/dashboard.html` | KPIs: OTs activas, cotizaciones pendientes, stock bajo, horas e ingresos del mes |
-| `pages/diagnosticos.html` | Diagnóstico de un vehículo sin cotización ni OT: motivo de consulta, revisión (Óptimo/Observación con notas y fotos), conclusión, trabajos recomendados con valor estimado e informe PDF. Se convierte en cotización y/o OT; desde ahí manda la cotización/OT y el diagnóstico las muestra (requiere `sql/actualizacion-v32-diagnosticos.sql`) |
+| `pages/diagnosticos.html` | Diagnóstico de un vehículo sin cotización ni OT: motivo de consulta, **pruebas y monitoreos** (nombre + resultado + fotos: compresión, vacío, hermeticidad, scanner…), conclusión, **valor del diagnóstico** (horas de taller × valor hora), trabajos recomendados y resumen de valores (total si acepta / solo diagnóstico si rechaza), con informe PDF. Se convierte en cotización y/o OT; desde ahí manda la cotización/OT y el diagnóstico las muestra (requiere `sql/actualizacion-v32-diagnosticos.sql` y `v34-diagnostico-valor`) |
 | `pages/cotizaciones.html` | Crear/editar cotizaciones eligiendo **trabajos precargados** o repuestos, descuento, IVA, impresión y conversión a OT |
 | `pages/ordenes.html` | Órdenes de trabajo con estados (recepción → diagnóstico → en proceso → listo → entregado), ítems, **registro de horas por mecánico** y descuento automático de stock |
 | `pages/clientes.html` | Clientes con sus vehículos |
@@ -28,7 +28,7 @@ estático (Netlify, Vercel, Cloudflare Pages).
 | `cotizacion.html` | **Público**: el cliente revisa y aprueba/rechaza la cotización desde el link que le envías por WhatsApp |
 | `inspeccion.html` | **Público**: informe completo de inspección precompra desde el link único |
 | `inspeccion-ingreso.html` | **Público**: el cliente revisa el checklist de recepción de su OT y lo firma a distancia desde el link que le envías por WhatsApp |
-| `diagnostico.html` | **Público**: el cliente ve el informe de su diagnóstico (revisión con notas y fotos, conclusión, trabajos recomendados y total estimado) desde el link que le envías por WhatsApp o correo; según el estado le ofrece aprobar la cotización, agendar cita o seguir el avance de su OT (requiere `sql/actualizacion-v33-link-diagnostico.sql`) |
+| `diagnostico.html` | **Público**: el cliente ve el informe de su diagnóstico (pruebas y monitoreos con resultados y fotos, conclusión, valor del diagnóstico, trabajos recomendados y totales) desde el link que le envías por WhatsApp o correo; según el estado le ofrece aprobar la cotización, agendar cita o seguir el avance de su OT (requiere `sql/actualizacion-v33-link-diagnostico.sql`) |
 
 > Si tu base ya existía antes de la v2, ejecuta también `sql/actualizacion-v2.sql`
 > (crea inspecciones, migra las antiguas y agrega los porcentajes de reparto).

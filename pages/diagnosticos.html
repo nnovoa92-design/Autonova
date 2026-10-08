@@ -16,6 +16,7 @@
     .opcion-convertir:hover { border-color: var(--color-primary); background: #fff; color: var(--color-text); }
     .opcion-convertir strong { display: block; font-size: 0.95rem; margin-bottom: 0.15rem; }
     .opcion-convertir span { font-size: 0.82rem; color: var(--color-text-muted); }
+    .resumen-rechazo { background: #fff8e6; border-left: 3px solid #d97706; padding: 0.6rem 0.9rem; border-radius: var(--radius); margin-top: 0.75rem; font-size: 0.9rem; }
     .dropdown { position: relative; display: inline-block; }
     .dropdown-menu { position: absolute; right: 0; top: 100%; background: #fff; border: 1px solid #ddd; border-radius: 4px; min-width: 190px; z-index: 10; display: none; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
     .dropdown-menu.arriba { top: auto; bottom: 100%; right: auto; left: 0; }
@@ -71,20 +72,40 @@
             <textarea id="motivo" rows="2" placeholder="Ej: ruido al frenar, testigo de motor encendido..."></textarea>
           </div>
 
-          <h3>2. Revisión del vehículo</h3>
+          <h3>2. Pruebas y monitoreos</h3>
           <p style="color:var(--color-text-muted); font-size:0.82rem; margin-top:0;">
-            Marca cada punto revisado como Óptimo u Observación, y agrega nota y fotos si hace falta.
-            Los puntos que no revisaste no aparecen en el informe.
+            Agrega cada prueba que hagas según lo que reporta el cliente (compresión, vacío, hermeticidad del sistema de refrigeración, scanner…),
+            con su nombre y el resultado. Puedes sumar fotos de lo medido.
           </p>
-          <div id="hallazgos-body"></div>
-          <button type="button" id="agregar-hallazgo-btn" class="btn-secondary btn-mini">+ Agregar ítem</button>
+          <div id="pruebas-body"></div>
+          <datalist id="pruebas-sugeridas"></datalist>
+          <button type="button" id="agregar-prueba-btn" class="btn-secondary btn-mini">+ Agregar prueba</button>
 
-          <h3 style="margin-top:1.5rem;">3. Diagnóstico</h3>
+          <h3 style="margin-top:1.5rem;">3. Conclusión del diagnóstico</h3>
           <div class="form-group">
             <textarea id="conclusion" rows="3" placeholder="Qué tiene el vehículo y qué se recomienda hacer..."></textarea>
           </div>
 
-          <h3>4. Trabajos recomendados</h3>
+          <h3>4. Valor del diagnóstico</h3>
+          <p style="color:var(--color-text-muted); font-size:0.82rem; margin-top:0;">
+            Horas de taller dedicadas a diagnosticar. Es lo que se cobra aunque el cliente no apruebe los trabajos. Valores sin IVA.
+          </p>
+          <div class="form-row" style="align-items:end;">
+            <div class="form-group" style="max-width:170px;">
+              <label for="diag-horas">Horas de taller</label>
+              <input type="number" id="diag-horas" min="0" step="0.25" value="0" />
+            </div>
+            <div class="form-group" style="max-width:200px;">
+              <label for="diag-valor-hora">Valor hora ($)</label>
+              <input type="number" id="diag-valor-hora" min="0" step="1" />
+            </div>
+            <div class="form-group">
+              <label>Valor del diagnóstico</label>
+              <div id="diag-monto" style="font-weight:700; font-size:1.05rem; padding:0.45rem 0;">$0</div>
+            </div>
+          </div>
+
+          <h3 style="margin-top:1.5rem;">5. Trabajos recomendados</h3>
           <div id="aviso-lineas"></div>
           <div id="agregar-lineas">
             <div class="form-row" style="align-items:end;">
@@ -165,7 +186,8 @@
               <tr><td colspan="6">Sin trabajos recomendados todavía.</td></tr>
             </tbody>
           </table>
-          <div class="form-row" style="margin-top:0.75rem;">
+          <h3 style="margin-top:1.5rem;">6. Resumen de valores</h3>
+          <div class="form-row">
             <div class="form-group" style="max-width:160px;">
               <label for="descuento_pct">Descuento %</label>
               <input type="number" id="descuento_pct" value="0" min="0" max="100" step="0.5" />
@@ -179,6 +201,7 @@
             </div>
           </div>
           <div class="totales" id="totales"></div>
+          <div id="resumen-rechazo"></div>
           <div id="desglose-categorias"></div>
 
           <div style="margin-top:1.25rem; display:flex; gap:0.5rem; flex-wrap:wrap;">
@@ -231,23 +254,22 @@
     let clientesCache = [], vehiculosCache = [], trabajosCache = [], repuestosCache = [];
     let diagnosticosCache = [];
     let diagActual = null;          // { id, numero, esNuevo, cotizacion }
-    let hallazgosActuales = [];
+    let pruebasActuales = [];       // [{ item (nombre), nota (resultado), fotos }] -> columna diagnosticos.hallazgos
     let itemsActuales = [];
     let config = null;
 
-    const HALLAZGOS_ESTANDAR = [
-      'Motor (ruidos, fugas, humo)',
-      'Aceite y filtros',
-      'Refrigeración (radiador, mangueras, líquido)',
-      'Frenos (pastillas, discos, líquido)',
-      'Suspensión y dirección',
-      'Neumáticos y alineación',
-      'Batería y sistema eléctrico',
-      'Luces',
-      'Transmisión y embrague',
-      'Escape',
-      'Aire acondicionado',
-      'Códigos de falla (scanner)',
+    // Sugerencias para el nombre de una prueba (se suman las que ya usaste en otros diagnósticos)
+    const PRUEBAS_SUGERIDAS = [
+      'Prueba de compresión',
+      'Prueba de vacío',
+      'Hermeticidad del sistema de refrigeración',
+      'Prueba de fugas de cilindro',
+      'Presión de aceite',
+      'Presión de combustible',
+      'Lectura de scanner (códigos de falla)',
+      'Monitoreo de parámetros en vivo',
+      'Prueba de batería y alternador',
+      'Prueba de ruta',
     ];
 
     const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -323,7 +345,25 @@
       if (c && c.con_iva != null) return c.con_iva !== false;
       return d.con_iva !== false;
     }
-    function totalesDe(d) { return calcularTotales(itemsEfectivos(d), descuentoEfectivo(d), conIvaEfectivo(d)); }
+    // El valor del diagnóstico (horas de taller x valor hora) viaja como una línea de mano de obra.
+    // Antes de convertir se arma desde las horas; al convertir se copia a la cotización/OT y desde
+    // ahí vive en sus líneas (por eso itemsConDiagnostico no la suma dos veces).
+    const fmtHoras = (h) => Number(h).toLocaleString('es-CL', { maximumFractionDigits: 2 });
+    function lineaDiagnostico(horas, valorHora) {
+      horas = Number(horas) || 0; valorHora = Number(valorHora) || 0;
+      if (!(horas > 0 && valorHora > 0)) return null;
+      return { tipo: 'mano_obra', tipo_otro: null, trabajo_id: null, repuesto_id: null, descripcion: `Diagnóstico (${fmtHoras(horas)} h de taller)`, cantidad: horas, precio_unitario: valorHora };
+    }
+    function montoDiagnostico(d) {
+      const l = lineaDiagnostico(d.horas_diagnostico, d.valor_hora_diagnostico);
+      return l ? l.cantidad * l.precio_unitario : 0;
+    }
+    function itemsConDiagnostico(d) {
+      if (cotDe(d)) return itemsEfectivos(d);
+      const l = lineaDiagnostico(d.horas_diagnostico, d.valor_hora_diagnostico);
+      return l ? [l, ...itemsEfectivos(d)] : itemsEfectivos(d);
+    }
+    function totalesDe(d) { return calcularTotales(itemsConDiagnostico(d), descuentoEfectivo(d), conIvaEfectivo(d)); }
     function estadoDe(d) {
       const o = otDe(d), c = cotDe(d);
       if (o) return { label: `En ${fmtNumero('OT', o.numero)}`, badge: 'badge-purple' };
@@ -365,19 +405,31 @@
       if (v && v.kilometraje != null && !kmEl.value) kmEl.value = v.kilometraje;
     }
 
-    // ---------- Hallazgos (revisión) ----------
-    function renderHallazgos() {
-      document.getElementById('hallazgos-body').innerHTML = hallazgosActuales.map((h, idx) => `
+    // ---------- Pruebas y monitoreos ----------
+    // Resultado de una prueba. Los diagnósticos antiguos tenían estado Óptimo/Observación: pasa a ser parte del texto.
+    function resultadoPrueba(h) {
+      const estado = h.estado === 'optimo' ? 'Óptimo' : h.estado === 'observacion' ? 'Observación' : '';
+      return [estado, h.nota].filter(Boolean).join(' — ');
+    }
+
+    function actualizarSugerenciasPruebas() {
+      const usados = [];
+      diagnosticosCache.forEach(d => (d.hallazgos || []).forEach(h => { if (h.item && h.item.trim()) usados.push(h.item.trim()); }));
+      const vistos = new Set();
+      const todas = [...PRUEBAS_SUGERIDAS, ...usados].filter(n => { const k = n.toLowerCase(); if (vistos.has(k)) return false; vistos.add(k); return true; });
+      document.getElementById('pruebas-sugeridas').innerHTML = todas.map(n => `<option value="${esc(n)}"></option>`).join('');
+    }
+
+    function renderPruebas() {
+      document.getElementById('pruebas-body').innerHTML = !pruebasActuales.length
+        ? '<p style="color:var(--color-text-muted); font-size:0.88rem; margin:0.25rem 0 0.6rem;">Aún no has agregado pruebas. Usa «+ Agregar prueba».</p>'
+        : pruebasActuales.map((h, idx) => `
         <div class="h-card">
           <div style="display:flex; align-items:center; gap:0.5rem;">
-            <input type="text" class="h-item" data-idx="${idx}" value="${esc(h.item)}" style="flex:1; min-width:0;" />
-            <button type="button" class="btn-danger h-quitar" data-idx="${idx}" style="padding:0.3rem 0.6rem; flex-shrink:0;">✕</button>
+            <input type="text" class="h-item" list="pruebas-sugeridas" data-idx="${idx}" value="${esc(h.item)}" placeholder="Nombre de la prueba (ej: Prueba de compresión)" style="flex:1; min-width:0; font-weight:600;" />
+            <button type="button" class="btn-danger h-quitar" data-idx="${idx}" title="Quitar prueba" style="padding:0.3rem 0.6rem; flex-shrink:0;">✕</button>
           </div>
-          <div style="display:flex; gap:0.4rem; margin-top:0.4rem; flex-wrap:wrap;">
-            <button type="button" class="chk-estado-btn estado-optimo${h.estado === 'optimo' ? ' activo' : ''}" data-idx="${idx}" data-estado="optimo">✓ Óptimo</button>
-            <button type="button" class="chk-estado-btn estado-observacion${h.estado === 'observacion' ? ' activo' : ''}" data-idx="${idx}" data-estado="observacion">⚠ Observación</button>
-          </div>
-          <input type="text" class="h-nota" data-idx="${idx}" value="${esc(h.nota)}" placeholder="Nota (opcional)" style="width:100%; margin-top:0.4rem; font-size:0.82rem; padding:0.4rem 0.6rem;" />
+          <textarea class="h-nota" data-idx="${idx}" rows="2" placeholder="Resultado: valores medidos, lo que se observó..." style="width:100%; margin-top:0.4rem; font-size:0.9rem;">${esc(h.nota)}</textarea>
           <div class="h-fotos">
             ${(h.fotos || []).map((u, fi) => `
               <div class="h-foto">
@@ -393,27 +445,27 @@
     }
 
     // Un solo juego de listeners (delegación): escribir en un campo no vuelve a pintar la lista.
-    (function wireHallazgos() {
-      const body = document.getElementById('hallazgos-body');
+    (function wirePruebas() {
+      const body = document.getElementById('pruebas-body');
       body.addEventListener('input', (e) => {
         const idx = e.target.dataset.idx;
-        if (e.target.classList.contains('h-item')) hallazgosActuales[idx].item = e.target.value;
-        else if (e.target.classList.contains('h-nota')) hallazgosActuales[idx].nota = e.target.value;
+        if (e.target.classList.contains('h-item')) pruebasActuales[idx].item = e.target.value;
+        else if (e.target.classList.contains('h-nota')) pruebasActuales[idx].nota = e.target.value;
       });
       body.addEventListener('click', (e) => {
         const btn = e.target.closest('button');
         if (!btn) return;
         const idx = Number(btn.dataset.idx);
-        if (btn.classList.contains('chk-estado-btn')) {
-          // Volver a tocar el estado activo lo deja sin revisar
-          hallazgosActuales[idx].estado = hallazgosActuales[idx].estado === btn.dataset.estado ? null : btn.dataset.estado;
-          renderHallazgos();
-        } else if (btn.classList.contains('h-quitar')) {
-          hallazgosActuales.splice(idx, 1);
-          renderHallazgos();
+        if (btn.classList.contains('h-quitar')) {
+          const p = pruebasActuales[idx];
+          if ((p.item || '').trim() || (p.nota || '').trim() || (p.fotos || []).length) {
+            if (!confirm(`¿Quitar la prueba${p.item ? ` «${p.item.trim()}»` : ''}?`)) return;
+          }
+          pruebasActuales.splice(idx, 1);
+          renderPruebas();
         } else if (btn.classList.contains('h-foto-quitar')) {
-          hallazgosActuales[idx].fotos.splice(Number(btn.dataset.fi), 1);
-          renderHallazgos();
+          pruebasActuales[idx].fotos.splice(Number(btn.dataset.fi), 1);
+          renderPruebas();
         }
       });
       body.addEventListener('change', async (e) => {
@@ -425,14 +477,16 @@
           const path = `diagnosticos/${diagActual.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9_.-]/g, '_')}`;
           const { error } = await supabaseClient.storage.from('fotos-ot').upload(path, file);
           if (error) { errorEl.textContent = `No se pudo subir la foto: ${error.message}`; continue; }
-          hallazgosActuales[idx].fotos.push(supabaseClient.storage.from('fotos-ot').getPublicUrl(path).data.publicUrl);
+          pruebasActuales[idx].fotos.push(supabaseClient.storage.from('fotos-ot').getPublicUrl(path).data.publicUrl);
         }
-        renderHallazgos();
+        renderPruebas();
       });
     })();
-    document.getElementById('agregar-hallazgo-btn').addEventListener('click', () => {
-      hallazgosActuales.push({ item: '', estado: null, nota: '', fotos: [] });
-      renderHallazgos();
+    document.getElementById('agregar-prueba-btn').addEventListener('click', () => {
+      pruebasActuales.push({ item: '', nota: '', fotos: [] });
+      renderPruebas();
+      const nombres = document.querySelectorAll('#pruebas-body .h-item');
+      if (nombres.length) nombres[nombres.length - 1].focus();
     });
 
     // ---------- Trabajos recomendados (mismo editor de líneas que cotizaciones) ----------
@@ -594,15 +648,43 @@
       renderTotales();
     }
 
+    // Línea del diagnóstico según lo escrito en el editor (null si ya viajó a la cotización/OT o no hay horas)
+    function lineaDiagnosticoEditor() {
+      if (lineasBloqueadas()) return null;
+      return lineaDiagnostico(document.getElementById('diag-horas').value, document.getElementById('diag-valor-hora').value);
+    }
+    function itemsParaTotales() {
+      const l = lineaDiagnosticoEditor();
+      return l ? [l, ...itemsActuales] : itemsActuales;
+    }
+    const sumaBruta = (items) => items.reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
+
     function renderTotales() {
       const conIva = document.getElementById('con_iva').value === 'true';
-      const t = calcularTotales(itemsActuales, document.getElementById('descuento_pct').value, conIva);
+      const bloqueado = lineasBloqueadas();
+      const lDiag = lineaDiagnosticoEditor();
+      const valorDiag = lDiag ? sumaBruta([lDiag]) : 0;
+      const horas = Number(document.getElementById('diag-horas').value) || 0;
+      document.getElementById('diag-monto').textContent = fmtMoneda(horas * (Number(document.getElementById('diag-valor-hora').value) || 0));
+
+      const t = calcularTotales(itemsParaTotales(), document.getElementById('descuento_pct').value, conIva);
+      const desgloseLineas = (!bloqueado && valorDiag > 0 && itemsActuales.length) ? `
+        <div class="fila"><span>Diagnóstico (${fmtHoras(horas)} h de taller)</span><span>${fmtMoneda(valorDiag)}</span></div>
+        <div class="fila"><span>Trabajos recomendados</span><span>${fmtMoneda(sumaBruta(itemsActuales))}</span></div>` : '';
+      const etiquetaTotal = bloqueado ? 'Total' : (itemsActuales.length ? 'Total si acepta los trabajos' : 'Total estimado');
       document.getElementById('totales').innerHTML = `
+        ${desgloseLineas}
         ${t.descuento > 0 ? `<div class="fila" style="color:var(--color-text-muted);"><span>Subtotal</span><span>${fmtMoneda(t.subtotal)}</span></div>
         <div class="fila" style="color:var(--color-text-muted);"><span>Descuento (${t.descuentoPct}%)</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
         <div class="fila"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
         ${conIva ? `<div class="fila"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>` : '<div class="fila" style="color:var(--color-text-muted);"><span>Sin IVA</span><span>–</span></div>'}
-        <div class="fila total"><span>Total estimado</span><span>${fmtMoneda(t.total)}</span></div>`;
+        <div class="fila total"><span>${etiquetaTotal}</span><span>${fmtMoneda(t.total)}</span></div>`;
+
+      // Escenario si el cliente no aprueba los trabajos: solo se cobra el diagnóstico (sin descuento)
+      const rechazo = (!bloqueado && valorDiag > 0 && itemsActuales.length) ? calcularTotales([lDiag], 0, conIva) : null;
+      document.getElementById('resumen-rechazo').innerHTML = rechazo
+        ? `<div class="resumen-rechazo">Si el cliente <strong>rechaza</strong> los trabajos, solo se cobra el diagnóstico: <strong>${fmtMoneda(rechazo.total)}</strong> (${conIva ? 'IVA incluido' : 'sin IVA'}).</div>` : '';
+
       const desglose = renderDesgloseHTML(t);
       document.getElementById('desglose-categorias').innerHTML = desglose ? `<div style="margin-top:0.75rem;">${desglose}</div>` : '';
     }
@@ -646,11 +728,11 @@
       document.getElementById('motivo').value = nuevo ? '' : (d.motivo ?? '');
       document.getElementById('conclusion').value = nuevo ? '' : (d.conclusion ?? '');
 
-      hallazgosActuales = nuevo
-        ? HALLAZGOS_ESTANDAR.map(item => ({ item, estado: null, nota: '', fotos: [] }))
-        : (d.hallazgos || []).map(h => ({ item: h.item, estado: h.estado || null, nota: h.nota || '', fotos: h.fotos || [] }));
+      pruebasActuales = nuevo ? [] : (d.hallazgos || []).map(h => ({ item: h.item || '', nota: resultadoPrueba(h), fotos: h.fotos || [] }));
 
       itemsActuales = nuevo ? [] : itemsEfectivos(d).map(i => ({ ...i }));
+      document.getElementById('diag-horas').value = nuevo ? 0 : Number(d.horas_diagnostico || 0);
+      document.getElementById('diag-valor-hora').value = (nuevo || !Number(d.valor_hora_diagnostico)) ? Number(config.valor_hora || 0) : Number(d.valor_hora_diagnostico);
       document.getElementById('descuento_pct').value = nuevo ? 0 : Number(descuentoEfectivo(d) || 0);
       document.getElementById('con_iva').value = nuevo ? 'true' : (conIvaEfectivo(d) ? 'true' : 'false');
 
@@ -658,11 +740,14 @@
       document.getElementById('agregar-lineas').style.display = bloqueado ? 'none' : 'block';
       document.getElementById('descuento_pct').disabled = bloqueado;
       document.getElementById('con_iva').disabled = bloqueado;
+      document.getElementById('diag-horas').disabled = bloqueado;
+      document.getElementById('diag-valor-hora').disabled = bloqueado;
       document.getElementById('convertir-btn').style.display = bloqueado ? 'none' : '';
 
       document.getElementById('compartir-editor').innerHTML = menuCompartirHTML(diagActual.id, true);
+      actualizarSugerenciasPruebas();
       renderEstadoConversion();
-      renderHallazgos();
+      renderPruebas();
       onTipoChange();
       renderItems();
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -670,7 +755,7 @@
 
     function cerrarEditor() {
       document.getElementById('editor-card').style.display = 'none';
-      diagActual = null; itemsActuales = []; hallazgosActuales = [];
+      diagActual = null; itemsActuales = []; pruebasActuales = [];
     }
 
     // Guarda el diagnóstico; devuelve la fila guardada (con sus relaciones) o null si falló.
@@ -679,6 +764,10 @@
       errorEl.textContent = '';
       const clienteId = document.getElementById('cliente_id').value;
       if (!clienteId) { errorEl.textContent = 'Selecciona un cliente.'; return null; }
+      if (pruebasActuales.some(h => !h.item.trim() && ((h.nota || '').trim() || (h.fotos || []).length))) {
+        errorEl.textContent = 'Ponle nombre a cada prueba que tenga resultado o fotos.';
+        return null;
+      }
       const bloqueado = lineasBloqueadas();
 
       const payload = {
@@ -687,12 +776,14 @@
         km: Number(document.getElementById('km').value) || null,
         motivo: document.getElementById('motivo').value.trim() || null,
         conclusion: document.getElementById('conclusion').value.trim() || null,
-        hallazgos: hallazgosActuales
+        hallazgos: pruebasActuales
           .filter(h => h.item.trim())
-          .map(h => ({ item: h.item.trim(), estado: h.estado || null, nota: (h.nota || '').trim(), fotos: h.fotos || [] })),
+          .map(h => ({ item: h.item.trim(), nota: (h.nota || '').trim(), fotos: h.fotos || [] })),
       };
-      // Con cotización/OT creada, descuento e IVA ya no se tocan desde acá
+      // Con cotización/OT creada, el valor del diagnóstico, el descuento y el IVA ya no se tocan desde acá
       if (!bloqueado) {
+        payload.horas_diagnostico = Math.max(0, Number(document.getElementById('diag-horas').value) || 0);
+        payload.valor_hora_diagnostico = Math.max(0, Number(document.getElementById('diag-valor-hora').value) || 0);
         payload.descuento_pct = Math.min(100, Math.max(0, Number(document.getElementById('descuento_pct').value) || 0));
         payload.con_iva = document.getElementById('con_iva').value === 'true';
       }
@@ -700,7 +791,7 @@
       let error;
       if (diagActual.esNuevo) ({ error } = await supabaseClient.from('diagnosticos').insert({ id: diagActual.id, ...payload }));
       else ({ error } = await supabaseClient.from('diagnosticos').update(payload).eq('id', diagActual.id));
-      if (error) { errorEl.textContent = `Error: ${error.message} (¿ejecutaste sql/actualizacion-v32-diagnosticos.sql?)`; return null; }
+      if (error) { errorEl.textContent = `Error: ${error.message} (¿ejecutaste sql/actualizacion-v32-diagnosticos.sql y v34-diagnostico-valor?)`; return null; }
       diagActual.esNuevo = false;
 
       if (!bloqueado) {
@@ -760,7 +851,7 @@
           <td style="white-space:nowrap;">${fmtFecha(d.fecha)}</td>
           <td>${d.clientes ? esc(d.clientes.nombre) : '–'}</td>
           <td style="white-space:nowrap;">${d.vehiculos ? esc(d.vehiculos.patente) : '–'}</td>
-          <td style="white-space:nowrap;">${itemsEfectivos(d).length ? fmtMoneda(t.total) : '–'}</td>
+          <td style="white-space:nowrap;">${itemsConDiagnostico(d).length ? fmtMoneda(t.total) : '–'}</td>
           <td style="white-space:nowrap;"><span class="badge ${est.badge}">${esc(est.label)}</span></td>
           <td class="table-actions">
             <button type="button" class="btn-secondary abrir-btn" data-id="${d.id}">Abrir</button>
@@ -793,22 +884,20 @@
 
     // ---------- Informe PDF ----------
     function construirInforme(d) {
-      const items = itemsEfectivos(d);
-      const t = calcularTotales(items, descuentoEfectivo(d), conIvaEfectivo(d));
+      const items = itemsEfectivos(d);                       // trabajos recomendados (o, ya convertido, todas las líneas de la cotización/OT)
+      const convertido = !!cotDe(d);
+      const lDiag = convertido ? null : lineaDiagnostico(d.horas_diagnostico, d.valor_hora_diagnostico);
+      const t = calcularTotales(itemsConDiagnostico(d), descuentoEfectivo(d), conIvaEfectivo(d));
       const cli = d.clientes || {};
       const veh = d.vehiculos;
-      const revisados = (d.hallazgos || []).filter(h => h.estado || h.nota || (h.fotos || []).length);
+      const pruebas = (d.hallazgos || []).filter(h => h.item);
 
-      const filasRevision = revisados.map(h => {
-        const estado = h.estado === 'optimo' ? '<span style="color:#1b6e3c; font-weight:bold;">✓ Óptimo</span>'
-          : h.estado === 'observacion' ? '<span style="color:#a93b33; font-weight:bold;">⚠ Observación</span>'
-          : '<span style="color:#666;">—</span>';
+      const filasPruebas = pruebas.map(h => {
         const fotos = (h.fotos || []).length
           ? `<div style="display:flex; flex-wrap:wrap; gap:0.3rem; margin-top:0.3rem;">${h.fotos.map(u => `<img src="${u}" style="width:90px; height:68px; object-fit:cover; border:1px solid #ccc; border-radius:3px;" />`).join('')}</div>` : '';
         return `<tr style="border-bottom:1px solid #ccc;">
-          <td style="padding:4px; vertical-align:top;">${esc(h.item)}</td>
-          <td style="padding:4px; vertical-align:top; white-space:nowrap;">${estado}</td>
-          <td style="padding:4px; vertical-align:top;">${esc(h.nota || '')}${fotos}</td>
+          <td style="padding:4px; vertical-align:top; width:32%;"><strong>${esc(h.item)}</strong></td>
+          <td style="padding:4px; vertical-align:top;">${escMulti(resultadoPrueba(h))}${fotos}</td>
         </tr>`;
       }).join('');
 
@@ -835,28 +924,37 @@
         </p>
         ${d.motivo ? `<p><strong>Motivo de consulta:</strong> ${escMulti(d.motivo)}</p>` : ''}
 
-        ${revisados.length ? `
-        <h3 style="margin-top:1.25rem;">Revisión del vehículo</h3>
+        ${pruebas.length ? `
+        <h3 style="margin-top:1.25rem;">Pruebas y monitoreos realizados</h3>
         <table style="width:100%; border-collapse:collapse;">
-          <thead><tr style="border-bottom:1px solid #000;"><th style="text-align:left; padding:4px;">Punto revisado</th><th style="text-align:left; padding:4px;">Estado</th><th style="text-align:left; padding:4px;">Observaciones</th></tr></thead>
-          <tbody>${filasRevision}</tbody>
+          <thead><tr style="border-bottom:1px solid #000;"><th style="text-align:left; padding:4px;">Prueba</th><th style="text-align:left; padding:4px;">Resultado</th></tr></thead>
+          <tbody>${filasPruebas}</tbody>
         </table>` : ''}
 
-        ${d.conclusion ? `<h3 style="margin-top:1.25rem;">Diagnóstico</h3><p>${escMulti(d.conclusion)}</p>` : ''}
+        ${d.conclusion ? `<h3 style="margin-top:1.25rem;">Conclusión del diagnóstico</h3><p>${escMulti(d.conclusion)}</p>` : ''}
+
+        ${lDiag ? `
+        <h3 style="margin-top:1.25rem;">Valor del diagnóstico</h3>
+        <p style="margin:0;">${fmtHoras(lDiag.cantidad)} h de taller × ${fmtMoneda(lDiag.precio_unitario)} = <strong>${fmtMoneda(lDiag.cantidad * lDiag.precio_unitario)}</strong> (neto)</p>` : ''}
 
         ${items.length ? `
-        <h3 style="margin-top:1.25rem;">Trabajos recomendados (valor estimado)</h3>
+        <h3 style="margin-top:1.25rem;">${convertido ? 'Detalle de trabajos' : 'Trabajos recomendados (valor estimado)'}</h3>
         <table style="width:100%; border-collapse:collapse;">
           <thead><tr style="border-bottom:1px solid #000;"><th style="text-align:left; padding:4px;">Descripción</th><th style="text-align:right; padding:4px;">Cant.</th><th style="text-align:right; padding:4px;">P. unit.</th><th style="text-align:right; padding:4px;">Total</th></tr></thead>
           <tbody>${filasTrabajos}</tbody>
-        </table>
-        <div style="margin-top:1rem; margin-left:auto; max-width:300px;">
+        </table>` : ''}
+
+        ${(items.length || lDiag) ? `
+        <div style="margin-top:1rem; margin-left:auto; max-width:320px;">
+          ${(lDiag && items.length) ? `<div style="display:flex; justify-content:space-between; color:#666;"><span>Diagnóstico</span><span>${fmtMoneda(lDiag.cantidad * lDiag.precio_unitario)}</span></div>
+          <div style="display:flex; justify-content:space-between; color:#666;"><span>Trabajos recomendados</span><span>${fmtMoneda(sumaBruta(items))}</span></div>` : ''}
           ${t.descuento > 0 ? `<div style="display:flex; justify-content:space-between; color:#666;"><span>Subtotal</span><span>${fmtMoneda(t.subtotal)}</span></div>
           <div style="display:flex; justify-content:space-between; color:#666;"><span>Descuento (${t.descuentoPct}%)</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
           <div style="display:flex; justify-content:space-between;"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
           ${t.conIva ? `<div style="display:flex; justify-content:space-between;"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>` : '<div style="display:flex; justify-content:space-between;"><span>Sin IVA</span><span>–</span></div>'}
-          <div style="display:flex; justify-content:space-between; font-weight:bold; border-top:2px solid #000; margin-top:4px; padding-top:4px;"><span>TOTAL ESTIMADO</span><span>${fmtMoneda(t.total)}</span></div>
+          <div style="display:flex; justify-content:space-between; font-weight:bold; border-top:2px solid #000; margin-top:4px; padding-top:4px;"><span>${convertido ? 'TOTAL' : items.length ? 'TOTAL SI SE REALIZAN LOS TRABAJOS' : 'TOTAL DEL DIAGNÓSTICO'}</span><span>${fmtMoneda(t.total)}</span></div>
         </div>
+        ${(lDiag && items.length) ? `<p style="margin:0.6rem 0 0; margin-left:auto; max-width:320px; background:#fff8e6; padding:0.4rem 0.6rem; border-left:3px solid #d97706; font-size:0.85rem;">Si decide no realizar los trabajos, solo se cobra el diagnóstico: <strong>${fmtMoneda(calcularTotales([lDiag], 0, t.conIva).total)}</strong>${t.conIva ? ' (IVA incluido)' : ''}.</p>` : ''}
         <p style="font-size:0.8rem; color:#666; margin-top:0.75rem;">Valores referenciales según lo observado a la fecha del informe. Cualquier hallazgo adicional se informará y cotizará antes de realizarse.</p>` : ''}
 
         ${config.politica_inspeccion_texto ? `<div style="margin-top:1.5rem; background:#fef3c7; padding:0.75rem 1rem; border-radius:6px; font-size:0.78rem; white-space:pre-wrap;">${esc(config.politica_inspeccion_texto)}</div>` : ''}`;
@@ -890,18 +988,28 @@
       return v ? `su vehículo ${v.patente} (${[v.marca, v.modelo].filter(Boolean).join(' ')})` : 'su vehículo';
     }
 
-    // Resumen corto para el mensaje: puntos con observación y total estimado
+    // Resumen corto para el mensaje: pruebas realizadas y valores
     function resumenParaMensaje(d, formatoItem) {
-      const obs = (d.hallazgos || []).filter(h => h.estado === 'observacion').map(h => h.item);
+      const pruebas = (d.hallazgos || []).map(h => h.item).filter(Boolean);
       const lineas = [];
-      if (obs.length) {
-        lineas.push('Puntos con observación:');
-        obs.slice(0, 6).forEach(o => lineas.push(formatoItem(o)));
-        if (obs.length > 6) lineas.push(formatoItem(`y ${obs.length - 6} más (ver informe)`));
+      if (pruebas.length) {
+        lineas.push('Pruebas realizadas:');
+        pruebas.slice(0, 6).forEach(p => lineas.push(formatoItem(p)));
+        if (pruebas.length > 6) lineas.push(formatoItem(`y ${pruebas.length - 6} más (ver informe)`));
       }
       const t = totalesDe(d);
-      if (itemsEfectivos(d).length) {
-        lineas.push(`Total estimado de los trabajos recomendados: ${fmtMoneda(t.total)} (${t.conIva ? 'IVA incluido' : 'sin IVA'}).`);
+      const iva = t.conIva ? 'IVA incluido' : 'sin IVA';
+      const diag = montoDiagnostico(d);
+      const hayTrabajos = itemsEfectivos(d).length > 0 && !cotDe(d);
+      if (cotDe(d)) {
+        if (itemsConDiagnostico(d).length) lineas.push(`Total: ${fmtMoneda(t.total)} (${iva}).`);
+      } else if (hayTrabajos && diag > 0) {
+        lineas.push(`Valor del diagnóstico: ${fmtMoneda(calcularTotales([lineaDiagnostico(d.horas_diagnostico, d.valor_hora_diagnostico)], 0, t.conIva).total)} (${iva}).`);
+        lineas.push(`Total si se realizan los trabajos recomendados: ${fmtMoneda(t.total)} (${iva}).`);
+      } else if (hayTrabajos) {
+        lineas.push(`Total estimado de los trabajos recomendados: ${fmtMoneda(t.total)} (${iva}).`);
+      } else if (diag > 0) {
+        lineas.push(`Valor del diagnóstico: ${fmtMoneda(t.total)} (${iva}).`);
       }
       return lineas.join('\n');
     }
@@ -1036,15 +1144,18 @@
           return;
         }
 
-        const items = ordenar(fila.diagnostico_items);
-        if (!items.length) { errorEl.textContent = 'Agrega al menos un trabajo recomendado antes de convertir.'; return; }
+        const recomendados = ordenar(fila.diagnostico_items);
+        if (!recomendados.length) { errorEl.textContent = 'Agrega al menos un trabajo recomendado antes de convertir.'; return; }
+        // El valor del diagnóstico viaja como primera línea de la cotización/OT
+        const lDiag = lineaDiagnostico(fila.horas_diagnostico, fila.valor_hora_diagnostico);
+        const items = lDiag ? [lDiag, ...recomendados] : recomendados;
 
         const { data: cot, error: e1 } = await supabaseClient.from('cotizaciones').insert({
           cliente_id: fila.cliente_id,
           vehiculo_id: fila.vehiculo_id,
           descuento_pct: Number(fila.descuento_pct || 0),
           con_iva: fila.con_iva !== false,
-          notas: notasParaCotizacion(fila, items),
+          notas: notasParaCotizacion(fila, recomendados),
           estado: 'borrador',
         }).select('id, numero').single();
         if (e1) throw new Error(e1.message);
@@ -1172,6 +1283,8 @@
     document.getElementById('item-repuesto').addEventListener('change', onRepuestoChange);
     document.getElementById('item-cantidad').addEventListener('input', actualizarPreviewTrabajo);
     document.getElementById('item-horas').addEventListener('input', actualizarPreviewTrabajo);
+    document.getElementById('diag-horas').addEventListener('input', renderTotales);
+    document.getElementById('diag-valor-hora').addEventListener('input', renderTotales);
     document.getElementById('descuento_pct').addEventListener('input', renderTotales);
     document.getElementById('con_iva').addEventListener('change', renderTotales);
 
