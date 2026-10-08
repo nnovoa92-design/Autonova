@@ -157,6 +157,54 @@ function abrirEnlace(url) {
   if (!w) window.location.href = url;
 }
 
+// Auto-numeración en textareas: al presionar Enter en una línea que empieza con
+// "1. ", "a. ", "- ", "• " o "* ", la línea siguiente continúa la lista (2., b., -...).
+// Enter sobre un ítem vacío termina la lista. Acepta el elemento o su id.
+function setupAutoList(textareaOrId) {
+  const textarea = typeof textareaOrId === 'string' ? document.getElementById(textareaOrId) : textareaOrId;
+  if (!textarea || textarea.dataset.autoList) return;
+  textarea.dataset.autoList = '1';
+  textarea.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+    const text = textarea.value;
+    const pos = textarea.selectionStart;
+    const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
+    const line = text.substring(lineStart, pos);
+    const match = line.match(/^(\d+\.|[a-z]\.|[-•*])\s+/);
+    if (!match) return;
+    e.preventDefault();
+    // Ítem vacío (solo el marcador): se quita y la lista termina
+    if (!line.substring(match[0].length).trim()) {
+      textarea.value = text.substring(0, lineStart) + text.substring(pos);
+      textarea.selectionStart = textarea.selectionEnd = lineStart;
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      return;
+    }
+    const prefix = match[1];
+    let nextPrefix = '';
+    if (/^\d+\.$/.test(prefix)) {
+      nextPrefix = (parseInt(prefix) + 1) + '. ';
+    } else if (/^[a-z]\.$/.test(prefix)) {
+      const char = prefix.charCodeAt(0);
+      nextPrefix = char < 122 ? String.fromCharCode(char + 1) + '. ' : prefix + ' ';
+    } else {
+      nextPrefix = prefix + ' ';
+    }
+    textarea.value = text.substring(0, pos) + '\n' + nextPrefix + text.substring(pos);
+    textarea.selectionStart = textarea.selectionEnd = pos + 1 + nextPrefix.length;
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+
+// Texto del usuario listo para meter en HTML (sin interpretar etiquetas).
+// htmlSeguroMulti además respeta los saltos de línea.
+function htmlSeguro(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function htmlSeguroMulti(s) {
+  return htmlSeguro(s).replace(/\n/g, '<br>');
+}
+
 // SO · navegador legible (ej. "Android · Chrome"), para el registro de
 // auditoría de firmas electrónicas.
 function detectarDispositivo() {

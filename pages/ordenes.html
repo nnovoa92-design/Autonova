@@ -240,11 +240,13 @@
           <h3 style="margin-top:1.5rem;">Trabajos realizados / avances</h3>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.5rem;">
             Registra cada "qué se hizo" con su foto. Cada avance se muestra por separado en el informe del cliente.
+            Para detallar un trabajo en varios puntos, escribe <strong>1.</strong> y presiona Enter: la lista sigue sola (2., 3., ...).
+            Presiona Enter en un punto vacío para terminar la lista.
           </p>
           <div class="form-row" style="align-items:end;">
             <div class="form-group" style="flex:1;">
               <label for="avance-texto">Qué se hizo / observación</label>
-              <input type="text" id="avance-texto" placeholder="Ej: Se cambió la correa y se ajustó tensor" />
+              <textarea id="avance-texto" rows="3" placeholder="Ej:&#10;1. Se cambió la correa&#10;2. Se ajustó el tensor"></textarea>
             </div>
             <div class="form-group">
               <label class="btn btn-secondary" style="cursor:pointer; display:inline-block;">
@@ -295,7 +297,7 @@
               </select>
             </div>
             <div class="form-group" style="flex:0;">
-              <button type="button" id="programar-mant-btn">Programar recordatorio</button>
+              <button type="button" id="programar-mant-btn">Guardar</button>
             </div>
           </div>
           <p id="mant-estado" style="color:var(--color-text-muted); font-size:0.85rem;"></p>
@@ -773,17 +775,31 @@
       resumenChecklist(o.checklist_recepcion);
 
       avanceFotosPendientes = [];
+      avanceEditando = null;
       const afEstado = document.getElementById('avance-fotos-estado');
       if (afEstado) afEstado.textContent = 'Sin fotos';
       renderItemsDetalle();
       renderHoras();
       renderAvances();
+      cargarEstadoMantencion();
       await cargarAbonos();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     // ---------- Avances / "qué se hizo" (ordenes.avances jsonb) ----------
     let avanceFotosPendientes = [];
+    // Avance que se está editando: { idx, texto, fotos (las que quedarán), nuevas (subidas en esta edición), quitadas (originales a borrar al guardar) }
+    let avanceEditando = null;
+
+    // Ruta dentro del bucket fotos-ot a partir de la URL pública (para poder borrar el archivo)
+    function rutaFotoStorage(url) {
+      const m = String(url || '').match(/\/fotos-ot\/([^?]+)/);
+      return m ? decodeURIComponent(m[1]) : null;
+    }
+    async function borrarFotosStorage(urls) {
+      const rutas = (urls || []).map(rutaFotoStorage).filter(Boolean);
+      if (rutas.length) await supabaseClient.storage.from('fotos-ot').remove(rutas);   // si falla, la foto igual deja de mostrarse
+    }
 
     function renderAvances() {
       const cont = document.getElementById('avances-lista');
@@ -792,56 +808,137 @@
         cont.innerHTML = '<p style="color:var(--color-text-muted); font-size:0.85rem;">Sin avances registrados.</p>';
         return;
       }
-      cont.innerHTML = avances.map((a, idx) => `
-        <div class="card" style="margin:0.5rem 0; padding:0.75rem;">
-          <div style="display:flex; justify-content:space-between; gap:0.5rem;">
-            <strong>${a.texto || '(sin descripción)'}</strong>
-            <button type="button" class="btn-danger avance-del-btn" data-idx="${idx}" style="padding:0.2rem 0.5rem;">✕</button>
+      cont.innerHTML = avances.map((a, idx) => (avanceEditando && avanceEditando.idx === idx) ? `
+        <div class="card" style="margin:0.5rem 0; padding:0.75rem; border:2px solid var(--color-primary);">
+          <label for="avance-edit-texto" style="font-weight:600;">Editando avance · ${fmtFechaHora(a.fecha)}</label>
+          <textarea id="avance-edit-texto" class="avance-edit-texto" rows="5" style="width:100%; margin-top:0.35rem;">${htmlSeguro(avanceEditando.texto)}</textarea>
+          <div class="fotos-grid" style="margin-top:0.5rem;">
+            ${avanceEditando.fotos.map((u, fi) => `
+              <div class="foto-item" style="position:relative;">
+                <a href="${htmlSeguro(u)}" target="_blank"><img src="${htmlSeguro(u)}" loading="lazy" /></a>
+                <button type="button" class="avance-foto-quitar" data-fi="${fi}" title="Quitar esta foto" style="position:absolute; top:-6px; right:-6px; width:22px; height:22px; line-height:18px; padding:0; border-radius:50%; font-size:0.7rem;">✕</button>
+              </div>`).join('')}
           </div>
-          <div style="font-size:0.78rem; color:var(--color-text-muted);">${fmtFechaHora(a.fecha)}</div>
-          ${(a.fotos && a.fotos.length) ? `<div class="fotos-grid" style="margin-top:0.4rem;">${a.fotos.map(u => `<div class="foto-item"><a href="${u}" target="_blank"><img src="${u}" loading="lazy" /></a></div>`).join('')}</div>` : ''}
+          <div style="margin-top:0.5rem; display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+            <label class="btn btn-secondary btn-mini" style="cursor:pointer;">
+              📷 Agregar fotos
+              <input type="file" accept="image/*" multiple class="avance-foto-input" style="display:none;" />
+            </label>
+            <span class="avance-edit-estado" style="font-size:0.78rem; color:var(--color-text-muted);"></span>
+          </div>
+          <div style="margin-top:0.75rem; display:flex; gap:0.5rem; flex-wrap:wrap;">
+            <button type="button" class="avance-guardar-btn">Guardar cambios</button>
+            <button type="button" class="btn-secondary avance-cancelar-btn">Cancelar</button>
+          </div>
+          <p class="error-message avance-edit-error"></p>
+        </div>` : `
+        <div class="card" style="margin:0.5rem 0; padding:0.75rem;">
+          <div style="display:flex; justify-content:space-between; gap:0.5rem; align-items:flex-start;">
+            <div style="font-weight:600; white-space:pre-wrap; min-width:0;">${a.texto ? htmlSeguro(a.texto) : '(sin descripción)'}</div>
+            <div style="display:flex; gap:0.3rem; flex-shrink:0;">
+              <button type="button" class="btn-secondary avance-edit-btn" data-idx="${idx}" style="padding:0.2rem 0.5rem;">✏️ Editar</button>
+              <button type="button" class="btn-danger avance-del-btn" data-idx="${idx}" title="Eliminar el avance completo (texto y fotos)" style="padding:0.2rem 0.5rem;">🗑 Eliminar</button>
+            </div>
+          </div>
+          <div style="font-size:0.78rem; color:var(--color-text-muted);">${fmtFechaHora(a.fecha)}${a.editado ? ` · editado ${fmtFechaHora(a.editado)}` : ''}</div>
+          ${(a.fotos && a.fotos.length) ? `<div class="fotos-grid" style="margin-top:0.4rem;">${a.fotos.map(u => `<div class="foto-item"><a href="${htmlSeguro(u)}" target="_blank"><img src="${htmlSeguro(u)}" loading="lazy" /></a></div>`).join('')}</div>` : ''}
         </div>`).join('');
 
-      cont.querySelectorAll('.avance-del-btn').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          if (!confirm('¿Eliminar este avance?')) return;
-          const avances = (ordenActual.avances || []).slice();
-          avances.splice(Number(btn.dataset.idx), 1);
-          await supabaseClient.from('ordenes').update({ avances }).eq('id', ordenActual.id);
-          await abrirDetalle(ordenActual.id);
-        });
-      });
+      const ta = cont.querySelector('.avance-edit-texto');
+      if (ta) setupAutoList(ta);
     }
 
-    // ---------- Auto-numeración en textareas ----------
-    function setupAutoList(textareaId) {
-      const textarea = document.getElementById(textareaId);
-      if (!textarea) return;
-      textarea.addEventListener('keydown', (e) => {
-        if (e.key !== 'Enter') return;
-        const text = textarea.value;
-        const pos = textarea.selectionStart;
-        const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
-        const line = text.substring(lineStart, pos);
-        const match = line.match(/^(\d+\.|[a-z]\.|[-•*])\s+/);
-        if (!match) return;
-        e.preventDefault();
-        const prefix = match[1];
-        let nextPrefix = '';
-        if (/^\d+\.$/.test(prefix)) {
-          nextPrefix = (parseInt(prefix) + 1) + '. ';
-        } else if (/^[a-z]\.$/.test(prefix)) {
-          const char = prefix.charCodeAt(0);
-          nextPrefix = char < 122 ? String.fromCharCode(char + 1) + '. ' : prefix + ' ';
-        } else {
-          nextPrefix = prefix + ' ';
-        }
-        textarea.value = text.substring(0, pos) + '\n' + nextPrefix + text.substring(pos);
-        textarea.selectionStart = textarea.selectionEnd = pos + 1 + nextPrefix.length;
+    // Un solo juego de listeners para la lista de avances (se vuelve a pintar a menudo)
+    (function wireAvances() {
+      const cont = document.getElementById('avances-lista');
+      const errorEdicion = (m) => { const e = cont.querySelector('.avance-edit-error'); if (e) e.textContent = m; };
+
+      cont.addEventListener('input', (e) => {
+        if (avanceEditando && e.target.classList.contains('avance-edit-texto')) avanceEditando.texto = e.target.value;
       });
-    }
+
+      cont.addEventListener('click', async (e) => {
+        const btn = e.target.closest('button');
+        if (!btn || !ordenActual) return;
+
+        if (btn.classList.contains('avance-edit-btn')) {
+          if (avanceEditando && !confirm('Tienes otro avance en edición. ¿Descartar esos cambios y editar este?')) return;
+          if (avanceEditando) await borrarFotosStorage(avanceEditando.nuevas);
+          const idx = Number(btn.dataset.idx);
+          const a = ordenActual.avances[idx];
+          avanceEditando = { idx, texto: a.texto || '', fotos: (a.fotos || []).slice(), nuevas: [], quitadas: [] };
+          renderAvances();
+          const ta = cont.querySelector('.avance-edit-texto');
+          if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+
+        } else if (btn.classList.contains('avance-del-btn')) {
+          const idx = Number(btn.dataset.idx);
+          const a = ordenActual.avances[idx];
+          if (!confirm(`¿Eliminar este avance completo?${(a.fotos || []).length ? ` Se borrarán también sus ${a.fotos.length} foto(s).` : ''}`)) return;
+          const avances = (ordenActual.avances || []).slice();
+          avances.splice(idx, 1);
+          const { error } = await supabaseClient.from('ordenes').update({ avances }).eq('id', ordenActual.id);
+          if (error) { alert('No se pudo eliminar: ' + error.message); return; }
+          await borrarFotosStorage(a.fotos);
+          if (avanceEditando) avanceEditando = avanceEditando.idx === idx ? null : (avanceEditando.idx > idx ? { ...avanceEditando, idx: avanceEditando.idx - 1 } : avanceEditando);
+          ordenActual.avances = avances;
+          renderAvances();
+
+        } else if (btn.classList.contains('avance-foto-quitar') && avanceEditando) {
+          const [url] = avanceEditando.fotos.splice(Number(btn.dataset.fi), 1);
+          if (avanceEditando.nuevas.includes(url)) {          // subida en esta edición: se borra ya
+            avanceEditando.nuevas = avanceEditando.nuevas.filter(u => u !== url);
+            borrarFotosStorage([url]);
+          } else {
+            avanceEditando.quitadas.push(url);                 // original: se borra al guardar
+          }
+          renderAvances();
+
+        } else if (btn.classList.contains('avance-cancelar-btn') && avanceEditando) {
+          await borrarFotosStorage(avanceEditando.nuevas);
+          avanceEditando = null;
+          renderAvances();
+
+        } else if (btn.classList.contains('avance-guardar-btn') && avanceEditando) {
+          const texto = avanceEditando.texto.trim();
+          if (!texto && !avanceEditando.fotos.length) {
+            errorEdicion('El avance quedaría vacío. Escribe algo, deja una foto o usa «Eliminar» para borrarlo.');
+            return;
+          }
+          const avances = (ordenActual.avances || []).slice();
+          avances[avanceEditando.idx] = { ...avances[avanceEditando.idx], texto, fotos: avanceEditando.fotos.slice(), editado: new Date().toISOString() };
+          btn.disabled = true;
+          const { error } = await supabaseClient.from('ordenes').update({ avances }).eq('id', ordenActual.id);
+          btn.disabled = false;
+          if (error) { errorEdicion('Error: ' + error.message); return; }
+          await borrarFotosStorage(avanceEditando.quitadas);
+          ordenActual.avances = avances;
+          avanceEditando = null;
+          renderAvances();
+        }
+      });
+
+      cont.addEventListener('change', async (e) => {
+        if (!e.target.classList.contains('avance-foto-input') || !avanceEditando || !ordenActual) return;
+        const estado = cont.querySelector('.avance-edit-estado');
+        const archivos = Array.from(e.target.files);
+        if (estado) estado.textContent = 'Subiendo...';
+        for (const file of archivos) {
+          const ruta = `${ordenActual.id}/avance/avance_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9_.-]/g, '_')}`;
+          const { error } = await supabaseClient.storage.from('fotos-ot').upload(ruta, file);
+          if (error) { errorEdicion(`No se pudo subir ${file.name}: ${error.message}`); continue; }
+          const url = supabaseClient.storage.from('fotos-ot').getPublicUrl(ruta).data.publicUrl;
+          avanceEditando.fotos.push(url);
+          avanceEditando.nuevas.push(url);
+        }
+        renderAvances();
+      });
+    })();
+
+    // Auto-numeración (setupAutoList está en layout.js)
     setupAutoList('nueva-diagnostico');
     setupAutoList('detalle-diagnostico');
+    setupAutoList('avance-texto');
 
     // ---------- Abonos (pagos parciales) ----------
     let abonosActuales = [];
@@ -1371,7 +1468,10 @@
       document.getElementById('avance-texto').value = '';
       avanceFotosPendientes = [];
       document.getElementById('avance-fotos-estado').textContent = 'Sin fotos';
-      await abrirDetalle(ordenActual.id);
+      // Sin recargar toda la OT: así la pantalla no salta arriba y se puede seguir cargando avances
+      ordenActual.avances = avances;
+      renderAvances();
+      document.getElementById('avance-texto').focus();
     });
 
     document.getElementById('whatsapp-ot-btn').addEventListener('click', () => {
@@ -1485,7 +1585,7 @@
         </div>` : ''}
         ${(o.avances && o.avances.length) ? `<h3 style="margin-top:1.5rem;">Trabajos realizados</h3>${o.avances.map(a => `
         <div style="margin:0.5rem 0;">
-          <p style="margin:0.2rem 0;">• ${a.texto || ''} <span style="color:#666;">(${fmtFecha(a.fecha)})</span></p>
+          <div style="margin:0.2rem 0; white-space:pre-wrap;">${(a.texto || '').includes('\n') ? '' : '• '}${htmlSeguro(a.texto || '')}${(a.texto || '').includes('\n') ? '\n' : ' '}<span style="color:#666;">(${fmtFecha(a.fecha)})</span></div>
           ${(a.fotos && a.fotos.length) ? `<div style="display:flex; flex-wrap:wrap; gap:0.4rem; margin:0.3rem 0 0.6rem;">${a.fotos.map(u => `<img src="${u}" style="width:110px; height:80px; object-fit:cover; border:1px solid #ccc; border-radius:4px;" />`).join('')}</div>` : ''}
         </div>`).join('')}` : ''}
         ${o.firma_cliente_url ? `
@@ -1578,7 +1678,7 @@
         ${avancesConFotos.length ? `
         <h3 style="margin-top:1.5rem;">Fotografías de avances de trabajo</h3>
         ${avancesConFotos.map(a => `
-        <p style="font-size:0.8rem; margin:0.5rem 0 0.2rem; color:#666;">${a.texto || 'Avance'} — ${fmtFechaHora(a.fecha)}</p>
+        <p style="font-size:0.8rem; margin:0.5rem 0 0.2rem; color:#666;">${htmlSeguro((a.texto || 'Avance').split('\n')[0])}${(a.texto || '').includes('\n') ? ' …' : ''} — ${fmtFechaHora(a.fecha)}</p>
         <div style="display:flex; flex-wrap:wrap; gap:0.5rem;">
           ${a.fotos.map(u => `<img src="${u}" style="width:160px; height:120px; object-fit:cover; border:1px solid #ccc; border-radius:6px;" />`).join('')}
         </div>`).join('')}` : ''}
@@ -1630,28 +1730,93 @@
       abrirEnlace(linkGmail(email, asunto, cuerpoMail));
     });
 
-    // Opciones 1 a 11 meses
+    // Opciones: "No recordar" + 1 a 11 meses
     document.getElementById('mant-meses').innerHTML =
+      '<option value="0">No recordar</option>' +
       Array.from({ length: 11 }, (_, i) => i + 1).map(m => `<option value="${m}">${m} mes${m > 1 ? 'es' : ''}</option>`).join('');
+    document.getElementById('mant-meses').value = '6';
+
+    // Cada OT tiene a lo más un recordatorio de mantención pendiente, o una marca "No recordar"
+    // (fila ya "enviada", así Inicio no la muestra y la OT recuerda que se decidió no avisar).
+    const detalleMantencion = (o) => `Próxima mantención (${fmtNumero('OT', o.numero)})`;
+    const detalleSinRecordatorio = (o) => `Sin recordatorio (${fmtNumero('OT', o.numero)})`;
+
+    function mostrarEstadoMantencion(texto, color) {
+      const estado = document.getElementById('mant-estado');
+      estado.textContent = texto;
+      estado.style.color = color || 'var(--color-text-muted)';
+    }
+
+    async function cargarEstadoMantencion() {
+      const o = ordenActual;
+      if (!o) return;
+      mostrarEstadoMantencion('');
+      const { data, error } = await supabaseClient.from('recordatorios')
+        .select('id, fecha_objetivo, enviado, fecha_envio, detalle')
+        .eq('tipo', 'mantencion').ilike('detalle', `%${fmtNumero('OT', o.numero)}%`)
+        .order('creado_en', { ascending: false });
+      if (error || !ordenActual || ordenActual.id !== o.id) return;
+      const filas = data || [];
+      const sinRec = filas.find(r => r.detalle === detalleSinRecordatorio(o));
+      const pendiente = filas.find(r => r.detalle === detalleMantencion(o) && !r.enviado);
+      const avisado = filas.find(r => r.detalle === detalleMantencion(o) && r.enviado);
+      const sel = document.getElementById('mant-meses');
+      if (pendiente) {
+        const hoy = new Date(), obj = new Date(pendiente.fecha_objetivo + 'T12:00:00');
+        const meses = (obj.getFullYear() - hoy.getFullYear()) * 12 + obj.getMonth() - hoy.getMonth();
+        sel.value = String(Math.min(11, Math.max(1, meses)));
+        mostrarEstadoMantencion(`⏰ Recordatorio programado para ${fmtFecha(pendiente.fecha_objetivo)}. Aparecerá en Inicio ese mes.`, '#1b6e3c');
+      } else if (sinRec) {
+        sel.value = '0';
+        mostrarEstadoMantencion('🚫 Se decidió no recordar la próxima mantención de esta OT.');
+      } else if (avisado) {
+        mostrarEstadoMantencion(`✓ Ya se avisó al cliente de la próxima mantención${avisado.fecha_envio ? ` (${fmtFecha(avisado.fecha_envio)})` : ''}.`);
+      } else {
+        sel.value = '6';
+        mostrarEstadoMantencion('Sin recordatorio programado.');
+      }
+    }
 
     async function programarMantencion() {
       if (!ordenActual) return;
-      const estado = document.getElementById('mant-estado');
+      const o = ordenActual;
       const meses = Number(document.getElementById('mant-meses').value);
+
+      // Se reemplaza lo anterior: nada de recordatorios duplicados para la misma OT
+      const quitar = await supabaseClient.from('recordatorios').delete()
+        .eq('tipo', 'mantencion').eq('enviado', false).eq('detalle', detalleMantencion(o));
+      const quitarMarca = await supabaseClient.from('recordatorios').delete()
+        .eq('tipo', 'mantencion').eq('detalle', detalleSinRecordatorio(o));
+      if (quitar.error || quitarMarca.error) {
+        mostrarEstadoMantencion(`Error: ${(quitar.error || quitarMarca.error).message}`, 'var(--color-danger)');
+        return;
+      }
+
+      if (meses === 0) {
+        const { error } = await supabaseClient.from('recordatorios').insert({
+          vehiculo_id: o.vehiculo_id, cliente_id: o.cliente_id, tipo: 'mantencion',
+          fecha_objetivo: new Date().toISOString().slice(0, 10),
+          detalle: detalleSinRecordatorio(o), enviado: true,
+        });
+        if (error) { mostrarEstadoMantencion(`Error: ${error.message}`, 'var(--color-danger)'); return; }
+        mostrarEstadoMantencion('🚫 Listo: no se recordará la próxima mantención de esta OT.', '#1b6e3c');
+        return;
+      }
+
       const fecha = new Date();
       fecha.setMonth(fecha.getMonth() + meses);
       const fechaObjetivo = fecha.toISOString().slice(0, 10);
       const { error } = await supabaseClient.from('recordatorios').insert({
-        vehiculo_id: ordenActual.vehiculo_id,
-        cliente_id: ordenActual.cliente_id,
+        vehiculo_id: o.vehiculo_id,
+        cliente_id: o.cliente_id,
         tipo: 'mantencion',
         fecha_objetivo: fechaObjetivo,
-        detalle: `Próxima mantención (${fmtNumero('OT', ordenActual.numero)})`,
+        detalle: detalleMantencion(o),
       });
-      estado.textContent = error
+      mostrarEstadoMantencion(error
         ? `Error: ${error.message} (¿ejecutaste sql/actualizacion-v4.sql?)`
-        : `✓ Recordatorio programado para ${fmtFecha(fechaObjetivo)}. Aparecerá en Inicio ese mes.`;
-      estado.style.color = error ? 'var(--color-danger)' : '#1b6e3c';
+        : `✓ Recordatorio programado para ${fmtFecha(fechaObjetivo)}. Aparecerá en Inicio ese mes.`,
+        error ? 'var(--color-danger)' : '#1b6e3c');
     }
 
     document.getElementById('programar-mant-btn').addEventListener('click', programarMantencion);

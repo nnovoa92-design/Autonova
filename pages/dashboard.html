@@ -302,7 +302,7 @@
       // 1) Mantenciones pendientes (recordatorios tipo mantencion, no enviados, hasta fin de mes)
       const { data: mant } = await supabaseClient
         .from('recordatorios')
-        .select('id, fecha_objetivo, clientes(nombre, telefono, email), vehiculos(patente, marca, modelo)')
+        .select('id, fecha_objetivo, detalle, clientes(nombre, telefono, email), vehiculos(patente, marca, modelo)')
         .eq('tipo', 'mantencion').eq('enviado', false)
         .lte('fecha_objetivo', finMes)
         .order('fecha_objetivo');
@@ -310,7 +310,7 @@
         filas.push({
           tipo: 'Mantención', badge: 'badge-blue',
           cliente: r.clientes, vehiculo: r.vehiculos,
-          aviso: fmtFecha(r.fecha_objetivo), recordatorioId: r.id,
+          aviso: fmtFecha(r.fecha_objetivo), recordatorioId: r.id, detalleRecordatorio: r.detalle,
           mensaje: `recordamos que su ${r.vehiculos ? r.vehiculos.patente : 'vehículo'} está próximo a su mantención`,
         });
       });
@@ -374,7 +374,8 @@
           <td class="table-actions">
             <button type="button" class="btn-secondary rec-wa" data-idx="${idx}">WhatsApp</button>
             <button type="button" class="btn-secondary rec-mail" data-idx="${idx}">Correo</button>
-            ${f.recordatorioId ? `<button type="button" class="btn-secondary rec-ok" data-id="${f.recordatorioId}">Marcar avisado</button>` : ''}
+            ${f.recordatorioId ? `<button type="button" class="btn-secondary rec-ok" data-id="${f.recordatorioId}">Marcar avisado</button>
+            <button type="button" class="btn-secondary rec-no" data-idx="${idx}" title="Quitar este recordatorio: no se le avisará al cliente">No recordar</button>` : ''}
           </td>
         </tr>`;
       }).join('');
@@ -424,6 +425,17 @@
       }));
       tbody.querySelectorAll('.rec-ok').forEach(btn => btn.addEventListener('click', async () => {
         await supabaseClient.from('recordatorios').update({ enviado: true, fecha_envio: new Date().toISOString() }).eq('id', btn.dataset.id);
+        await cargarRecordatorios();
+      }));
+      // "No recordar": sale de la lista sin avisar; la OT de origen queda indicando que se decidió no avisar
+      tbody.querySelectorAll('.rec-no').forEach(btn => btn.addEventListener('click', async () => {
+        const f = filas[btn.dataset.idx];
+        const quien = `${(f.cliente && f.cliente.nombre) || 'el cliente'}${f.vehiculo ? ` (${f.vehiculo.patente})` : ''}`;
+        if (!confirm(`¿No recordar la próxima mantención de ${quien}? No se le avisará.`)) return;
+        const detalle = /^Próxima mantención/.test(f.detalleRecordatorio || '')
+          ? f.detalleRecordatorio.replace(/^Próxima mantención/, 'Sin recordatorio') : 'Sin recordatorio';
+        const { error } = await supabaseClient.from('recordatorios').update({ enviado: true, detalle }).eq('id', f.recordatorioId);
+        if (error) { alert('No se pudo guardar: ' + error.message); return; }
         await cargarRecordatorios();
       }));
     }
