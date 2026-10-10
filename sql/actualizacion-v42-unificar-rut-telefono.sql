@@ -55,6 +55,11 @@ create table if not exists respaldo_formatos_v42 (
   cambiado_en timestamptz not null default now()
 );
 
+-- Guarda RUT y teléfonos de clientes: se cierra el acceso desde la app y la API pública
+-- (RLS activado y sin políticas = solo se ve desde el panel de Supabase).
+alter table respaldo_formatos_v42 enable row level security;
+revoke all on respaldo_formatos_v42 from anon, authenticated;
+
 -- 1) RUT de clientes (es único: se evita crear duplicados)
 with cand as (
   select id, rut as antes, _autonova_fmt_rut(rut) as despues,
