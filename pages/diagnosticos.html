@@ -71,6 +71,17 @@
             <label for="motivo">Motivo de consulta (lo que reporta el cliente)</label>
             <textarea id="motivo" rows="2" placeholder="Ej: ruido al frenar, testigo de motor encendido..."></textarea>
           </div>
+          <div class="form-group">
+            <label>Inspección de ingreso</label>
+            <p style="color:var(--color-text-muted); font-size:0.8rem; margin:0 0 0.35rem;">
+              Estado visual del vehículo al recibirlo (rayones, golpes, vidrios...). El cliente puede revisarla y firmarla a distancia;
+              al crear la OT, esta misma inspección pasa a ella con su firma.
+            </p>
+            <button type="button" id="ingreso-btn" class="btn-secondary">📋 Inspección de ingreso</button>
+            <button type="button" id="ingreso-enviar-btn" class="btn-secondary">💬 Enviar al cliente para firmar</button>
+            <button type="button" id="ingreso-link-btn" class="btn-secondary">🔗 Copiar link</button>
+            <span id="ingreso-resumen" style="font-size:0.82rem; color:var(--color-text-muted); margin-left:0.5rem;"></span>
+          </div>
 
           <h3>2. Pruebas y monitoreos</h3>
           <p style="color:var(--color-text-muted); font-size:0.82rem; margin-top:0;">
@@ -263,6 +274,9 @@
     let diagActual = null;          // { id, numero, esNuevo, cotizacion }
     let pruebasActuales = [];       // [{ item (nombre), nota (resultado), fotos }] -> columna diagnosticos.hallazgos
     let itemsActuales = [];
+    let ingresoActual = [];         // inspección de ingreso: [{ item, estado, nota, fotos }] -> columna checklist_recepcion
+    let ingresoFirma = null;        // firma del cliente a distancia (si ya firmó)
+    let ingresoTocado = false;      // si se modificó en esta edición (para no escribir la columna sin necesidad)
     let config = null;
 
     // Sugerencias para el nombre de una prueba (se suman las que ya usaste en otros diagnósticos)
@@ -516,6 +530,167 @@
       renderPruebas();
       const nombres = document.querySelectorAll('#pruebas-body .h-item');
       if (nombres.length) nombres[nombres.length - 1].focus();
+    });
+
+    // ---------- Inspección de ingreso (igual que en la OT; pasa a la OT al crearla) ----------
+    const CHECKLIST_INGRESO_ESTANDAR = [
+      'Rayones o rayaduras en la carrocería',
+      'Golpes o abolladuras',
+      'Parabrisas / vidrios',
+      'Espejos laterales',
+      'Llantas / tapas de ruedas (rines)',
+      'Antena',
+      'Focos y faros',
+      'Tapiz o interior',
+    ];
+    const FIRMA_INGRESO_VACIA = {
+      checklist_firma_png: null, checklist_firma_fecha: null, checklist_firma_lat: null, checklist_firma_lng: null,
+      checklist_firma_dispositivo: null, checklist_firma_ip: null, checklist_firma_nombre_declarado: null, checklist_firma_rut_declarado: null,
+    };
+    let checklistTemp = [];
+
+    function otVinculada() { return diagActual && diagActual.cotizacion ? ((diagActual.cotizacion.ordenes || [])[0] || null) : null; }
+
+    function renderResumenIngreso() {
+      const el = document.getElementById('ingreso-resumen');
+      const ot = otVinculada();
+      const optimos = ingresoActual.filter(c => c.estado === 'optimo').length;
+      const obs = ingresoActual.filter(c => c.estado === 'observacion').length;
+      let txt = !ingresoActual.length ? 'Sin registrar aún.'
+        : `${optimos} óptimo(s), ${obs} con observación, de ${ingresoActual.length} ítem(s).`;
+      if (ingresoActual.length) {
+        txt += ingresoFirma
+          ? ` ✓ Firmada por ${ingresoFirma.nombre || 'el cliente'}${ingresoFirma.fecha ? ' (' + fmtFechaHora(ingresoFirma.fecha) + ')' : ''}`
+          : ' Pendiente de la firma del cliente.';
+      }
+      if (ot) txt += ` Ya pasó a la ${fmtNumero('OT', ot.numero)}: se gestiona allí.`;
+      el.textContent = txt;
+      document.getElementById('ingreso-btn').textContent = ot ? '📋 Ver inspección' : '📋 Inspección de ingreso';
+      document.getElementById('ingreso-enviar-btn').style.display = (ot || !ingresoActual.length) ? 'none' : '';
+      document.getElementById('ingreso-link-btn').style.display = (ot || !ingresoActual.length) ? 'none' : '';
+    }
+
+    function renderChecklistIngreso() {
+      const body = document.getElementById('ingreso-modal-body');
+      const soloLectura = !!otVinculada();
+      body.innerHTML = checklistTemp.map((c, idx) => `
+        <div style="border-bottom:1px solid var(--color-border); padding-bottom:0.6rem; margin-bottom:0.6rem;">
+          <div style="display:flex; align-items:center; gap:0.5rem;">
+            <input type="text" class="ci-item" data-idx="${idx}" value="${esc(c.item)}" style="flex:1; min-width:0;" ${soloLectura ? 'disabled' : ''} />
+            ${soloLectura ? '' : `<button type="button" class="btn-danger ci-quitar" data-idx="${idx}" style="padding:0.3rem 0.6rem; flex-shrink:0;">✕</button>`}
+          </div>
+          <div style="display:flex; gap:0.4rem; margin-top:0.4rem; flex-wrap:wrap;">
+            <button type="button" class="chk-estado-btn estado-optimo ci-estado${c.estado === 'optimo' ? ' activo' : ''}" data-idx="${idx}" data-estado="optimo" ${soloLectura ? 'disabled' : ''}>✓ Óptimo</button>
+            <button type="button" class="chk-estado-btn estado-observacion ci-estado${c.estado === 'observacion' ? ' activo' : ''}" data-idx="${idx}" data-estado="observacion" ${soloLectura ? 'disabled' : ''}>⚠ Observación</button>
+          </div>
+          <input type="text" class="ci-nota" data-idx="${idx}" value="${esc(c.nota)}" placeholder="Nota (opcional)" style="width:100%; margin-top:0.4rem; font-size:0.82rem; padding:0.4rem 0.6rem;" ${soloLectura ? 'disabled' : ''} />
+          <div class="h-fotos">
+            ${(c.fotos || []).map((u, fi) => `
+              <div class="h-foto">
+                <a href="${esc(u)}" target="_blank"><img src="${esc(u)}" alt="" /></a>
+                ${soloLectura ? '' : `<button type="button" class="ci-foto-quitar" data-idx="${idx}" data-fi="${fi}">✕</button>`}
+              </div>`).join('')}
+            ${soloLectura ? '' : `<label class="btn btn-secondary btn-mini" style="cursor:pointer;">📷 Foto
+              <input type="file" accept="image/*" multiple class="ci-foto-input" data-idx="${idx}" style="display:none;" /></label>`}
+          </div>
+        </div>`).join('') || '<p style="color:var(--color-text-muted);">Sin ítems.</p>';
+    }
+
+    function abrirInspeccionIngreso() {
+      if (!diagActual) return;
+      const soloLectura = !!otVinculada();
+      checklistTemp = ingresoActual.length
+        ? ingresoActual.map(c => ({ item: c.item, estado: c.estado || null, nota: c.nota || '', fotos: (c.fotos || []).slice() }))
+        : CHECKLIST_INGRESO_ESTANDAR.map(item => ({ item, estado: null, nota: '', fotos: [] }));
+
+      abrirModal(soloLectura ? 'Inspección de ingreso (ya está en la OT)' : 'Inspección de ingreso',
+        `<p style="color:var(--color-text-muted); font-size:0.82rem; margin-top:0;">
+           ${soloLectura ? 'Esta inspección ya pasó a la OT; allí se puede editar.' : 'Marca lo que corresponda y agrega una nota o fotos si hace falta. El cliente puede revisarla y firmarla desde su celular.'}
+         </p>
+         <div id="ingreso-modal-body"></div>
+         ${soloLectura ? '' : '<button type="button" id="ingreso-agregar-btn" class="btn-secondary btn-mini" style="margin-top:0.5rem;">+ Agregar ítem</button>'}`,
+        async () => {
+          if (soloLectura) { cerrarModal(); return; }
+          const nuevo = checklistTemp.filter(c => c.item.trim())
+            .map(c => ({ item: c.item.trim(), estado: c.estado || null, nota: (c.nota || '').trim(), fotos: c.fotos || [] }));
+          const cambio = JSON.stringify(nuevo) !== JSON.stringify(ingresoActual);
+          const borraFirma = cambio && !!ingresoFirma;
+          if (borraFirma && !confirm('El cliente ya firmó esta inspección. Si la modificas, su firma se borra y deberá firmar de nuevo. ¿Continuar?')) return;
+
+          if (!diagActual.esNuevo) {
+            const upd = { checklist_recepcion: nuevo, ...(borraFirma ? FIRMA_INGRESO_VACIA : {}) };
+            const { error } = await supabaseClient.from('diagnosticos').update(upd).eq('id', diagActual.id);
+            if (error) {
+              modalError(/checklist_/.test(error.message || '')
+                ? 'Falta ejecutar sql/actualizacion-v39-inspeccion-ingreso-diagnostico.sql en el SQL Editor de Supabase.'
+                : 'Error: ' + error.message);
+              return;
+            }
+          }
+          ingresoActual = nuevo;
+          ingresoTocado = true;
+          if (borraFirma) ingresoFirma = null;
+          cerrarModal();
+          renderResumenIngreso();
+          if (!diagActual.esNuevo) await cargarDiagnosticos();
+        });
+
+      const body = document.getElementById('ingreso-modal-body');
+      renderChecklistIngreso();
+      body.addEventListener('input', (e) => {
+        const idx = e.target.dataset.idx;
+        if (e.target.classList.contains('ci-item')) checklistTemp[idx].item = e.target.value;
+        else if (e.target.classList.contains('ci-nota')) checklistTemp[idx].nota = e.target.value;
+      });
+      body.addEventListener('click', (e) => {
+        const btn = e.target.closest('button');
+        if (!btn) return;
+        const idx = Number(btn.dataset.idx);
+        if (btn.classList.contains('ci-estado')) { checklistTemp[idx].estado = btn.dataset.estado; renderChecklistIngreso(); }
+        else if (btn.classList.contains('ci-quitar')) { checklistTemp.splice(idx, 1); renderChecklistIngreso(); }
+        else if (btn.classList.contains('ci-foto-quitar')) { checklistTemp[idx].fotos.splice(Number(btn.dataset.fi), 1); renderChecklistIngreso(); }
+      });
+      body.addEventListener('change', async (e) => {
+        if (!e.target.classList.contains('ci-foto-input')) return;
+        const idx = Number(e.target.dataset.idx);
+        for (const file of Array.from(e.target.files)) {
+          const ruta = `diagnosticos/${diagActual.id}/inspeccion/${idx}_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9_.-]/g, '_')}`;
+          const { error } = await supabaseClient.storage.from('fotos-ot').upload(ruta, file);
+          if (error) { modalError(`No se pudo subir la foto: ${error.message}`); continue; }
+          checklistTemp[idx].fotos.push(supabaseClient.storage.from('fotos-ot').getPublicUrl(ruta).data.publicUrl);
+        }
+        renderChecklistIngreso();
+      });
+      const agregar = document.getElementById('ingreso-agregar-btn');
+      if (agregar) agregar.addEventListener('click', () => { checklistTemp.push({ item: '', estado: null, nota: '', fotos: [] }); renderChecklistIngreso(); });
+    }
+
+    function linkInspeccionIngreso(id) { return `${window.location.origin}/inspeccion-ingreso.html?id=${id}`; }
+
+    function filaDiagnosticoActual() {
+      if (!diagActual || diagActual.esNuevo) { alert('Primero guarda el diagnóstico para poder compartir la inspección.'); return null; }
+      const d = diagnosticosCache.find(x => x.id === diagActual.id);
+      if (!d) { alert('Guarda el diagnóstico para poder compartir la inspección.'); return null; }
+      if (!ingresoActual.length) { alert('Primero registra y guarda la inspección de ingreso.'); return null; }
+      return d;
+    }
+
+    document.getElementById('ingreso-btn').addEventListener('click', abrirInspeccionIngreso);
+    document.getElementById('ingreso-enviar-btn').addEventListener('click', () => {
+      const d = filaDiagnosticoActual();
+      if (!d) return;
+      const tel = d.clientes && d.clientes.telefono;
+      if (!tel) { alert('El cliente no tiene teléfono registrado.'); return; }
+      const veh = d.vehiculos ? `su vehículo ${d.vehiculos.patente}` : 'su vehículo';
+      abrirEnlace(linkWhatsApp(tel,
+        `Hola ${d.clientes.nombre}, le saluda ${config.nombre}. Le compartimos el detalle de la inspección de ingreso de ${veh} (${fmtNumero('DIAG', d.numero)}). Puede revisarla y firmarla aquí:\n${linkInspeccionIngreso(d.id)}`));
+    });
+    document.getElementById('ingreso-link-btn').addEventListener('click', async () => {
+      const d = filaDiagnosticoActual();
+      if (!d) return;
+      const url = linkInspeccionIngreso(d.id);
+      try { await navigator.clipboard.writeText(url); alert('Link copiado:\n' + url); }
+      catch { prompt('Copia el link manualmente:', url); }
     });
 
     // ---------- Trabajos recomendados (mismo editor de líneas que cotizaciones) ----------
@@ -827,6 +1002,11 @@
 
       pruebasActuales = nuevo ? [] : (d.hallazgos || []).map(h => ({ item: h.item || '', nota: resultadoPrueba(h), fotos: h.fotos || [] }));
 
+      ingresoActual = nuevo ? [] : (d.checklist_recepcion || []).map(c => ({ item: c.item || '', estado: c.estado || null, nota: c.nota || '', fotos: c.fotos || [] }));
+      ingresoFirma = (!nuevo && d.checklist_firma_png)
+        ? { fecha: d.checklist_firma_fecha, nombre: d.checklist_firma_nombre_declarado, rut: d.checklist_firma_rut_declarado } : null;
+      ingresoTocado = false;
+
       itemsActuales = nuevo ? [] : itemsEfectivos(d).map(i => ({ ...i }));
       document.getElementById('diag-horas').value = nuevo ? 0 : Number(d.horas_diagnostico || 0);
       document.getElementById('diag-valor-hora').value = (nuevo || !Number(d.valor_hora_diagnostico)) ? Number(config.valor_hora || 0) : Number(d.valor_hora_diagnostico);
@@ -845,6 +1025,7 @@
       document.getElementById('compartir-editor').innerHTML = menuCompartirHTML(diagActual.id, true);
       actualizarSugerenciasPruebas();
       renderEstadoConversion();
+      renderResumenIngreso();
       renderPruebas();
       onTipoChange();
       renderItems();
@@ -878,6 +1059,8 @@
           .filter(h => h.item.trim())
           .map(h => ({ item: h.item.trim(), nota: (h.nota || '').trim(), fotos: h.fotos || [] })),
       };
+      // La inspección de ingreso solo se escribe si existe o se tocó (así guardar funciona aunque falte v39)
+      if (ingresoTocado || ingresoActual.length) payload.checklist_recepcion = ingresoActual;
       // Con cotización/OT creada, el valor del diagnóstico, el descuento y el IVA ya no se tocan desde acá
       if (!bloqueado) {
         payload.horas_diagnostico = Math.max(0, Number(document.getElementById('diag-horas').value) || 0);
@@ -892,6 +1075,7 @@
       if (error) {
         const m = error.message || '';
         const falta = /descuento_(tipo|monto)/.test(m) ? 'sql/actualizacion-v36-descuento-pesos.sql (descuento en pesos)'
+          : /checklist_/.test(m) ? 'sql/actualizacion-v39-inspeccion-ingreso-diagnostico.sql (inspección de ingreso)'
           : /horas_diagnostico|valor_hora_diagnostico/.test(m) ? 'sql/actualizacion-v34-diagnostico-valor.sql (valor del diagnóstico)'
           : /diagnosticos|diagnostico_items/.test(m) ? 'sql/actualizacion-v32-diagnosticos.sql (módulo de diagnósticos)' : null;
         errorEl.textContent = falta
@@ -1010,6 +1194,29 @@
         </tr>`;
       }).join('');
 
+      // Inspección de ingreso (estado visual del vehículo al recibirlo) y, si la firmó, la conformidad del cliente
+      const ingreso = Array.isArray(d.checklist_recepcion) ? d.checklist_recepcion : [];
+      const textoEstadoIngreso = (c) => c.estado === 'optimo' ? '<span style="color:#1b6e3c; font-weight:bold;">✓ Óptimo</span>'
+        : c.estado === 'observacion' ? '<span style="color:#a93b33; font-weight:bold;">⚠ Observación</span>' : '<span style="color:#666;">Sin evaluar</span>';
+      const filasIngreso = ingreso.map(c => {
+        const fotosIng = (c.fotos || []).length
+          ? `<div style="display:flex; flex-wrap:wrap; gap:0.3rem; margin-top:0.3rem;">${c.fotos.map(u => `<img src="${u}" style="width:80px; height:60px; object-fit:cover; border:1px solid #ccc; border-radius:3px;" />`).join('')}</div>` : '';
+        return `<tr style="border-bottom:1px solid #ccc;">
+          <td style="padding:4px; vertical-align:top;">${esc(c.item)}</td>
+          <td style="padding:4px; vertical-align:top; white-space:nowrap;">${textoEstadoIngreso(c)}</td>
+          <td style="padding:4px; vertical-align:top;">${esc(c.nota || '')}${fotosIng}</td>
+        </tr>`;
+      }).join('');
+      const firmaIngreso = d.checklist_firma_png ? `
+        <div style="margin-top:0.75rem;">
+          <p style="font-size:0.85rem; margin:0 0 0.25rem;"><strong>Conformidad del cliente con la inspección de ingreso</strong> (firmada a distancia el ${fmtFechaHora(d.checklist_firma_fecha)}):</p>
+          <img src="${d.checklist_firma_png}" alt="Firma de conformidad" style="max-width:240px; border:1px solid #ccc; border-radius:6px; background:#fff;" />
+          <p style="font-size:0.72rem; color:#666; margin:0.25rem 0 0;">
+            Firmante declarado: ${esc(d.checklist_firma_nombre_declarado || '–')}${d.checklist_firma_rut_declarado ? ` (RUT ${esc(d.checklist_firma_rut_declarado)})` : ''}
+            ${d.checklist_firma_dispositivo ? ` · Dispositivo: ${esc(d.checklist_firma_dispositivo)}` : ''}${d.checklist_firma_ip ? ` · IP: ${esc(d.checklist_firma_ip)}` : ''}
+          </p>
+        </div>` : '';
+
       const filasTrabajos = items.map(i => `<tr style="border-bottom:1px solid #ccc;">
           <td style="padding:4px;">${esc(i.descripcion)}</td>
           <td style="text-align:right; padding:4px;">${Number(i.cantidad).toLocaleString('es-CL')}</td>
@@ -1032,6 +1239,14 @@
           ${veh ? `<strong>Vehículo:</strong> ${esc(veh.patente)} · ${esc([veh.marca, veh.modelo, veh.anio].filter(Boolean).join(' '))}` : ''}${d.km ? ` · ${Number(d.km).toLocaleString('es-CL')} km` : ''}
         </p>
         ${d.motivo ? `<p><strong>Motivo de consulta:</strong> ${escMulti(d.motivo)}</p>` : ''}
+
+        ${ingreso.length ? `
+        <h3 style="margin-top:1.25rem;">Inspección de ingreso</h3>
+        <table style="width:100%; border-collapse:collapse;">
+          <thead><tr style="border-bottom:1px solid #000;"><th style="text-align:left; padding:4px;">Punto</th><th style="text-align:left; padding:4px;">Estado</th><th style="text-align:left; padding:4px;">Observaciones</th></tr></thead>
+          <tbody>${filasIngreso}</tbody>
+        </table>
+        ${firmaIngreso}` : ''}
 
         ${pruebas.length ? `
         <h3 style="margin-top:1.25rem;">Pruebas y monitoreos realizados</h3>
@@ -1220,6 +1435,18 @@
         con_iva: cot.con_iva !== false,
         // El descuento viaja tal cual se definió (en % o en pesos)
         ...campoDescuento(cot, calcularTotales(cot.cotizacion_items || [], 0, true).subtotal),
+        // La inspección de ingreso pasa a la OT tal cual, con la firma del cliente y su registro de respaldo
+        ...(Array.isArray(fila.checklist_recepcion) && fila.checklist_recepcion.length ? {
+          checklist_recepcion: fila.checklist_recepcion,
+          checklist_firma_png: fila.checklist_firma_png || null,
+          checklist_firma_fecha: fila.checklist_firma_fecha || null,
+          checklist_firma_lat: fila.checklist_firma_lat ?? null,
+          checklist_firma_lng: fila.checklist_firma_lng ?? null,
+          checklist_firma_dispositivo: fila.checklist_firma_dispositivo || null,
+          checklist_firma_ip: fila.checklist_firma_ip || null,
+          checklist_firma_nombre_declarado: fila.checklist_firma_nombre_declarado || null,
+          checklist_firma_rut_declarado: fila.checklist_firma_rut_declarado || null,
+        } : {}),
         diagnostico: textoMotivoOT(fila),
         notas: cot.notas,
       }).select('id, numero').single();

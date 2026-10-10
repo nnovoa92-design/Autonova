@@ -147,13 +147,13 @@
       const contenido = document.getElementById('contenido');
       contenido.innerHTML = `
         <div class="toolbar">
-          <h2 style="margin:0;">${fmtNumero('OT', d.numero)} · ${d.vehiculo ? d.vehiculo.patente : ''}</h2>
+          <h2 style="margin:0;">${fmtNumero(d.tipo === 'diagnostico' ? 'DIAG' : 'OT', d.numero)} · ${d.vehiculo ? d.vehiculo.patente : ''}</h2>
           <button type="button" class="btn-secondary" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
         </div>
         <p style="color:var(--color-text-muted); margin:0.25rem 0 1rem;">
           <strong>${d.cliente ? d.cliente.nombre : ''}</strong>
           ${d.vehiculo ? `<br>${[d.vehiculo.marca, d.vehiculo.modelo].filter(Boolean).join(' ')}` : ''}
-          <br>Ingreso: ${fmtFechaHora(d.fecha_ingreso)}
+          <br>${d.tipo === 'diagnostico' ? 'Fecha' : 'Ingreso'}: ${fmtFechaHora(d.fecha_ingreso)}
         </p>
         <h3>Checklist de recepción</h3>
         ${checklist.length ? checklist.map(itemFila).join('') : '<p style="color:var(--color-text-muted);">Sin ítems registrados.</p>'}
@@ -201,7 +201,7 @@
     (async () => {
       const contenido = document.getElementById('contenido');
       if (!otId) {
-        contenido.innerHTML = '<p class="error-message">Link inválido: falta el identificador de la orden.</p>';
+        contenido.innerHTML = '<p class="error-message">Link inválido: falta el identificador de la inspección.</p>';
         return;
       }
       const { data, error } = await supabaseClient.rpc('portal_consultar_inspeccion_ingreso', { p_id: otId });

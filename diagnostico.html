@@ -246,6 +246,17 @@
 
           ${d.motivo ? `<p style="background:#f9f9f9; padding:0.75rem 1rem; border-left:3px solid var(--color-primary); border-radius:4px;"><strong>Motivo de consulta:</strong> ${escMulti(d.motivo)}</p>` : ''}
 
+          ${d.inspeccion ? `
+          <div class="rev-item no-print" style="margin-top:1rem;">
+            <div class="rev-cab"><strong>Inspección de ingreso</strong></div>
+            <p class="rev-nota">Registramos el estado visual de su vehículo al recibirlo (${d.inspeccion.items} punto(s) revisados).
+              ${d.inspeccion.firmada
+                ? `<strong style="color:#1b6e3c;">✓ Usted la firmó${d.inspeccion.firma_fecha ? ' (' + fmtFechaHora(d.inspeccion.firma_fecha) + ')' : ''}.</strong>`
+                : 'Puede revisarla y firmar su conformidad desde su celular.'}</p>
+            <a href="inspeccion-ingreso.html?id=${encodeURIComponent(diagId)}" class="btn btn-secondary" style="text-decoration:none; display:inline-block;">
+              ${d.inspeccion.firmada ? 'Ver inspección' : 'Revisar y firmar'}</a>
+          </div>` : ''}
+
           ${renderPruebas(d.hallazgos)}
 
           ${d.conclusion ? `<h3 style="margin:1.5rem 0 0.6rem;">Conclusión del diagnóstico</h3><div class="caja-conclusion">${escMulti(d.conclusion)}</div>` : ''}
