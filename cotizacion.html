@@ -43,7 +43,9 @@
       const subtotalTrabajoExternoBruto = sumaCat('trabajo_externo');
       const subtotalInsumosTallerBruto = sumaCat('insumo_taller');
       const subtotal = subtotalMOBruto + subtotalRepuestosBruto + subtotalTrabajoExternoBruto + subtotalInsumosTallerBruto;
-      const descuento = subtotal * (Number(d.descuento_pct || 0) / 100);
+      // El descuento puede venir en % o en pesos (descuento_tipo); calcularDescuento está en layout.js
+      const dsc = calcularDescuento(subtotal, d);
+      const descuento = dsc.monto;
       const neto = subtotal - descuento;
       const conIva = d.con_iva !== false;
       const iva = conIva ? neto * (ivaPct / 100) : 0;
@@ -52,7 +54,7 @@
       const subtotalRepuestos = subtotalRepuestosBruto * factorDescuento;
       const subtotalTrabajoExterno = subtotalTrabajoExternoBruto * factorDescuento;
       const subtotalInsumosTaller = subtotalInsumosTallerBruto * factorDescuento;
-      return { ivaPct, subtotal, subtotalMO, subtotalRepuestos, subtotalTrabajoExterno, subtotalInsumosTaller, descuento, neto, iva, conIva, total: neto + iva };
+      return { ivaPct, subtotal, subtotalMO, subtotalRepuestos, subtotalTrabajoExterno, subtotalInsumosTaller, descuento, descuentoPct: dsc.pct, neto, iva, conIva, total: neto + iva };
     }
 
     // Barra de proporción + lista con punto de color por categoría
@@ -134,7 +136,7 @@
           </table>
 
           <div style="max-width:300px; margin-left:auto; margin-right:0;">
-            ${t.descuento > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid #eee;"><span>Descuento (${d.descuento_pct}%)</span><span style="color:#c33;">-${fmtMoneda(t.descuento)}</span></div>` : ''}
+            ${t.descuento > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid #eee;"><span>Descuento (${fmtPorcentaje(t.descuentoPct)}%)</span><span style="color:#c33;">-${fmtMoneda(t.descuento)}</span></div>` : ''}
             <div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid #eee;"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
             ${t.conIva ? `<div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:2px solid var(--color-primary);"><span>IVA ${t.ivaPct}%</span><span>${fmtMoneda(t.iva)}</span></div>` : ''}
             <div style="display:flex; justify-content:space-between; padding:0.6rem 0; font-weight:700; font-size:1.1rem;"><span>TOTAL</span><span style="color:var(--color-primary);">${fmtMoneda(t.total)}</span></div>

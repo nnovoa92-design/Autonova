@@ -84,10 +84,15 @@
                 <option value="true">Con IVA</option>
                 <option value="false">Sin IVA (solo neto)</option>
               </select>
-              <label style="display:flex; align-items:center; gap:0.35rem; margin:0; font-size:0.85rem; color:var(--color-text);" title="Descuento % sobre el subtotal (se refleja también en la cotización)">
-                Desc. %
-                <input type="number" id="detalle-descuento" min="0" max="100" step="0.5" value="0" style="width:80px;" />
-              </label>
+              <div style="display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;" title="Descuento sobre el subtotal, en % o en pesos (se refleja también en la cotización y el diagnóstico)">
+                <label for="detalle-descuento" style="margin:0; font-size:0.85rem; color:var(--color-text);">Descuento</label>
+                <select id="detalle-descuento-tipo" aria-label="Descuento en porcentaje o en pesos" style="width:auto; min-width:5.2rem;">
+                  <option value="pct">%</option>
+                  <option value="monto">$ pesos</option>
+                </select>
+                <input type="number" id="detalle-descuento" min="0" max="100" step="0.5" value="0" style="width:100px;" />
+                <small id="detalle-descuento-equiv" class="descuento-equiv" style="margin:0; min-width:5rem;"></small>
+              </div>
               <button type="button" id="pdf-ot-btn" class="btn-secondary">PDF</button>
               <button type="button" id="whatsapp-ot-btn" class="btn-secondary">Avisar por WhatsApp</button>
               <button type="button" id="email-ot-btn" class="btn-secondary">Avisar por correo</button>
@@ -370,7 +375,8 @@
 
     // Mismo cálculo que la cotización (ver cotizaciones.html): el descuento
     // se aplica sobre el subtotal, antes del IVA.
-    function calcularTotal(items, conIva = true, descuentoPct = 0) {
+    // `desc` puede ser un porcentaje (número), una fila de la base (la OT) o { tipo, pct, monto } (ver layout.js)
+    function calcularTotal(items, conIva = true, desc = 0) {
       const list = items || [];
       const sumaCat = (cat) => list.filter(i => categoriaItem(i) === cat).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
       const subtotalMOBruto = sumaCat('mano_obra');
@@ -378,8 +384,9 @@
       const subtotalTrabajoExternoBruto = sumaCat('trabajo_externo');
       const subtotalInsumosTallerBruto = sumaCat('insumo_taller');
       const subtotal = subtotalMOBruto + subtotalRepuestosBruto + subtotalTrabajoExternoBruto + subtotalInsumosTallerBruto;
-      const pct = Math.min(100, Math.max(0, Number(descuentoPct || 0)));
-      const descuento = subtotal * (pct / 100);
+      const dsc = calcularDescuento(subtotal, desc);
+      const pct = dsc.pct;
+      const descuento = dsc.monto;
       const neto = subtotal - descuento;
       const iva = conIva ? neto * (Number(config.iva_pct) / 100) : 0;
       // El desglose por categoría muestra los montos ya con el descuento
@@ -771,7 +778,7 @@
       estadoSel.innerHTML = Object.entries(ESTADOS_ORDEN)
         .map(([k, v]) => `<option value="${k}"${k === o.estado ? ' selected' : ''}>${v.label}</option>`).join('');
       document.getElementById('detalle-con-iva').value = (o.con_iva === false) ? 'false' : 'true';
-      document.getElementById('detalle-descuento').value = Number(o.descuento_pct || 0);
+      escribirDescuentoUI('detalle-descuento', 'detalle-descuento-tipo', o);
       resumenChecklist(o.checklist_recepcion);
 
       avanceFotosPendientes = [];
@@ -1091,7 +1098,8 @@
         });
       });
 
-      const t = calcularTotal(items, ordenActual.con_iva !== false, ordenActual.descuento_pct);
+      const t = calcularTotal(items, ordenActual.con_iva !== false, ordenActual);
+      actualizarEquivDescuentoUI('detalle-descuento', 'detalle-descuento-tipo', t.subtotal);
       const pagadoPagos = (ordenActual.pagos || []).reduce((s, p) => s + Number(p.monto), 0);
       const pagadoAbonos = (ordenActual.abonos || []).reduce((s, a) => s + Number(a.monto), 0);
       const pagado = pagadoPagos + pagadoAbonos;
@@ -1114,7 +1122,7 @@
 
       document.getElementById('totales').innerHTML = `
         ${t.descuento > 0 ? `<div class="fila" style="color:var(--color-text-muted);"><span>Subtotal</span><span>${fmtMoneda(t.subtotal)}</span></div>
-        <div class="fila" style="color:var(--color-text-muted);"><span>Descuento (${t.descuentoPct}%)</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
+        <div class="fila" style="color:var(--color-text-muted);"><span>Descuento (${fmtPorcentaje(t.descuentoPct)}%)</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
         <div class="fila"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
         ${t.conIva ? `<div class="fila"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>` : '<div class="fila" style="color:var(--color-text-muted);"><span>Sin IVA</span><span>–</span></div>'}
         <div class="fila total"><span>Total</span><span>${fmtMoneda(t.total)}</span></div>
@@ -1330,7 +1338,7 @@
         return;
       }
       tbody.innerHTML = lista.map(o => {
-        const t = calcularTotal(o.orden_items, o.con_iva !== false, o.descuento_pct);
+        const t = calcularTotal(o.orden_items, o.con_iva !== false, o);
         return `
         <tr>
           <td style="white-space:nowrap;">${fmtNumero('OT', o.numero)}</td>
@@ -1409,15 +1417,24 @@
       renderItemsDetalle();
     });
 
-    document.getElementById('detalle-descuento').addEventListener('change', async (e) => {
+    // Descuento de la OT, en % o en pesos. La OT manda: cotización y diagnóstico leen este mismo valor.
+    async function guardarDescuentoOT() {
       if (!ordenActual) return;
-      const pct = Math.min(100, Math.max(0, Number(e.target.value) || 0));
-      e.target.value = pct;
-      const { error } = await supabaseClient.from('ordenes').update({ descuento_pct: pct }).eq('id', ordenActual.id);
-      if (error) { alert('No se pudo guardar el descuento: ' + error.message); return; }
-      ordenActual.descuento_pct = pct;
+      const desc = leerDescuentoUI('detalle-descuento', 'detalle-descuento-tipo');
+      const subtotal = calcularTotal(ordenActual.orden_items, true, 0).subtotal;
+      const campos = campoDescuento(desc, subtotal);
+      const { error } = await supabaseClient.from('ordenes').update(campos).eq('id', ordenActual.id);
+      if (error) {
+        alert('No se pudo guardar el descuento: ' + error.message + '\n(¿ejecutaste sql/actualizacion-v36-descuento-pesos.sql?)');
+        return;
+      }
+      Object.assign(ordenActual, campos);
+      escribirDescuentoUI('detalle-descuento', 'detalle-descuento-tipo', ordenActual);   // muestra el valor ya ajustado a sus límites
       renderItemsDetalle();
-    });
+    }
+    document.getElementById('detalle-descuento').addEventListener('change', guardarDescuentoOT);
+    setupDescuentoUI('detalle-descuento', 'detalle-descuento-tipo',
+      () => calcularTotal(ordenActual ? ordenActual.orden_items : [], true, 0).subtotal, guardarDescuentoOT);
 
     document.getElementById('detalle-estado').addEventListener('change', async (e) => {
       if (!ordenActual) return;
@@ -1526,7 +1543,7 @@
 
     function construirPrintOrden(o) {
       const items = o.orden_items || [];
-      const t = calcularTotal(items, o.con_iva !== false, o.descuento_pct);
+      const t = calcularTotal(items, o.con_iva !== false, o);
       const veh = o.vehiculos ? `${o.vehiculos.patente} · ${[o.vehiculos.marca, o.vehiculos.modelo].filter(Boolean).join(' ')}` : '';
       const estadoLabel = (ESTADOS_ORDEN[o.estado] || {}).label || o.estado;
       const pagadoPagos = (o.pagos || []).reduce((s, p) => s + Number(p.monto), 0);
@@ -1567,7 +1584,7 @@
         </table>
         <div style="margin-top:1rem; margin-left:auto; max-width:300px;">
           ${t.descuento > 0 ? `<div style="display:flex;justify-content:space-between;color:#666;"><span>Subtotal</span><span>${fmtMoneda(t.subtotal)}</span></div>
-          <div style="display:flex;justify-content:space-between;color:#666;"><span>Descuento (${t.descuentoPct}%)</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
+          <div style="display:flex;justify-content:space-between;color:#666;"><span>Descuento (${fmtPorcentaje(t.descuentoPct)}%)</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
           <div style="display:flex;justify-content:space-between;"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
           ${t.conIva ? `<div style="display:flex;justify-content:space-between;"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>` : '<div style="display:flex;justify-content:space-between;"><span>Sin IVA</span><span>–</span></div>'}
           <div style="display:flex;justify-content:space-between;font-weight:bold;border-top:2px solid #000;margin-top:4px;padding-top:4px;"><span>TOTAL</span><span>${fmtMoneda(t.total)}</span></div>
@@ -1604,7 +1621,7 @@
     // ---------- Expediente completo (interno, respaldo judicial) ----------
     function construirExpediente(o) {
       const items = o.orden_items || [];
-      const t = calcularTotal(items, o.con_iva !== false, o.descuento_pct);
+      const t = calcularTotal(items, o.con_iva !== false, o);
       const bodegaje = calcularBodegaje(o);
       const pagadoPagos = (o.pagos || []).reduce((s, p) => s + Number(p.monto), 0);
       const pagadoAbonos = (o.abonos || []).reduce((s, a) => s + Number(a.monto), 0);
@@ -1661,7 +1678,7 @@
           <tbody>${items.map(i => `<tr style="border-bottom:1px solid #ccc;"><td style="padding:4px;">${i.descripcion}</td><td style="text-align:right;padding:4px;">${Number(i.cantidad).toLocaleString('es-CL')}</td><td style="text-align:right;padding:4px;">${fmtMoneda(i.precio_unitario)}</td><td style="text-align:right;padding:4px;">${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td></tr>`).join('')}</tbody>
         </table>
         <p style="text-align:right; margin-top:0.5rem;">
-          ${t.descuento > 0 ? `Subtotal: ${fmtMoneda(t.subtotal)} · Descuento (${t.descuentoPct}%): -${fmtMoneda(t.descuento)} · ` : ''}Neto: ${fmtMoneda(t.neto)} · IVA: ${fmtMoneda(t.iva)} · Total: ${fmtMoneda(t.total)}
+          ${t.descuento > 0 ? `Subtotal: ${fmtMoneda(t.subtotal)} · Descuento (${fmtPorcentaje(t.descuentoPct)}%): -${fmtMoneda(t.descuento)} · ` : ''}Neto: ${fmtMoneda(t.neto)} · IVA: ${fmtMoneda(t.iva)} · Total: ${fmtMoneda(t.total)}
           ${bodegaje.monto > 0 ? ` · Bodegaje (${bodegaje.dias} días): ${fmtMoneda(bodegaje.monto)}` : ''}
           · Pagado: ${fmtMoneda(pagado)} · <strong>Saldo: ${fmtMoneda(t.total + bodegaje.monto - pagado)}</strong>
         </p>

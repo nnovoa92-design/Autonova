@@ -80,6 +80,109 @@ function fmtNumero(prefijo, numero) {
   return `${prefijo}-${String(numero ?? 0).padStart(4, '0')}`;
 }
 
+// ---------- Descuento (en % o en pesos) ----------
+// Un descuento se guarda como { tipo: 'pct' | 'monto', pct, monto }:
+//  · 'pct': un porcentaje; el monto en pesos se recalcula si cambian los ítems.
+//  · 'monto': un valor fijo en pesos; el % es solo una referencia y cambia con los ítems.
+// En las tablas viven en descuento_tipo, descuento_pct y descuento_monto.
+// Acepta un número (porcentaje, como antes), una fila de la base o { tipo, pct, monto }.
+function normalizarDescuento(d) {
+  if (d == null || d === '') return { tipo: 'pct', pct: 0, monto: 0 };
+  if (typeof d === 'number' || typeof d === 'string') return { tipo: 'pct', pct: Number(d) || 0, monto: 0 };
+  const tipo = (d.tipo || d.descuento_tipo) === 'monto' ? 'monto' : 'pct';
+  return {
+    tipo,
+    pct: Number(d.pct ?? d.descuento_pct ?? 0) || 0,
+    monto: Number(d.monto ?? d.descuento_monto ?? 0) || 0,
+  };
+}
+
+// Descuento real sobre un subtotal: { tipo, monto (pesos), pct (% efectivo) }.
+// El monto nunca supera el subtotal ni el % pasa de 100.
+function calcularDescuento(subtotal, d) {
+  const n = normalizarDescuento(d);
+  subtotal = Number(subtotal) || 0;
+  let monto;
+  if (n.tipo === 'monto') monto = Math.min(Math.max(n.monto, 0), subtotal);
+  else monto = subtotal * Math.min(100, Math.max(0, n.pct)) / 100;
+  const pct = subtotal > 0 ? monto / subtotal * 100 : (n.tipo === 'pct' ? Math.min(100, Math.max(0, n.pct)) : 0);
+  return { tipo: n.tipo, monto, pct };
+}
+
+// Para guardar en la base. Si es en pesos, también se deja el % equivalente de ese momento
+// como referencia (lo leen sin problema pantallas que solo conocen el %).
+function campoDescuento(d, subtotal) {
+  const n = normalizarDescuento(d);
+  if (n.tipo === 'monto') {
+    const c = calcularDescuento(subtotal, n);
+    return { descuento_tipo: 'monto', descuento_monto: Math.round(n.monto), descuento_pct: Math.round(c.pct * 100) / 100 };
+  }
+  return { descuento_tipo: 'pct', descuento_pct: Math.min(100, Math.max(0, n.pct)), descuento_monto: 0 };
+}
+
+// Total (con IVA si corresponde) de una cotización, tomando de su OT los ítems, el descuento y el
+// IVA cuando la OT ya existe (la OT manda). `cot` trae cotizacion_items y, si se quiere seguir la
+// OT, ordenes(descuento_tipo, descuento_pct, descuento_monto, con_iva, orden_items(cantidad, precio_unitario)).
+function totalVigenteCotizacion(cot, ivaPct = 19) {
+  const o = (cot.ordenes || [])[0];
+  const fuente = o || cot;
+  const items = o ? (o.orden_items || []) : (cot.cotizacion_items || []);
+  const subtotal = items.reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
+  const neto = subtotal - calcularDescuento(subtotal, fuente).monto;
+  return fuente.con_iva !== false ? neto * (1 + Number(ivaPct) / 100) : neto;
+}
+
+function fmtPorcentaje(n) {
+  return Number(n || 0).toLocaleString('es-CL', { maximumFractionDigits: 2 });
+}
+
+// Controles de pantalla: <select id=idTipo> (% / $) + <input id=idValor>, y opcionalmente
+// un <small id="{idValor}-equiv"> donde se muestra la otra unidad ("= $22.000" o "= 9,09 %").
+function leerDescuentoUI(idValor, idTipo) {
+  const tipo = document.getElementById(idTipo).value === 'monto' ? 'monto' : 'pct';
+  const v = Math.max(0, Number(document.getElementById(idValor).value) || 0);
+  return tipo === 'monto' ? { tipo, pct: 0, monto: v } : { tipo, pct: Math.min(100, v), monto: 0 };
+}
+function escribirDescuentoUI(idValor, idTipo, d) {
+  const n = normalizarDescuento(d);
+  const tipoEl = document.getElementById(idTipo);
+  tipoEl.value = n.tipo;
+  tipoEl.dataset.tipoPrevio = n.tipo;     // para convertir bien si luego se cambia de unidad
+  const el = document.getElementById(idValor);
+  el.value = n.tipo === 'monto' ? Math.round(n.monto) : n.pct;
+  el.max = n.tipo === 'monto' ? '' : '100';
+  el.step = n.tipo === 'monto' ? '1' : '0.5';
+}
+function actualizarEquivDescuentoUI(idValor, idTipo, subtotal) {
+  const el = document.getElementById(idValor + '-equiv');
+  if (!el) return;
+  const d = leerDescuentoUI(idValor, idTipo);
+  const c = calcularDescuento(subtotal, d);
+  if (!(c.monto > 0)) { el.textContent = ''; return; }
+  el.textContent = d.tipo === 'pct' ? `= ${fmtMoneda(c.monto)}` : `= ${fmtPorcentaje(c.pct)} %`;
+}
+// Al cambiar de % a pesos (o al revés) el descuento sigue siendo el mismo: solo se expresa en la otra unidad.
+// getSubtotal() entrega el subtotal vigente; onChange() vuelve a calcular totales.
+function setupDescuentoUI(idValor, idTipo, getSubtotal, onChange) {
+  const tipoEl = document.getElementById(idTipo);
+  if (!tipoEl || tipoEl.dataset.descuentoUi) return;
+  tipoEl.dataset.descuentoUi = '1';
+  tipoEl.dataset.tipoPrevio = tipoEl.value;
+  tipoEl.addEventListener('change', () => {
+    const subtotal = Number(getSubtotal()) || 0;
+    const valorEl = document.getElementById(idValor);
+    const anterior = tipoEl.dataset.tipoPrevio === 'monto' ? 'monto' : 'pct';
+    const actual = { tipo: anterior, pct: anterior === 'pct' ? Number(valorEl.value) || 0 : 0, monto: anterior === 'monto' ? Number(valorEl.value) || 0 : 0 };
+    const c = calcularDescuento(subtotal, actual);
+    const destino = tipoEl.value === 'monto' ? 'monto' : 'pct';
+    const nuevo = destino === 'monto'
+      ? { tipo: 'monto', pct: 0, monto: Math.round(c.monto) }
+      : { tipo: 'pct', pct: Math.round(c.pct * 100) / 100, monto: 0 };
+    escribirDescuentoUI(idValor, idTipo, nuevo);
+    onChange();
+  });
+}
+
 // Combobox de autocompletado: un campo de texto que, al escribir, muestra
 // una lista desplegable con las coincidencias (por nombre). El <select>
 // oculto sigue siendo la fuente de verdad (value + evento "change"), así

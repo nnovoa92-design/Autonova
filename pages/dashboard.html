@@ -160,20 +160,18 @@
     // (sin adivinar). Si no, se busca la aprobada/enviada más reciente del
     // cliente (y del mismo vehículo, si la cita tiene uno) como referencia.
     async function buscarPrecioEstimado(c) {
+      // Total vigente: si la cotización ya tiene OT, valen los ítems, el descuento (% o pesos) y el IVA de la OT
+      const campos = 'descuento_tipo, descuento_pct, descuento_monto, con_iva, cotizacion_items(cantidad, precio_unitario), ordenes(descuento_tipo, descuento_pct, descuento_monto, con_iva, orden_items(cantidad, precio_unitario))';
+      const ivaPct = Number((tallerHorarios && tallerHorarios.iva_pct) || 19);
       if (c.cotizacion_id) {
         const { data: cot } = await supabaseClient.from('cotizaciones')
-          .select('descuento_pct, con_iva, cotizacion_items(cantidad, precio_unitario)')
+          .select(campos)
           .eq('id', c.cotizacion_id).maybeSingle();
-        if (cot) {
-          const subtotal = (cot.cotizacion_items || []).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
-          const neto = subtotal * (1 - Number(cot.descuento_pct || 0) / 100);
-          const iva = cot.con_iva !== false ? neto * Number(tallerHorarios.iva_pct || 19) / 100 : 0;
-          return neto + iva;
-        }
+        if (cot) return totalVigenteCotizacion(cot, ivaPct);
       }
       if (!c.cliente_id) return null;
       let query = supabaseClient.from('cotizaciones')
-        .select('descuento_pct, con_iva, cotizacion_items(cantidad, precio_unitario)')
+        .select(campos)
         .eq('cliente_id', c.cliente_id)
         .in('estado', ['aprobada', 'enviada'])
         .order('creado_en', { ascending: false })
@@ -181,10 +179,7 @@
       if (c.vehiculo_id) query = query.eq('vehiculo_id', c.vehiculo_id);
       const { data } = await query.maybeSingle();
       if (!data) return null;
-      const subtotal = (data.cotizacion_items || []).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
-      const neto = subtotal * (1 - Number(data.descuento_pct || 0) / 100);
-      const iva = data.con_iva !== false ? neto * Number(tallerHorarios.iva_pct || 19) / 100 : 0;
-      return neto + iva;
+      return totalVigenteCotizacion(data, ivaPct);
     }
     let tallerHorarios = null;
 

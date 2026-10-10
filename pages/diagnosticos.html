@@ -188,9 +188,16 @@
           </table>
           <h3 style="margin-top:1.5rem;">6. Resumen de valores</h3>
           <div class="form-row">
-            <div class="form-group" style="max-width:160px;">
-              <label for="descuento_pct">Descuento %</label>
-              <input type="number" id="descuento_pct" value="0" min="0" max="100" step="0.5" />
+            <div class="form-group" style="max-width:280px;">
+              <label for="descuento_pct">Descuento</label>
+              <div class="descuento-ctl">
+                <select id="descuento_tipo" aria-label="Descuento en porcentaje o en pesos">
+                  <option value="pct">%</option>
+                  <option value="monto">$ pesos</option>
+                </select>
+                <input type="number" id="descuento_pct" value="0" min="0" max="100" step="0.5" />
+              </div>
+              <small class="descuento-equiv" id="descuento_pct-equiv"></small>
             </div>
             <div class="form-group" style="max-width:200px;">
               <label for="con_iva">IVA</label>
@@ -285,15 +292,17 @@
       return 'trabajo_externo';
     }
 
-    function calcularTotales(items, descuentoPct, conIva = true) {
+    // `desc` puede ser un porcentaje (número), una fila de la base o { tipo, pct, monto } (ver layout.js)
+    function calcularTotales(items, desc, conIva = true) {
       const sumaCat = (cat) => items.filter(i => categoriaItem(i) === cat).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
       const subtotalMOBruto = sumaCat('mano_obra');
       const subtotalRepuestosBruto = sumaCat('repuestos');
       const subtotalTrabajoExternoBruto = sumaCat('trabajo_externo');
       const subtotalInsumosTallerBruto = sumaCat('insumo_taller');
       const subtotal = subtotalMOBruto + subtotalRepuestosBruto + subtotalTrabajoExternoBruto + subtotalInsumosTallerBruto;
-      const pct = Math.min(100, Math.max(0, Number(descuentoPct || 0)));
-      const descuento = subtotal * (pct / 100);
+      const dsc = calcularDescuento(subtotal, desc);
+      const pct = dsc.pct;
+      const descuento = dsc.monto;
       const neto = subtotal - descuento;
       const iva = conIva ? neto * (Number(config.iva_pct) / 100) : 0;
       const factor = subtotal > 0 ? neto / subtotal : 1;
@@ -333,11 +342,12 @@
       const o = otDe(d), c = cotDe(d);
       return ordenar(o ? o.orden_items : (c ? c.cotizacion_items : d.diagnostico_items));
     }
+    // Devuelve { tipo, pct, monto }: el descuento (en % o en pesos) del documento más avanzado: OT -> cotización -> diagnóstico.
     function descuentoEfectivo(d) {
       const o = otDe(d), c = cotDe(d);
-      if (o && o.descuento_pct != null) return o.descuento_pct;
-      if (c && c.descuento_pct != null) return c.descuento_pct;
-      return d.descuento_pct;
+      if (o && o.descuento_pct != null) return normalizarDescuento(o);
+      if (c && c.descuento_pct != null) return normalizarDescuento(c);
+      return normalizarDescuento(d);
     }
     function conIvaEfectivo(d) {
       const o = otDe(d), c = cotDe(d);
@@ -684,7 +694,8 @@
       const horas = Number(document.getElementById('diag-horas').value) || 0;
       document.getElementById('diag-monto').textContent = fmtMoneda(horas * (Number(document.getElementById('diag-valor-hora').value) || 0));
 
-      const t = calcularTotales(itemsParaTotales(), document.getElementById('descuento_pct').value, conIva);
+      const t = calcularTotales(itemsParaTotales(), leerDescuentoUI('descuento_pct', 'descuento_tipo'), conIva);
+      actualizarEquivDescuentoUI('descuento_pct', 'descuento_tipo', t.subtotal);
       const desgloseLineas = (!bloqueado && valorDiag > 0 && itemsActuales.length) ? `
         <div class="fila"><span>Diagnóstico (${fmtHoras(horas)} h de taller)</span><span>${fmtMoneda(valorDiag)}</span></div>
         <div class="fila"><span>Trabajos recomendados</span><span>${fmtMoneda(sumaBruta(itemsActuales))}</span></div>` : '';
@@ -692,7 +703,7 @@
       document.getElementById('totales').innerHTML = `
         ${desgloseLineas}
         ${t.descuento > 0 ? `<div class="fila" style="color:var(--color-text-muted);"><span>Subtotal</span><span>${fmtMoneda(t.subtotal)}</span></div>
-        <div class="fila" style="color:var(--color-text-muted);"><span>Descuento (${t.descuentoPct}%)</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
+        <div class="fila" style="color:var(--color-text-muted);"><span>Descuento (${fmtPorcentaje(t.descuentoPct)}%)</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
         <div class="fila"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
         ${conIva ? `<div class="fila"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>` : '<div class="fila" style="color:var(--color-text-muted);"><span>Sin IVA</span><span>–</span></div>'}
         <div class="fila total"><span>${etiquetaTotal}</span><span>${fmtMoneda(t.total)}</span></div>`;
@@ -750,12 +761,13 @@
       itemsActuales = nuevo ? [] : itemsEfectivos(d).map(i => ({ ...i }));
       document.getElementById('diag-horas').value = nuevo ? 0 : Number(d.horas_diagnostico || 0);
       document.getElementById('diag-valor-hora').value = (nuevo || !Number(d.valor_hora_diagnostico)) ? Number(config.valor_hora || 0) : Number(d.valor_hora_diagnostico);
-      document.getElementById('descuento_pct').value = nuevo ? 0 : Number(descuentoEfectivo(d) || 0);
+      escribirDescuentoUI('descuento_pct', 'descuento_tipo', nuevo ? { tipo: 'pct', pct: 0, monto: 0 } : descuentoEfectivo(d));
       document.getElementById('con_iva').value = nuevo ? 'true' : (conIvaEfectivo(d) ? 'true' : 'false');
 
       const bloqueado = lineasBloqueadas();
       document.getElementById('agregar-lineas').style.display = bloqueado ? 'none' : 'block';
       document.getElementById('descuento_pct').disabled = bloqueado;
+      document.getElementById('descuento_tipo').disabled = bloqueado;
       document.getElementById('con_iva').disabled = bloqueado;
       document.getElementById('diag-horas').disabled = bloqueado;
       document.getElementById('diag-valor-hora').disabled = bloqueado;
@@ -801,14 +813,14 @@
       if (!bloqueado) {
         payload.horas_diagnostico = Math.max(0, Number(document.getElementById('diag-horas').value) || 0);
         payload.valor_hora_diagnostico = Math.max(0, Number(document.getElementById('diag-valor-hora').value) || 0);
-        payload.descuento_pct = Math.min(100, Math.max(0, Number(document.getElementById('descuento_pct').value) || 0));
+        Object.assign(payload, campoDescuento(leerDescuentoUI('descuento_pct', 'descuento_tipo'), calcularTotales(itemsParaTotales(), 0, true).subtotal));
         payload.con_iva = document.getElementById('con_iva').value === 'true';
       }
 
       let error;
       if (diagActual.esNuevo) ({ error } = await supabaseClient.from('diagnosticos').insert({ id: diagActual.id, ...payload }));
       else ({ error } = await supabaseClient.from('diagnosticos').update(payload).eq('id', diagActual.id));
-      if (error) { errorEl.textContent = `Error: ${error.message} (¿ejecutaste sql/actualizacion-v32-diagnosticos.sql y v34-diagnostico-valor?)`; return null; }
+      if (error) { errorEl.textContent = `Error: ${error.message} (¿ejecutaste los SQL v32, v34 y v36 de la carpeta sql?)`; return null; }
       diagActual.esNuevo = false;
 
       if (!bloqueado) {
@@ -841,10 +853,12 @@
 
     // ---------- Listado ----------
     async function cargarDiagnosticos() {
-      const { data, error } = await supabaseClient
-        .from('diagnosticos')
-        .select('*, clientes(nombre, rut, telefono, email), vehiculos(patente, marca, modelo, anio), diagnostico_items(*), cotizaciones(id, numero, estado, descuento_pct, con_iva, cotizacion_items(*), ordenes(id, numero, estado, descuento_pct, con_iva, orden_items(*)))')
-        .order('creado_en', { ascending: false });
+      const base = '*, clientes(nombre, rut, telefono, email), vehiculos(patente, marca, modelo, anio), diagnostico_items(*), ';
+      const cons = (campos) => `cotizaciones(id, numero, estado, ${campos}con_iva, cotizacion_items(*), ordenes(id, numero, estado, ${campos}con_iva, orden_items(*)))`;
+      const pedir = (campos) => supabaseClient.from('diagnosticos').select(base + cons(campos)).order('creado_en', { ascending: false });
+      let { data, error } = await pedir('descuento_tipo, descuento_pct, descuento_monto, ');
+      // Si aún no se ejecutó v36 (descuento en pesos), se carga igual con el descuento en %
+      if (error && /descuento_(tipo|monto)/.test(error.message || '')) ({ data, error } = await pedir('descuento_pct, '));
       if (error) {
         document.getElementById('diagnosticos-body').innerHTML =
           `<tr><td colspan="7">Error: ${esc(error.message)} (¿ejecutaste sql/actualizacion-v32-diagnosticos.sql?)</td></tr>`;
@@ -966,7 +980,7 @@
           ${(lDiag && items.length) ? `<div style="display:flex; justify-content:space-between; color:#666;"><span>Diagnóstico</span><span>${fmtMoneda(lDiag.cantidad * lDiag.precio_unitario)}</span></div>
           <div style="display:flex; justify-content:space-between; color:#666;"><span>Trabajos recomendados</span><span>${fmtMoneda(sumaBruta(items))}</span></div>` : ''}
           ${t.descuento > 0 ? `<div style="display:flex; justify-content:space-between; color:#666;"><span>Subtotal</span><span>${fmtMoneda(t.subtotal)}</span></div>
-          <div style="display:flex; justify-content:space-between; color:#666;"><span>Descuento (${t.descuentoPct}%)</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
+          <div style="display:flex; justify-content:space-between; color:#666;"><span>Descuento (${fmtPorcentaje(t.descuentoPct)}%)</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
           <div style="display:flex; justify-content:space-between;"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
           ${t.conIva ? `<div style="display:flex; justify-content:space-between;"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>` : '<div style="display:flex; justify-content:space-between;"><span>Sin IVA</span><span>–</span></div>'}
           <div style="display:flex; justify-content:space-between; font-weight:bold; border-top:2px solid #000; margin-top:4px; padding-top:4px;"><span>${convertido ? 'TOTAL' : items.length ? 'TOTAL SI SE REALIZAN LOS TRABAJOS' : 'TOTAL DEL DIAGNÓSTICO'}</span><span>${fmtMoneda(t.total)}</span></div>
@@ -1126,7 +1140,8 @@
         estado: 'recepcion',
         km_ingreso: fila.km || null,
         con_iva: cot.con_iva !== false,
-        descuento_pct: Number(cot.descuento_pct || 0),
+        // El descuento viaja tal cual se definió (en % o en pesos)
+        ...campoDescuento(cot, calcularTotales(cot.cotizacion_items || [], 0, true).subtotal),
         diagnostico: textoMotivoOT(fila),
         notas: cot.notas,
       }).select('id, numero').single();
@@ -1170,7 +1185,7 @@
         const { data: cot, error: e1 } = await supabaseClient.from('cotizaciones').insert({
           cliente_id: fila.cliente_id,
           vehiculo_id: fila.vehiculo_id,
-          descuento_pct: Number(fila.descuento_pct || 0),
+          ...campoDescuento(fila, calcularTotales(items, 0, true).subtotal),   // en % o en pesos, tal cual se definió
           con_iva: fila.con_iva !== false,
           notas: notasParaCotizacion(fila, recomendados),
           estado: 'borrador',
@@ -1303,6 +1318,8 @@
     document.getElementById('diag-horas').addEventListener('input', renderTotales);
     document.getElementById('diag-valor-hora').addEventListener('input', renderTotales);
     document.getElementById('descuento_pct').addEventListener('input', renderTotales);
+    // Cambiar entre % y pesos conserva el descuento: solo cambia cómo se expresa
+    setupDescuentoUI('descuento_pct', 'descuento_tipo', () => calcularTotales(itemsParaTotales(), 0, true).subtotal, renderTotales);
     document.getElementById('con_iva').addEventListener('change', renderTotales);
 
     (async () => {

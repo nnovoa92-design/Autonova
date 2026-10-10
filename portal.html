@@ -68,8 +68,10 @@
       const ivaPct = Number((d.taller && d.taller.iva_pct) ?? 19);
       const conIva = d.con_iva !== false;
       const subtotal = (d.items || []).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
-      const descuentoPct = Math.min(100, Math.max(0, Number(d.descuento_pct || 0)));
-      const descuento = subtotal * (descuentoPct / 100);
+      // El descuento puede venir en % o en pesos (descuento_tipo); calcularDescuento está en layout.js
+      const dsc = calcularDescuento(subtotal, d);
+      const descuentoPct = fmtPorcentaje(dsc.pct);
+      const descuento = dsc.monto;
       const neto = subtotal - descuento;
       const iva = conIva ? neto * (ivaPct / 100) : 0;
       const total = neto + iva;
