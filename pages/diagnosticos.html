@@ -378,6 +378,8 @@
       const o = otDe(d), c = cotDe(d);
       if (o) return { label: `En ${fmtNumero('OT', o.numero)}`, badge: 'badge-purple' };
       if (c) return { label: `Cotizado ${fmtNumero('COT', c.numero)}`, badge: 'badge-blue' };
+      if (d.respuesta === 'aceptado') return { label: 'Aceptado por el cliente', badge: 'badge-green' };
+      if (d.respuesta === 'rechazado') return { label: 'Rechazado (solo diagnóstico)', badge: 'badge-red' };
       return { label: 'Borrador', badge: 'badge-gray' };
     }
     const lineasBloqueadas = () => !!(diagActual && diagActual.cotizacion);
@@ -721,7 +723,7 @@
     function renderEstadoConversion() {
       const cont = document.getElementById('estado-conversion');
       const c = diagActual.cotizacion;
-      if (!c) { cont.innerHTML = ''; return; }
+      if (!c) { renderRespuestaCliente(cont); return; }
       const o = (c.ordenes || [])[0];
       cont.innerHTML = `<div class="banner-conversion">
         ${o
@@ -738,11 +740,78 @@
       if (crearOt) crearOt.addEventListener('click', () => convertir('ot-desde-cotizacion'));
     }
 
+    // Respuesta del cliente a los trabajos recomendados (la da desde su link o la registra el taller).
+    // Aceptar NO crea nada solo: el taller genera cotización + OT con un clic cuando quiera.
+    function renderRespuestaCliente(cont) {
+      if (diagActual.esNuevo) { cont.innerHTML = ''; return; }
+      const resp = diagActual.respuesta || 'pendiente';
+      const origen = diagActual.respuestaOrigen === 'cliente' ? 'desde su link' : 'registrada por el taller';
+      const cuando = diagActual.respuestaFecha ? fmtFechaHora(diagActual.respuestaFecha) : '';
+      const lDiag = lineaDiagnostico(document.getElementById('diag-horas').value, document.getElementById('diag-valor-hora').value);
+      const soloDiag = lDiag ? calcularTotales([lDiag], 0, document.getElementById('con_iva').value === 'true').total : 0;
+
+      if (resp === 'aceptado') {
+        cont.innerHTML = `<div class="banner-conversion" style="background:#e8f5e9; border-left-color:#1b6e3c;">
+          ✓ <strong>El cliente aceptó los trabajos recomendados</strong> (${esc(cuando)} · ${origen}).
+          <div style="margin-top:0.5rem; display:flex; gap:0.5rem; flex-wrap:wrap;">
+            <button type="button" id="resp-crear-ot-btn">Crear cotización + OT</button>
+            <button type="button" id="resp-crear-cot-btn" class="btn-secondary">Solo cotización</button>
+            <button type="button" id="resp-reset-btn" class="btn-secondary">Cambiar respuesta</button>
+          </div>
+        </div>`;
+      } else if (resp === 'rechazado') {
+        cont.innerHTML = `<div class="banner-conversion" style="background:#fff8e6; border-left-color:#d97706;">
+          <strong>El cliente rechazó los trabajos</strong> (${esc(cuando)} · ${origen}).
+          ${soloDiag > 0 ? `Solo se cobra el diagnóstico: <strong>${fmtMoneda(soloDiag)}</strong>${document.getElementById('con_iva').value === 'true' ? ' (IVA incluido)' : ''}.` : 'Registra las horas del diagnóstico para ver el valor a cobrar.'}
+          <div style="margin-top:0.5rem; display:flex; gap:0.5rem; flex-wrap:wrap;">
+            <button type="button" id="resp-reset-btn" class="btn-secondary">Cambiar respuesta</button>
+          </div>
+        </div>`;
+      } else {
+        cont.innerHTML = `<div class="banner-conversion">
+          <strong>Respuesta del cliente:</strong> pendiente. La da desde el link del informe; si contesta por teléfono o WhatsApp, regístrala aquí.
+          <div style="margin-top:0.5rem; display:flex; gap:0.5rem; flex-wrap:wrap;">
+            <button type="button" id="resp-aceptado-btn" class="btn-secondary">Marcar como aceptado</button>
+            <button type="button" id="resp-rechazado-btn" class="btn-secondary">Marcar como rechazado</button>
+          </div>
+        </div>`;
+      }
+      const on = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener('click', fn); };
+      on('resp-aceptado-btn', () => registrarRespuesta('aceptado'));
+      on('resp-rechazado-btn', () => registrarRespuesta('rechazado'));
+      on('resp-reset-btn', () => registrarRespuesta('pendiente'));
+      on('resp-crear-ot-btn', () => convertir('ot'));
+      on('resp-crear-cot-btn', () => convertir('cotizacion'));
+    }
+
+    async function registrarRespuesta(resp) {
+      const errorEl = document.getElementById('editor-error');
+      errorEl.textContent = '';
+      const fila = await guardarDiagnostico();    // se guardan antes los cambios en pantalla
+      if (!fila) return;
+      const { error } = await supabaseClient.from('diagnosticos').update({
+        respuesta: resp,
+        respuesta_fecha: resp === 'pendiente' ? null : new Date().toISOString(),
+        respuesta_origen: resp === 'pendiente' ? null : 'taller',
+        respuesta_ip: null,
+      }).eq('id', fila.id);
+      if (error) {
+        errorEl.textContent = /respuesta/.test(error.message || '')
+          ? `Falta ejecutar sql/actualizacion-v37-diagnostico-respuesta.sql en el SQL Editor de Supabase. Detalle: ${error.message}`
+          : `Error: ${error.message}`;
+        return;
+      }
+      await cargarDiagnosticos();
+      const actualizada = diagnosticosCache.find(x => x.id === fila.id);
+      if (actualizada) abrirEditor(actualizada);
+    }
+
     function abrirEditor(d) {
       const nuevo = !d;
       diagActual = nuevo
-        ? { id: crypto.randomUUID(), numero: null, esNuevo: true, cotizacion: null }
-        : { id: d.id, numero: d.numero, esNuevo: false, cotizacion: cotDe(d) };
+        ? { id: crypto.randomUUID(), numero: null, esNuevo: true, cotizacion: null, respuesta: 'pendiente' }
+        : { id: d.id, numero: d.numero, esNuevo: false, cotizacion: cotDe(d),
+            respuesta: d.respuesta || 'pendiente', respuestaFecha: d.respuesta_fecha, respuestaOrigen: d.respuesta_origen };
 
       document.getElementById('editor-card').style.display = 'block';
       document.getElementById('editor-error').textContent = '';
@@ -1062,7 +1131,7 @@
         `Hola ${d.clientes.nombre}, le saluda ${config.nombre}.\n` +
         `Revisamos ${descripcionVehiculo(d)} y le enviamos el informe de diagnóstico ${fmtNumero('DIAG', d.numero)}.\n` +
         (resumen ? resumen + '\n' : '') +
-        `Puede ver el informe completo, con fotos, aquí: ${linkPublicoDiagnostico(d.id)}`;
+        `Puede ver el informe completo, con fotos, y avisarnos si desea realizar los trabajos aquí: ${linkPublicoDiagnostico(d.id)}`;
       abrirEnlace(linkWhatsApp(tel, mensaje));
     }
 
@@ -1075,7 +1144,7 @@
         `Hola ${d.clientes.nombre},\n\n` +
         `En ${config.nombre} revisamos ${descripcionVehiculo(d)} y preparamos el informe de diagnóstico ${fmtNumero('DIAG', d.numero)}.\n\n` +
         (resumen ? resumen + '\n\n' : '') +
-        `Puede ver el informe completo, con fotos, aquí:\n${linkPublicoDiagnostico(d.id)}\n\n` +
+        `Puede ver el informe completo, con fotos, y avisarnos si desea realizar los trabajos aquí:\n${linkPublicoDiagnostico(d.id)}\n\n` +
         `Saludos,\n${config.nombre}`;
       abrirEnlace(linkGmail(email, asunto, cuerpo));
     }
@@ -1197,7 +1266,8 @@
           ...campoDescuento(fila, calcularTotales(items, 0, true).subtotal),   // en % o en pesos, tal cual se definió
           con_iva: fila.con_iva !== false,
           notas: notasParaCotizacion(fila, recomendados),
-          estado: 'borrador',
+          // Si el cliente ya aceptó los trabajos, la cotización nace aprobada
+          estado: fila.respuesta === 'aceptado' ? 'aprobada' : 'borrador',
         }).select('id, numero').single();
         if (e1) throw new Error(e1.message);
 
@@ -1208,7 +1278,12 @@
         if (e2) throw new Error(e2.message);
 
         // Desde acá la cotización manda sobre las líneas
-        const { error: e3 } = await supabaseClient.from('diagnosticos').update({ cotizacion_id: cot.id }).eq('id', fila.id);
+        const vinculo = { cotizacion_id: cot.id };
+        // "OT + cotización" significa que el cliente ya dijo que sí: queda registrado como aceptado
+        if (modo === 'ot' && fila.respuesta === 'pendiente') {
+          Object.assign(vinculo, { respuesta: 'aceptado', respuesta_fecha: new Date().toISOString(), respuesta_origen: 'taller' });
+        }
+        const { error: e3 } = await supabaseClient.from('diagnosticos').update(vinculo).eq('id', fila.id);
         if (e3) throw new Error(e3.message);
 
         if (modo === 'ot') {

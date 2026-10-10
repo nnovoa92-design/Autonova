@@ -121,7 +121,8 @@
     }
 
     // ---------- Qué sigue ----------
-    function renderSiguientePaso(d) {
+    // r = { hayTrabajos, total, totalSoloDiag, conIva } con los montos que ve el cliente
+    function renderSiguientePaso(d, r) {
       const taller = d.taller || {};
       const veh = d.vehiculo;
       const mensajeConsulta = `Hola, revisé el informe de diagnóstico ${fmtNumero('DIAG', d.numero)}${veh ? ` de mi vehículo ${veh.patente}` : ''} y quisiera consultar.`;
@@ -156,13 +157,65 @@
           </div>
         </div>`;
       }
-      // Sin cotización (o aún en borrador, que el cliente no debe ver)
+      // Sin cotización (o aún en borrador, que el cliente no debe ver): decide sobre los trabajos recomendados
+      const iva = r.conIva ? ' (IVA incluido)' : '';
+      // d.respuesta solo existe cuando el servidor ya tiene la actualización v37; si no, se ofrece agendar como antes
+      if (d.respuesta === undefined) r = { ...r, hayTrabajos: false };
+      if (r.hayTrabajos && d.respuesta === 'aceptado') {
+        return `<div class="siguiente-paso no-print">
+          <p>✓ <strong>Registramos que usted acepta los trabajos recomendados</strong>${d.respuesta_fecha ? ` (${fmtFecha(d.respuesta_fecha)})` : ''}. El taller se pondrá en contacto para coordinar.</p>
+          <div class="acciones-cliente"><a href="reservar.html" style="background:#1b5e20; color:#fff;">📅 Agendar cita online</a>${btnWa}</div>
+        </div>`;
+      }
+      if (r.hayTrabajos && d.respuesta === 'rechazado') {
+        return `<div class="siguiente-paso no-print">
+          <p>Registramos que por ahora <strong>no realizará los trabajos</strong>${d.respuesta_fecha ? ` (${fmtFecha(d.respuesta_fecha)})` : ''}.
+             Se cobra únicamente el diagnóstico: <strong>${fmtMoneda(r.totalSoloDiag)}</strong>${iva}. Si cambia de opinión, escríbanos.</p>
+          <div class="acciones-cliente">${btnWa}</div>
+        </div>`;
+      }
+      if (r.hayTrabajos) {
+        return `<div class="siguiente-paso no-print" id="decision">
+          <h3 style="margin:0 0 0.5rem;">¿Desea realizar los trabajos recomendados?</h3>
+          <p>Si <strong>acepta</strong>, el total estimado es <strong>${fmtMoneda(r.total)}</strong>${iva}.<br>
+             Si <strong>no</strong>, solo se cobra el diagnóstico: <strong>${fmtMoneda(r.totalSoloDiag)}</strong>${iva}.</p>
+          <div class="acciones-cliente">
+            <button type="button" id="aceptar-btn" style="background:#1b5e20; color:#fff;">✓ Aceptar los trabajos</button>
+            <button type="button" id="rechazar-btn" style="background:#fff; color:#a93b33; border:1px solid #a93b33;">✕ No por ahora</button>
+            ${btnWa}
+          </div>
+          <p class="error-message" id="respuesta-error"></p>
+        </div>`;
+      }
       return `<div class="siguiente-paso no-print">
         <p>¿Quiere que realicemos los trabajos recomendados? Agende su cita o escríbanos.</p>
         <div class="acciones-cliente">
           <a href="reservar.html" style="background:#1b5e20; color:#fff;">📅 Agendar cita online</a>${btnWa}
         </div>
       </div>`;
+    }
+
+    let datosInforme = null;   // última respuesta de la función pública (para volver a pintar)
+    async function responder(resp) {
+      const errorEl = document.getElementById('respuesta-error');
+      if (errorEl) errorEl.textContent = '';
+      const texto = resp === 'aceptado' ? 'aceptar los trabajos recomendados' : 'no realizar los trabajos por ahora (se cobra solo el diagnóstico)';
+      if (!confirm(`¿Confirma que desea ${texto}?`)) return;
+      const { data, error } = await supabaseClient.rpc('portal_responder_diagnostico', { p_id: diagId, p_respuesta: resp });
+      if (error || (data !== 'ok' && data !== 'ya_respondido')) {
+        if (errorEl) errorEl.textContent = 'No pudimos registrar su respuesta. Intente de nuevo o contacte al taller.';
+        return;
+      }
+      if (data === 'ya_respondido') {
+        // Alguien ya respondió (por ejemplo el taller): se muestra lo vigente
+        const { data: actual } = await supabaseClient.rpc('portal_consultar_diagnostico', { p_id: diagId });
+        if (actual) { render(actual); return; }
+      }
+      datosInforme.respuesta = resp;
+      datosInforme.respuesta_fecha = new Date().toISOString();
+      render(datosInforme);
+      const bloque = document.querySelector('.siguiente-paso');
+      if (bloque) bloque.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
     function render(d) {
@@ -231,7 +284,7 @@
           ${desglose ? `<div style="margin-top:0.5rem;">${desglose}</div>` : ''}
           <p style="font-size:0.8rem; color:var(--color-text-muted); margin-top:0.75rem;">Valores referenciales según lo observado a la fecha del informe. Cualquier hallazgo adicional se informará y cotizará antes de realizarse.</p>` : ''}
 
-          ${renderSiguientePaso(d)}
+          ${renderSiguientePaso(d, { hayTrabajos, total: t.total, totalSoloDiag, conIva: t.conIva })}
 
           <div class="no-print" style="text-align:center; margin-top:1rem;">
             <button type="button" class="btn-secondary" onclick="window.print()">🖨 Imprimir / Guardar PDF</button>
@@ -244,6 +297,13 @@
           ${taller.politica_inspeccion_texto ? `<div style="margin-top:1.5rem; background:#fef3c7; padding:0.75rem 1rem; border-radius:6px; font-size:0.78rem; white-space:pre-wrap;">${esc(taller.politica_inspeccion_texto)}</div>` : ''}
           ${taller.politicas_generales_texto ? `<div style="margin-top:1.5rem; padding-top:0.75rem; border-top:1px solid #eee; font-size:0.7rem; color:#999; white-space:pre-wrap;">${esc(taller.politicas_generales_texto)}</div>` : ''}
         </div>`;
+
+      datosInforme = d;
+      const aceptar = document.getElementById('aceptar-btn');
+      if (aceptar) {
+        aceptar.addEventListener('click', () => responder('aceptado'));
+        document.getElementById('rechazar-btn').addEventListener('click', () => responder('rechazado'));
+      }
     }
 
     (async () => {
