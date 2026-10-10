@@ -169,7 +169,7 @@
     //     si la cita tiene uno), como referencia.
     async function buscarPrecioEstimado(c) {
       // Si la cotización ya tiene OT, valen los ítems y el descuento (% o pesos) de la OT
-      const campos = 'descuento_tipo, descuento_pct, descuento_monto, con_iva, cotizacion_items(cantidad, precio_unitario), ordenes(descuento_tipo, descuento_pct, descuento_monto, con_iva, orden_items(cantidad, precio_unitario))';
+      const campos = 'descuento_tipo, descuento_pct, descuento_monto, descuento_base, con_iva, cotizacion_items(cantidad, precio_unitario, tipo, tipo_otro), ordenes(descuento_tipo, descuento_pct, descuento_monto, descuento_base, con_iva, orden_items(cantidad, precio_unitario, tipo, tipo_otro))';
       if (c.cotizacion_id) {
         const { data: cot } = await supabaseClient.from('cotizaciones')
           .select(campos)

@@ -49,6 +49,12 @@ Extras integrados:
 > número, o una cotización si se conoce su link único.
 
 
+> **Descuentos**: se eligen en % o en pesos y corren **solo sobre la mano de obra** (nunca sobre repuestos,
+> insumos ni trabajos externos); la línea de descuento lo indica así en cotizaciones, OT, diagnósticos,
+> informes impresos y links del cliente. Los documentos que ya tenían un descuento antes de
+> `sql/actualizacion-v43-descuento-mano-obra.sql` conservan su cálculo anterior (sobre el total) hasta que
+> se les modifique el descuento. El cálculo vive en `descuentoDeItems()` de `assets/js/layout.js`.
+
 > **Formato único de RUT y teléfono**: todas las casillas de RUT (`12.345.678-9`) y de teléfono
 > (`+56 9 1234 5678`) se formatean solas al escribir, en toda la app, desde `assets/js/layout.js`
 > (se detectan por el `id` de la casilla o `type="tel"`; para excluir una, `data-formato="ninguno"`).

@@ -68,8 +68,9 @@
       const ivaPct = Number((d.taller && d.taller.iva_pct) ?? 19);
       const conIva = d.con_iva !== false;
       const subtotal = (d.items || []).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
-      // El descuento puede venir en % o en pesos (descuento_tipo); calcularDescuento está en layout.js
-      const dsc = calcularDescuento(subtotal, d);
+      // El descuento puede venir en % o en pesos (descuento_tipo) y corre SOLO sobre la mano de obra
+      // (descuento_base; los documentos antiguos con 'total' conservan su cálculo). Ver layout.js
+      const dsc = descuentoDeItems(d.items, d);
       const descuentoPct = fmtPorcentaje(dsc.pct);
       const descuento = dsc.monto;
       const neto = subtotal - descuento;
@@ -118,7 +119,7 @@
         </table>
         <div class="totales">
           ${descuento > 0 ? `<div class="fila" style="color:var(--color-text-muted);"><span>Subtotal</span><span>${fmtMoneda(subtotal)}</span></div>
-          <div class="fila" style="color:var(--color-text-muted);"><span>Descuento (${descuentoPct}%)</span><span>-${fmtMoneda(descuento)}</span></div>` : ''}
+          <div class="fila" style="color:var(--color-text-muted);"><span>${etiquetaDescuento(dsc.sobre, dsc.pct, dsc.base)}${dsc.sobre !== 'total' ? '<br><small>Aplica solo a la mano de obra; no incluye repuestos ni insumos.</small>' : ''}</span><span>-${fmtMoneda(descuento)}</span></div>` : ''}
           <div class="fila"><span>Neto</span><span>${fmtMoneda(neto)}</span></div>
           ${conIva ? `<div class="fila"><span>IVA ${ivaPct}%</span><span>${fmtMoneda(iva)}</span></div>` : '<div class="fila" style="color:var(--color-text-muted);"><span>Sin IVA</span><span>–</span></div>'}
           <div class="fila total"><span>Total</span><span>${fmtMoneda(total)}</span></div>

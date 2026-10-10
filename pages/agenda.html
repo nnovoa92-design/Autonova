@@ -902,7 +902,7 @@
       }
       if (!c.cliente_id) return null;
       let query = supabaseClient.from('cotizaciones')
-        .select('descuento_tipo, descuento_pct, descuento_monto, con_iva, cotizacion_items(cantidad, precio_unitario), ordenes(descuento_tipo, descuento_pct, descuento_monto, con_iva, orden_items(cantidad, precio_unitario))')
+        .select('descuento_tipo, descuento_pct, descuento_monto, descuento_base, con_iva, cotizacion_items(cantidad, precio_unitario, tipo, tipo_otro), ordenes(descuento_tipo, descuento_pct, descuento_monto, descuento_base, con_iva, orden_items(cantidad, precio_unitario, tipo, tipo_otro))')
         .eq('cliente_id', c.cliente_id)
         .in('estado', ['aprobada', 'enviada'])
         .order('creado_en', { ascending: false })
@@ -1523,7 +1523,7 @@
         supabaseClient.from('vehiculos').select('*').eq('activo', true).order('patente'),
         supabaseClient.from('trabajos').select('*').eq('activo', true).order('nombre'),
         supabaseClient.from('personal').select('*').eq('activo', true).order('nombre'),
-        supabaseClient.from('cotizaciones').select('id, numero, cliente_id, estado, descuento_tipo, descuento_pct, descuento_monto, con_iva, cotizacion_items(cantidad, precio_unitario), ordenes(descuento_tipo, descuento_pct, descuento_monto, con_iva, orden_items(cantidad, precio_unitario))').order('creado_en', { ascending: false }),
+        supabaseClient.from('cotizaciones').select('id, numero, cliente_id, estado, descuento_tipo, descuento_pct, descuento_monto, descuento_base, con_iva, cotizacion_items(cantidad, precio_unitario, tipo, tipo_otro), ordenes(descuento_tipo, descuento_pct, descuento_monto, descuento_base, con_iva, orden_items(cantidad, precio_unitario, tipo, tipo_otro))').order('creado_en', { ascending: false }),
         getTallerConfig(),
         supabaseClient.from('horario_atencion').select('*'),
         supabaseClient.from('bloqueos_agenda').select('*').order('fecha_desde'),

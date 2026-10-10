@@ -65,16 +65,20 @@
       const sumaCat = (cat) => items.filter(i => categoriaItem(i) === cat).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
       const mo = sumaCat('mano_obra'), rep = sumaCat('repuestos'), ext = sumaCat('trabajo_externo'), ins = sumaCat('insumo_taller');
       const subtotal = mo + rep + ext + ins;
-      // El descuento puede venir en % o en pesos (descuento_tipo); calcularDescuento está en layout.js
-      const dsc = calcularDescuento(subtotal, d);
+      // El descuento puede venir en % o en pesos (descuento_tipo) y corre SOLO sobre la mano de obra
+      // (descuento_base; los documentos antiguos con 'total' conservan su cálculo). Ver layout.js
+      const nd = normalizarDescuento(d);
+      const sobreTotal = nd.base === 'total';
+      const baseDescuento = sobreTotal ? subtotal : mo;
+      const dsc = calcularDescuento(baseDescuento, nd);
       const descuento = dsc.monto;
       const neto = subtotal - descuento;
       const conIva = d.con_iva !== false;
       const iva = conIva ? neto * (ivaPct / 100) : 0;
-      const factor = subtotal > 0 ? neto / subtotal : 1;
+      const factor = (sobreTotal && subtotal > 0) ? neto / subtotal : 1;
       return {
-        ivaPct, subtotal, descuento, descuentoPct: dsc.pct, neto, iva, conIva, total: neto + iva,
-        subtotalMO: mo * factor, subtotalRepuestos: rep * factor,
+        ivaPct, subtotal, descuento, descuentoPct: dsc.pct, descuentoSobre: nd.base, baseDescuento, neto, iva, conIva, total: neto + iva,
+        subtotalMO: sobreTotal ? mo * factor : mo - descuento, subtotalRepuestos: rep * factor,
         subtotalTrabajoExterno: ext * factor, subtotalInsumosTaller: ins * factor,
       };
     }
@@ -286,7 +290,7 @@
             ${(lineaDiag && hayTrabajos) ? `
             <div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid #eee;"><span>Diagnóstico</span><span>${fmtMoneda(valorDiag)}</span></div>
             <div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid #eee;"><span>Trabajos recomendados</span><span>${fmtMoneda(t.subtotal - valorDiag)}</span></div>` : ''}
-            ${t.descuento > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid #eee;"><span>Descuento (${fmtPorcentaje(t.descuentoPct)}%)</span><span style="color:#c33;">-${fmtMoneda(t.descuento)}</span></div>` : ''}
+            ${t.descuento > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid #eee;"><span>${etiquetaDescuento(t.descuentoSobre, t.descuentoPct, t.baseDescuento)}${t.descuentoSobre !== 'total' ? '<br><small style="color:#777;">Aplica solo a la mano de obra; no incluye repuestos ni insumos.</small>' : ''}</span><span style="color:#c33;">-${fmtMoneda(t.descuento)}</span></div>` : ''}
             <div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid #eee;"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
             ${t.conIva ? `<div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:2px solid var(--color-primary);"><span>IVA ${t.ivaPct}%</span><span>${fmtMoneda(t.iva)}</span></div>` : ''}
             <div style="display:flex; justify-content:space-between; padding:0.6rem 0; font-weight:700; font-size:1.1rem;"><span>${d.cotizacion ? 'TOTAL' : hayTrabajos ? 'TOTAL SI SE REALIZAN LOS TRABAJOS' : lineaDiag ? 'TOTAL DEL DIAGNÓSTICO' : 'TOTAL ESTIMADO'}</span><span style="color:var(--color-primary);">${fmtMoneda(t.total)}</span></div>

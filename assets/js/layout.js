@@ -80,21 +80,54 @@ function fmtNumero(prefijo, numero) {
   return `${prefijo}-${String(numero ?? 0).padStart(4, '0')}`;
 }
 
-// ---------- Descuento (en % o en pesos) ----------
-// Un descuento se guarda como { tipo: 'pct' | 'monto', pct, monto }:
-//  · 'pct': un porcentaje; el monto en pesos se recalcula si cambian los ítems.
+// ---------- Descuento (en % o en pesos, SOLO sobre mano de obra) ----------
+// Un descuento se guarda como { tipo: 'pct' | 'monto', pct, monto, base }:
+//  · 'pct': un porcentaje de la mano de obra; el monto en pesos se recalcula si cambian los ítems.
 //  · 'monto': un valor fijo en pesos; el % es solo una referencia y cambia con los ítems.
-// En las tablas viven en descuento_tipo, descuento_pct y descuento_monto.
-// Acepta un número (porcentaje, como antes), una fila de la base o { tipo, pct, monto }.
+//  · base: 'mano_obra' (lo normal: nunca toca repuestos, insumos ni trabajos externos) o 'total'
+//    (documentos anteriores a v43, que conservan su cálculo para no alterar totales ya emitidos).
+// En las tablas viven en descuento_tipo, descuento_pct, descuento_monto y descuento_base.
+// Acepta un número (porcentaje, como antes), una fila de la base o { tipo, pct, monto, base }.
 function normalizarDescuento(d) {
-  if (d == null || d === '') return { tipo: 'pct', pct: 0, monto: 0 };
-  if (typeof d === 'number' || typeof d === 'string') return { tipo: 'pct', pct: Number(d) || 0, monto: 0 };
+  if (d == null || d === '') return { tipo: 'pct', pct: 0, monto: 0, base: 'mano_obra' };
+  if (typeof d === 'number' || typeof d === 'string') return { tipo: 'pct', pct: Number(d) || 0, monto: 0, base: 'mano_obra' };
   const tipo = (d.tipo || d.descuento_tipo) === 'monto' ? 'monto' : 'pct';
   return {
     tipo,
     pct: Number(d.pct ?? d.descuento_pct ?? 0) || 0,
     monto: Number(d.monto ?? d.descuento_monto ?? 0) || 0,
+    base: (d.base || d.descuento_base) === 'total' ? 'total' : 'mano_obra',
   };
+}
+
+// ¿El ítem es mano de obra? El subtipo elegido en «Otro» manda sobre el tipo genérico.
+// Repuestos, insumos del taller o del vehículo y trabajos externos NO lo son.
+function esManoDeObra(item) {
+  const sub = (item.tipo === 'otro' && item.tipo_otro) ? item.tipo_otro : item.tipo;
+  return sub === 'mano_obra';
+}
+
+// Descuento de un documento sobre sus ítems ({ cantidad, precio_unitario, tipo, tipo_otro }).
+// El descuento corre solo sobre la mano de obra (salvo documentos antiguos con base 'total').
+// Devuelve { subtotal, subtotalMO, base, sobre, tipo, monto, pct, neto }.
+function descuentoDeItems(items, d) {
+  const n = normalizarDescuento(d);
+  let subtotal = 0, subtotalMO = 0;
+  (items || []).forEach(i => {
+    const v = (Number(i.cantidad) * Number(i.precio_unitario)) || 0;
+    subtotal += v;
+    if (esManoDeObra(i)) subtotalMO += v;
+  });
+  const base = n.base === 'total' ? subtotal : subtotalMO;
+  const c = calcularDescuento(base, n);
+  return { subtotal, subtotalMO, base, sobre: n.base, tipo: c.tipo, monto: c.monto, pct: c.pct, neto: subtotal - c.monto };
+}
+
+// Texto de la línea de descuento, para que el cliente vea sobre qué se aplica.
+function etiquetaDescuento(sobre, pct, base) {
+  return sobre === 'total'
+    ? `Descuento (${fmtPorcentaje(pct)}%)`
+    : `Descuento sobre mano de obra (${fmtPorcentaje(pct)}% de ${fmtMoneda(base)})`;
 }
 
 // Descuento real sobre un subtotal: { tipo, monto (pesos), pct (% efectivo) }.
@@ -111,24 +144,30 @@ function calcularDescuento(subtotal, d) {
 
 // Para guardar en la base. Si es en pesos, también se deja el % equivalente de ese momento
 // como referencia (lo leen sin problema pantallas que solo conocen el %).
-function campoDescuento(d, subtotal) {
+// `base` es el monto sobre el que corre el descuento (la mano de obra): ver descuentoDeItems().
+function campoDescuento(d, base) {
   const n = normalizarDescuento(d);
   if (n.tipo === 'monto') {
-    const c = calcularDescuento(subtotal, n);
-    return { descuento_tipo: 'monto', descuento_monto: Math.round(n.monto), descuento_pct: Math.round(c.pct * 100) / 100 };
+    const c = calcularDescuento(base, n);
+    return { descuento_tipo: 'monto', descuento_monto: Math.round(n.monto), descuento_pct: Math.round(c.pct * 100) / 100, descuento_base: n.base };
   }
-  return { descuento_tipo: 'pct', descuento_pct: Math.min(100, Math.max(0, n.pct)), descuento_monto: 0 };
+  return { descuento_tipo: 'pct', descuento_pct: Math.min(100, Math.max(0, n.pct)), descuento_monto: 0, descuento_base: n.base };
+}
+
+// Igual que campoDescuento, calculando la base a partir de los ítems del documento.
+function campoDescuentoItems(d, items) {
+  return campoDescuento(d, descuentoDeItems(items, d).base);
 }
 
 // Total (con IVA si corresponde) de una cotización, tomando de su OT los ítems, el descuento y el
 // IVA cuando la OT ya existe (la OT manda). `cot` trae cotizacion_items y, si se quiere seguir la
-// OT, ordenes(descuento_tipo, descuento_pct, descuento_monto, con_iva, orden_items(cantidad, precio_unitario)).
+// OT, ordenes(descuento_tipo, descuento_pct, descuento_monto, descuento_base, con_iva,
+// orden_items(cantidad, precio_unitario, tipo, tipo_otro)). Los ítems deben traer tipo y tipo_otro:
+// sin ellos no se sabe cuál es mano de obra.
 function totalVigenteCotizacion(cot, ivaPct = 19) {
+  const neto = netoVigenteCotizacion(cot);
   const o = (cot.ordenes || [])[0];
   const fuente = o || cot;
-  const items = o ? (o.orden_items || []) : (cot.cotizacion_items || []);
-  const subtotal = items.reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
-  const neto = subtotal - calcularDescuento(subtotal, fuente).monto;
   return fuente.con_iva !== false ? neto * (1 + Number(ivaPct) / 100) : neto;
 }
 
@@ -138,8 +177,7 @@ function netoVigenteCotizacion(cot) {
   const o = (cot.ordenes || [])[0];
   const fuente = o || cot;
   const items = o ? (o.orden_items || []) : (cot.cotizacion_items || []);
-  const subtotal = items.reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
-  return subtotal - calcularDescuento(subtotal, fuente).monto;
+  return descuentoDeItems(items, fuente).neto;
 }
 
 // Opciones obligatorias (combos) de un trabajo: [{ nombre, precio (neto, mano de obra), horas }].
@@ -200,10 +238,23 @@ function fmtPorcentaje(n) {
 
 // Controles de pantalla: <select id=idTipo> (% / $) + <input id=idValor>, y opcionalmente
 // un <small id="{idValor}-equiv"> donde se muestra la otra unidad ("= $22.000" o "= 9,09 %").
+// La base del descuento ('mano_obra' | 'total') viaja en data-base del <input> de valor: los
+// documentos nuevos y todo descuento que se edite quedan sobre mano de obra.
 function leerDescuentoUI(idValor, idTipo) {
   const tipo = document.getElementById(idTipo).value === 'monto' ? 'monto' : 'pct';
-  const v = Math.max(0, Number(document.getElementById(idValor).value) || 0);
-  return tipo === 'monto' ? { tipo, pct: 0, monto: v } : { tipo, pct: Math.min(100, v), monto: 0 };
+  const el = document.getElementById(idValor);
+  const v = Math.max(0, Number(el.value) || 0);
+  const base = el.dataset.base === 'total' ? 'total' : 'mano_obra';
+  return tipo === 'monto' ? { tipo, pct: 0, monto: v, base } : { tipo, pct: Math.min(100, v), monto: 0, base };
+}
+// Nota bajo el control (<small id="{idValor}-base">): aclara que el descuento es solo sobre mano de obra.
+function actualizarNotaDescuentoUI(idValor) {
+  const nota = document.getElementById(idValor + '-base');
+  if (!nota) return;
+  const legado = document.getElementById(idValor).dataset.base === 'total';
+  nota.textContent = legado
+    ? 'Descuento anterior, aplicado sobre el total. Si lo modificas, pasa a ser solo sobre mano de obra.'
+    : 'Solo sobre la mano de obra: no afecta repuestos, insumos ni trabajos externos.';
 }
 function escribirDescuentoUI(idValor, idTipo, d) {
   const n = normalizarDescuento(d);
@@ -214,23 +265,34 @@ function escribirDescuentoUI(idValor, idTipo, d) {
   el.value = n.tipo === 'monto' ? Math.round(n.monto) : n.pct;
   el.max = n.tipo === 'monto' ? '' : '100';
   el.step = n.tipo === 'monto' ? '1' : '0.5';
+  el.dataset.base = n.base;
+  actualizarNotaDescuentoUI(idValor);
 }
-function actualizarEquivDescuentoUI(idValor, idTipo, subtotal) {
+// `base` = monto sobre el que corre el descuento (la mano de obra), no el total del documento.
+function actualizarEquivDescuentoUI(idValor, idTipo, base) {
   const el = document.getElementById(idValor + '-equiv');
   if (!el) return;
   const d = leerDescuentoUI(idValor, idTipo);
-  const c = calcularDescuento(subtotal, d);
+  const c = calcularDescuento(base, d);
   if (!(c.monto > 0)) { el.textContent = ''; return; }
   el.textContent = d.tipo === 'pct' ? `= ${fmtMoneda(c.monto)}` : `= ${fmtPorcentaje(c.pct)} %`;
 }
 // Al cambiar de % a pesos (o al revés) el descuento sigue siendo el mismo: solo se expresa en la otra unidad.
-// getSubtotal() entrega el subtotal vigente; onChange() vuelve a calcular totales.
+// getSubtotal() entrega el monto de mano de obra vigente (la base); onChange() vuelve a calcular totales.
+// Registrar ANTES de los listeners que recalculan totales: al tocar el valor, el descuento pasa a
+// ser sobre mano de obra.
 function setupDescuentoUI(idValor, idTipo, getSubtotal, onChange) {
   const tipoEl = document.getElementById(idTipo);
   if (!tipoEl || tipoEl.dataset.descuentoUi) return;
   tipoEl.dataset.descuentoUi = '1';
   tipoEl.dataset.tipoPrevio = tipoEl.value;
+  const valorInput = document.getElementById(idValor);
+  const aManoDeObra = () => {
+    if (valorInput.dataset.base !== 'mano_obra') { valorInput.dataset.base = 'mano_obra'; actualizarNotaDescuentoUI(idValor); }
+  };
+  valorInput.addEventListener('input', aManoDeObra);
   tipoEl.addEventListener('change', () => {
+    aManoDeObra();
     const subtotal = Number(getSubtotal()) || 0;
     const valorEl = document.getElementById(idValor);
     const anterior = tipoEl.dataset.tipoPrevio === 'monto' ? 'monto' : 'pct';

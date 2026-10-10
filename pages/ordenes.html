@@ -183,7 +183,7 @@
           <!-- Descuento de la OT, en % o en pesos. La OT manda: la cotización y el diagnóstico muestran este mismo valor. -->
           <div class="form-row" style="margin-top:0.75rem; align-items:flex-start;">
             <div class="form-group" style="max-width:300px;">
-              <label for="detalle-descuento">Descuento</label>
+              <label for="detalle-descuento">Descuento sobre mano de obra</label>
               <div class="descuento-ctl">
                 <select id="detalle-descuento-tipo" aria-label="Descuento en porcentaje o en pesos">
                   <option value="pct">%</option>
@@ -192,6 +192,7 @@
                 <input type="number" id="detalle-descuento" min="0" max="100" step="0.5" value="0" />
               </div>
               <small id="detalle-descuento-equiv" class="descuento-equiv"></small>
+              <small id="detalle-descuento-base" style="display:block; color:var(--color-text-muted); font-size:0.75rem;">Solo sobre la mano de obra: no afecta repuestos, insumos ni trabajos externos.</small>
             </div>
           </div>
           <div class="totales" id="totales"></div>
@@ -380,9 +381,10 @@
       return 'trabajo_externo';
     }
 
-    // Mismo cálculo que la cotización (ver cotizaciones.html): el descuento
-    // se aplica sobre el subtotal, antes del IVA.
-    // `desc` puede ser un porcentaje (número), una fila de la base (la OT) o { tipo, pct, monto } (ver layout.js)
+    // Mismo cálculo que la cotización (ver cotizaciones.html): el descuento corre SOLO sobre la
+    // mano de obra y se resta antes del IVA (los documentos antiguos con base 'total' conservan
+    // su cálculo sobre todo el subtotal).
+    // `desc` puede ser un porcentaje (número), una fila de la base (la OT) o { tipo, pct, monto, base } (ver layout.js)
     function calcularTotal(items, conIva = true, desc = 0) {
       const list = items || [];
       const sumaCat = (cat) => list.filter(i => categoriaItem(i) === cat).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
@@ -391,17 +393,21 @@
       const subtotalTrabajoExternoBruto = sumaCat('trabajo_externo');
       const subtotalInsumosTallerBruto = sumaCat('insumo_taller');
       const subtotal = subtotalMOBruto + subtotalRepuestosBruto + subtotalTrabajoExternoBruto + subtotalInsumosTallerBruto;
-      const dsc = calcularDescuento(subtotal, desc);
+      const nd = normalizarDescuento(desc);
+      const sobreTotal = nd.base === 'total';
+      const baseDescuento = sobreTotal ? subtotal : subtotalMOBruto;
+      const dsc = calcularDescuento(baseDescuento, nd);
       const pct = dsc.pct;
       const descuento = dsc.monto;
       const neto = subtotal - descuento;
       const iva = conIva ? neto * (Number(config.iva_pct) / 100) : 0;
-      // El desglose por categoría muestra los montos ya con el descuento
-      // aplicado proporcionalmente, para que sumen lo mismo que el Neto.
-      const factorDescuento = subtotal > 0 ? neto / subtotal : 1;
+      // El desglose por categoría suma lo mismo que el Neto: el descuento baja solo la mano de obra
+      // (o, en documentos antiguos, se reparte proporcionalmente entre todas).
+      const factorDescuento = (sobreTotal && subtotal > 0) ? neto / subtotal : 1;
       return {
-        subtotal, descuento, descuentoPct: pct, neto, iva, conIva, total: neto + iva,
-        subtotalMO: subtotalMOBruto * factorDescuento,
+        subtotal, descuento, descuentoPct: pct, descuentoSobre: nd.base, baseDescuento, neto, iva, conIva, total: neto + iva,
+        subtotalMOBruto,
+        subtotalMO: sobreTotal ? subtotalMOBruto * factorDescuento : subtotalMOBruto - descuento,
         subtotalRepuestos: subtotalRepuestosBruto * factorDescuento,
         subtotalTrabajoExterno: subtotalTrabajoExternoBruto * factorDescuento,
         subtotalInsumosTaller: subtotalInsumosTallerBruto * factorDescuento,
@@ -1206,7 +1212,7 @@
       });
 
       const t = calcularTotal(items, ordenActual.con_iva !== false, ordenActual);
-      actualizarEquivDescuentoUI('detalle-descuento', 'detalle-descuento-tipo', t.subtotal);
+      actualizarEquivDescuentoUI('detalle-descuento', 'detalle-descuento-tipo', t.baseDescuento);
       const pagadoPagos = (ordenActual.pagos || []).reduce((s, p) => s + Number(p.monto), 0);
       const pagadoAbonos = (ordenActual.abonos || []).reduce((s, a) => s + Number(a.monto), 0);
       const pagado = pagadoPagos + pagadoAbonos;
@@ -1216,10 +1222,8 @@
       const sumaPcts = Number(config.pct_mecanico || 0) + Number(config.pct_dueno || 0) + Number(config.pct_taller || 0);
       let repartoHtml = '';
       if (sumaPcts > 0) {
-        // La mano de obra repartida ya lleva el descuento aplicado (proporcional)
-        const factorDescuento = t.subtotal > 0 ? t.neto / t.subtotal : 1;
-        const manoObra = items.filter(i => i.tipo === 'mano_obra')
-          .reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0) * factorDescuento;
+        // La mano de obra repartida ya lleva el descuento (que corre solo sobre ella)
+        const manoObra = t.subtotalMO;
         repartoHtml = `
         <div class="fila" style="margin-top:0.5rem; color:var(--color-text-muted);"><span>Mano de obra</span><span>${fmtMoneda(manoObra)}</span></div>
         <div class="fila" style="color:var(--color-text-muted);"><span>· Mecánico ${Number(config.pct_mecanico)}%</span><span>${fmtMoneda(manoObra * Number(config.pct_mecanico || 0) / 100)}</span></div>
@@ -1229,7 +1233,7 @@
 
       document.getElementById('totales').innerHTML = `
         ${t.descuento > 0 ? `<div class="fila" style="color:var(--color-text-muted);"><span>Subtotal</span><span>${fmtMoneda(t.subtotal)}</span></div>
-        <div class="fila" style="color:var(--color-text-muted);"><span>Descuento (${fmtPorcentaje(t.descuentoPct)}%)</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
+        <div class="fila" style="color:var(--color-text-muted);"><span>${etiquetaDescuento(t.descuentoSobre, t.descuentoPct, t.baseDescuento)}</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
         <div class="fila"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
         ${t.conIva ? `<div class="fila"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>` : '<div class="fila" style="color:var(--color-text-muted);"><span>Sin IVA</span><span>–</span></div>'}
         <div class="fila total"><span>Total</span><span>${fmtMoneda(t.total)}</span></div>
@@ -1542,8 +1546,7 @@
     async function guardarDescuentoOT() {
       if (!ordenActual) return;
       const desc = leerDescuentoUI('detalle-descuento', 'detalle-descuento-tipo');
-      const subtotal = calcularTotal(ordenActual.orden_items, true, 0).subtotal;
-      const campos = campoDescuento(desc, subtotal);
+      const campos = campoDescuentoItems(desc, ordenActual.orden_items);
       const { error } = await supabaseClient.from('ordenes').update(campos).eq('id', ordenActual.id);
       if (error) {
         alert('No se pudo guardar el descuento: ' + error.message + '\n(¿ejecutaste sql/actualizacion-v36-descuento-pesos.sql?)');
@@ -1555,7 +1558,7 @@
     }
     document.getElementById('detalle-descuento').addEventListener('change', guardarDescuentoOT);
     setupDescuentoUI('detalle-descuento', 'detalle-descuento-tipo',
-      () => calcularTotal(ordenActual ? ordenActual.orden_items : [], true, 0).subtotal, guardarDescuentoOT);
+      () => calcularTotal(ordenActual ? ordenActual.orden_items : [], true, 0).subtotalMOBruto, guardarDescuentoOT);
 
     document.getElementById('detalle-estado').addEventListener('change', async (e) => {
       if (!ordenActual) return;
@@ -1705,7 +1708,7 @@
         </table>
         <div style="margin-top:1rem; margin-left:auto; max-width:300px;">
           ${t.descuento > 0 ? `<div style="display:flex;justify-content:space-between;color:#666;"><span>Subtotal</span><span>${fmtMoneda(t.subtotal)}</span></div>
-          <div style="display:flex;justify-content:space-between;color:#666;"><span>Descuento (${fmtPorcentaje(t.descuentoPct)}%)</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
+          <div style="display:flex;justify-content:space-between;color:#666;"><span>${etiquetaDescuento(t.descuentoSobre, t.descuentoPct, t.baseDescuento)}</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
           <div style="display:flex;justify-content:space-between;"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
           ${t.conIva ? `<div style="display:flex;justify-content:space-between;"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>` : '<div style="display:flex;justify-content:space-between;"><span>Sin IVA</span><span>–</span></div>'}
           <div style="display:flex;justify-content:space-between;font-weight:bold;border-top:2px solid #000;margin-top:4px;padding-top:4px;"><span>TOTAL</span><span>${fmtMoneda(t.total)}</span></div>
@@ -1799,7 +1802,7 @@
           <tbody>${items.map(i => `<tr style="border-bottom:1px solid #ccc;"><td style="padding:4px;">${i.descripcion}</td><td style="text-align:right;padding:4px;">${Number(i.cantidad).toLocaleString('es-CL')}</td><td style="text-align:right;padding:4px;">${fmtMoneda(i.precio_unitario)}</td><td style="text-align:right;padding:4px;">${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td></tr>`).join('')}</tbody>
         </table>
         <p style="text-align:right; margin-top:0.5rem;">
-          ${t.descuento > 0 ? `Subtotal: ${fmtMoneda(t.subtotal)} · Descuento (${fmtPorcentaje(t.descuentoPct)}%): -${fmtMoneda(t.descuento)} · ` : ''}Neto: ${fmtMoneda(t.neto)} · IVA: ${fmtMoneda(t.iva)} · Total: ${fmtMoneda(t.total)}
+          ${t.descuento > 0 ? `Subtotal: ${fmtMoneda(t.subtotal)} · ${etiquetaDescuento(t.descuentoSobre, t.descuentoPct, t.baseDescuento)}: -${fmtMoneda(t.descuento)} · ` : ''}Neto: ${fmtMoneda(t.neto)} · IVA: ${fmtMoneda(t.iva)} · Total: ${fmtMoneda(t.total)}
           ${bodegaje.monto > 0 ? ` · Bodegaje (${bodegaje.dias} días): ${fmtMoneda(bodegaje.monto)}` : ''}
           · Pagado: ${fmtMoneda(pagado)} · <strong>Saldo: ${fmtMoneda(t.total + bodegaje.monto - pagado)}</strong>
         </p>

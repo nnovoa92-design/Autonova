@@ -148,10 +148,9 @@
         return;
       }
 
-      // Total real de la OT: subtotal - descuento, más IVA si corresponde.
+      // Total real de la OT: subtotal - descuento (solo sobre mano de obra), más IVA si corresponde.
       const totalOT = o => {
-        const subtotal = (o.orden_items || []).reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
-        const neto = subtotal - calcularDescuento(subtotal, o).monto;   // el descuento puede ser en % o en pesos
+        const neto = descuentoDeItems(o.orden_items, o).neto;
         return o.con_iva === false ? neto : neto * (1 + Number(config.iva_pct) / 100);
       };
 
