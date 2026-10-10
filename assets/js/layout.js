@@ -132,6 +132,26 @@ function totalVigenteCotizacion(cot, ivaPct = 19) {
   return fuente.con_iva !== false ? neto * (1 + Number(ivaPct) / 100) : neto;
 }
 
+// Valor NETO (sin IVA) de una cotización, con su descuento aplicado. Si ya tiene OT, valen los
+// ítems y el descuento de la OT. Es el valor que se muestra al cliente en agenda y recordatorios.
+function netoVigenteCotizacion(cot) {
+  const o = (cot.ordenes || [])[0];
+  const fuente = o || cot;
+  const items = o ? (o.orden_items || []) : (cot.cotizacion_items || []);
+  const subtotal = items.reduce((s, i) => s + Number(i.cantidad) * Number(i.precio_unitario), 0);
+  return subtotal - calcularDescuento(subtotal, fuente).monto;
+}
+
+// Precio NETO (sin IVA) de la mano de obra de un trabajo del catálogo: su precio fijo,
+// o horas de taller x valor hora. Devuelve null si no se puede calcular.
+function precioNetoTrabajo(trabajo, valorHora) {
+  if (!trabajo) return null;
+  if (trabajo.precio_fijo != null && trabajo.precio_fijo !== '') return Number(trabajo.precio_fijo);
+  const horas = Number(trabajo.horas_estimadas ?? trabajo.horas);
+  const vh = Number(valorHora);
+  return (horas > 0 && vh > 0) ? horas * vh : null;
+}
+
 function fmtPorcentaje(n) {
   return Number(n || 0).toLocaleString('es-CL', { maximumFractionDigits: 2 });
 }

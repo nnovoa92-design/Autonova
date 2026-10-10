@@ -120,10 +120,15 @@
       return texto.replace(/\n{3,}/g, '\n\n');
     }
 
+    // El valor se informa SIN IVA (neto), con "+ IVA" explícito. precio = { monto, origen } | null
     function lineaPrecio(precio) {
-      return precio != null
-        ? `• Presupuesto de referencia: ${fmtMoneda(precio)} (de su cotización aprobada). Si en la revisión encontramos algo adicional, se lo avisamos antes de hacerlo — nunca le cobramos sin su autorización.`
-        : '• Le confirmaremos el valor una vez evaluado el vehículo. Nunca le cobramos algo sin avisarle antes.';
+      const aviso = 'Si en la revisión encontramos algo adicional, se lo avisamos antes de hacerlo — nunca le cobramos sin su autorización.';
+      if (precio && precio.monto != null) {
+        return precio.origen === 'catalogo'
+          ? `• Valor de la mano de obra de este servicio: ${fmtMoneda(precio.monto)} + IVA (los repuestos o insumos, si corresponden, se cotizan aparte). ${aviso}`
+          : `• Presupuesto de su cotización: ${fmtMoneda(precio.monto)} + IVA. ${aviso}`;
+      }
+      return '• Le confirmaremos el valor una vez evaluado el vehículo. Nunca le cobramos algo sin avisarle antes.';
     }
 
     function lineaTiempo(tiempo) {
@@ -156,18 +161,24 @@
       return `${h} horas`;
     }
 
-    // Si la cita tiene una cotización enlazada explícitamente, se usa esa
-    // (sin adivinar). Si no, se busca la aprobada/enviada más reciente del
-    // cliente (y del mismo vehículo, si la cita tiene uno) como referencia.
+    // Valor (SIN IVA) que se informa al cliente, en este orden (igual que en Agenda):
+    //  1. La cotización enlazada explícitamente a la cita (sin adivinar).
+    //  2. El valor de mano de obra del servicio agendado, según el catálogo (precio fijo u
+    //     horas x valor hora).
+    //  3. La cotización aprobada/enviada más reciente del cliente (y del mismo vehículo,
+    //     si la cita tiene uno), como referencia.
     async function buscarPrecioEstimado(c) {
-      // Total vigente: si la cotización ya tiene OT, valen los ítems, el descuento (% o pesos) y el IVA de la OT
+      // Si la cotización ya tiene OT, valen los ítems y el descuento (% o pesos) de la OT
       const campos = 'descuento_tipo, descuento_pct, descuento_monto, con_iva, cotizacion_items(cantidad, precio_unitario), ordenes(descuento_tipo, descuento_pct, descuento_monto, con_iva, orden_items(cantidad, precio_unitario))';
-      const ivaPct = Number((tallerHorarios && tallerHorarios.iva_pct) || 19);
       if (c.cotizacion_id) {
         const { data: cot } = await supabaseClient.from('cotizaciones')
           .select(campos)
           .eq('id', c.cotizacion_id).maybeSingle();
-        if (cot) return totalVigenteCotizacion(cot, ivaPct);
+        if (cot) return { monto: netoVigenteCotizacion(cot), origen: 'cotizacion' };
+      }
+      if (c.trabajos) {
+        const neto = precioNetoTrabajo(c.trabajos, tallerHorarios && tallerHorarios.valor_hora);
+        if (neto != null) return { monto: neto, origen: 'catalogo' };
       }
       if (!c.cliente_id) return null;
       let query = supabaseClient.from('cotizaciones')
@@ -179,7 +190,7 @@
       if (c.vehiculo_id) query = query.eq('vehiculo_id', c.vehiculo_id);
       const { data } = await query.maybeSingle();
       if (!data) return null;
-      return totalVigenteCotizacion(data, ivaPct);
+      return { monto: netoVigenteCotizacion(data), origen: 'cotizacion' };
     }
     let tallerHorarios = null;
 
@@ -332,7 +343,7 @@
       const diaManana = mananaDate.toISOString().slice(0, 10);
       const { data: citasManana } = await supabaseClient
         .from('citas')
-        .select('cliente_id, vehiculo_id, cotizacion_id, fecha_hora, modalidad, direccion, descripcion, telefono_contacto, nombre_contacto, clientes(nombre, telefono, email), vehiculos(patente, marca, modelo), trabajos(nombre, horas_estimadas)')
+        .select('cliente_id, vehiculo_id, cotizacion_id, fecha_hora, modalidad, direccion, descripcion, telefono_contacto, nombre_contacto, clientes(nombre, telefono, email), vehiculos(patente, marca, modelo), trabajos(nombre, horas_estimadas, precio_fijo)')
         .gte('fecha_hora', `${diaManana}T00:00:00`).lte('fecha_hora', `${diaManana}T23:59:59`)
         .in('estado', ['pendiente', 'confirmado'])
         .order('fecha_hora');

@@ -127,7 +127,8 @@
               <label for="cotizacion_id">Cotización asociada (opcional)</label>
               <select id="cotizacion_id"><option value="">Sin cotización</option></select>
               <p style="color:var(--color-text-muted); font-size:0.78rem; margin:0.2rem 0 0;">
-                Si eliges una, su valor aparece en el mensaje de recordatorio.
+                Si eliges una, su valor <strong>sin IVA</strong> aparece en los mensajes de confirmación y recordatorio.
+                Si no eliges ninguna, se usa el valor de mano de obra del servicio (sin IVA).
               </p>
             </div>
           </div>
@@ -315,9 +316,10 @@
         propios.map(v => `<option value="${v.id}">${v.patente} · ${[v.marca, v.modelo].filter(Boolean).join(' ')}</option>`).join('');
     }
 
-    // Total vigente de la cotización: si ya tiene OT, valen los ítems, el descuento (% o pesos) y el IVA de la OT
-    function calcularTotalCotizacion(cot) {
-      return totalVigenteCotizacion(cot, Number(tallerHorarios.iva_pct || 19));
+    // Valor NETO (sin IVA) de la cotización: es el que se le muestra al cliente.
+    // Si la cotización ya tiene OT, valen los ítems y el descuento (% o pesos) de la OT.
+    function valorNetoCotizacion(cot) {
+      return netoVigenteCotizacion(cot);
     }
 
     function actualizarCotizaciones() {
@@ -325,7 +327,7 @@
       const propias = cotizacionesCache.filter(c => c.cliente_id === clienteId);
       document.getElementById('cotizacion_id').innerHTML =
         '<option value="">Sin cotización</option>' +
-        propias.map(c => `<option value="${c.id}">${fmtNumero('COT', c.numero)} · ${fmtMoneda(calcularTotalCotizacion(c))} · ${(ESTADOS_COTIZACION[c.estado] || {}).label || c.estado}</option>`).join('');
+        propias.map(c => `<option value="${c.id}">${fmtNumero('COT', c.numero)} · ${fmtMoneda(valorNetoCotizacion(c))} + IVA · ${(ESTADOS_COTIZACION[c.estado] || {}).label || c.estado}</option>`).join('');
     }
 
     // La dirección solo importa si vamos nosotros (retiro/terreno); se
@@ -442,10 +444,15 @@
       return texto.replace(/\n{3,}/g, '\n\n');
     }
 
+    // El valor se informa SIN IVA (neto), con "+ IVA" explícito. precio = { monto, origen } | null
     function lineaPrecio(precio) {
-      return precio != null
-        ? `• Presupuesto de referencia: ${fmtMoneda(precio)} (de su cotización aprobada). Si en la revisión encontramos algo adicional, se lo avisamos antes de hacerlo — nunca le cobramos sin su autorización.`
-        : '• Le confirmaremos el valor una vez evaluado el vehículo. Nunca le cobramos algo sin avisarle antes.';
+      const aviso = 'Si en la revisión encontramos algo adicional, se lo avisamos antes de hacerlo — nunca le cobramos sin su autorización.';
+      if (precio && precio.monto != null) {
+        return precio.origen === 'catalogo'
+          ? `• Valor de la mano de obra de este servicio: ${fmtMoneda(precio.monto)} + IVA (los repuestos o insumos, si corresponden, se cotizan aparte). ${aviso}`
+          : `• Presupuesto de su cotización: ${fmtMoneda(precio.monto)} + IVA. ${aviso}`;
+      }
+      return '• Le confirmaremos el valor una vez evaluado el vehículo. Nunca le cobramos algo sin avisarle antes.';
     }
 
     function lineaTiempo(tiempo) {
@@ -480,13 +487,21 @@
       return `${h} horas`;
     }
 
-    // Si la cita tiene una cotización enlazada explícitamente, se usa esa
-    // (sin adivinar). Si no, se busca la aprobada/enviada más reciente del
-    // cliente (y del mismo vehículo, si la cita tiene uno) como referencia.
+    // Valor (SIN IVA) que se informa al cliente, en este orden:
+    //  1. La cotización enlazada explícitamente a la cita (sin adivinar).
+    //  2. El valor de mano de obra del servicio agendado, según el catálogo (precio fijo u
+    //     horas x valor hora).
+    //  3. La cotización aprobada/enviada más reciente del cliente (y del mismo vehículo,
+    //     si la cita tiene uno), como referencia.
     async function buscarPrecioEstimado(c) {
       if (c.cotizacion_id) {
         const cot = cotizacionesCache.find(x => x.id === c.cotizacion_id);
-        if (cot) return calcularTotalCotizacion(cot);
+        if (cot) return { monto: valorNetoCotizacion(cot), origen: 'cotizacion' };
+      }
+      if (c.trabajo_id) {
+        const t = trabajosCache.find(x => x.id === c.trabajo_id) || c.trabajos;
+        const neto = precioNetoTrabajo(t, tallerHorarios && tallerHorarios.valor_hora);
+        if (neto != null) return { monto: neto, origen: 'catalogo' };
       }
       if (!c.cliente_id) return null;
       let query = supabaseClient.from('cotizaciones')
@@ -498,7 +513,7 @@
       if (c.vehiculo_id) query = query.eq('vehiculo_id', c.vehiculo_id);
       const { data } = await query.maybeSingle();
       if (!data) return null;
-      return calcularTotalCotizacion(data);
+      return { monto: valorNetoCotizacion(data), origen: 'cotizacion' };
     }
 
     // Se usan solo si Configuración → Plantillas de mensajes está vacío
@@ -861,7 +876,7 @@
     async function cargarOnline() {
       const { data } = await supabaseClient
         .from('citas')
-        .select('*, clientes(nombre, telefono), vehiculos(patente), trabajos(nombre, horas_estimadas)')
+        .select('*, clientes(nombre, telefono), vehiculos(patente), trabajos(nombre, horas_estimadas, precio_fijo)')
         .eq('origen', 'online').eq('estado', 'pendiente')
         .order('fecha_hora');
       onlinePendientes = data || [];
@@ -897,7 +912,7 @@
       const dia = manana.toISOString().slice(0, 10);
       const { data } = await supabaseClient
         .from('citas')
-        .select('*, clientes(nombre, telefono), vehiculos(patente), trabajos(nombre, horas_estimadas)')
+        .select('*, clientes(nombre, telefono), vehiculos(patente), trabajos(nombre, horas_estimadas, precio_fijo)')
         .gte('fecha_hora', `${dia}T00:00:00`).lte('fecha_hora', `${dia}T23:59:59`)
         .in('estado', ['pendiente', 'confirmado'])
         .order('fecha_hora');
@@ -929,7 +944,7 @@
       const hasta = new Date(dia + 'T23:59:59').toISOString();
       const { data, error } = await supabaseClient
         .from('citas')
-        .select('*, clientes(nombre, telefono), vehiculos(patente, marca, modelo), trabajos(nombre, horas_estimadas)')
+        .select('*, clientes(nombre, telefono), vehiculos(patente, marca, modelo), trabajos(nombre, horas_estimadas, precio_fijo)')
         .gte('fecha_hora', desde).lte('fecha_hora', hasta)
         .order('fecha_hora');
       citasDia = data || [];
@@ -952,7 +967,7 @@
       document.getElementById('dia-titulo').textContent = `${textoCorto(lunes)} – ${textoCorto(domingo)}`;
       const { data, error } = await supabaseClient
         .from('citas')
-        .select('*, clientes(nombre, telefono), vehiculos(patente, marca, modelo), trabajos(nombre, horas_estimadas)')
+        .select('*, clientes(nombre, telefono), vehiculos(patente, marca, modelo), trabajos(nombre, horas_estimadas, precio_fijo)')
         .gte('fecha_hora', new Date(`${lunes}T00:00:00`).toISOString())
         .lte('fecha_hora', new Date(`${domingo}T23:59:59`).toISOString())
         .order('fecha_hora');

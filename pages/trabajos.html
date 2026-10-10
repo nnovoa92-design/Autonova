@@ -67,10 +67,23 @@
 
         <div class="card" style="margin-top:1rem;">
           <div class="toolbar">
-            <h2 style="margin:0;">Trabajos</h2>
-            <select id="filter-categoria" style="max-width: 250px;">
-              <option value="">Todas las categorías</option>
-            </select>
+            <h2 style="margin:0;">Trabajos <span id="contador-trabajos" style="font-size:0.8rem; font-weight:400; color:var(--color-text-muted);"></span></h2>
+            <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+              <input type="text" id="buscar-trabajo" placeholder="Buscar trabajo..." autocomplete="off" style="max-width:220px;" />
+              <select id="filter-categoria" style="max-width: 250px;">
+                <option value="">Todas las categorías</option>
+              </select>
+              <button type="button" id="revisar-btn" class="btn-secondary">✏️ Revisar precios</button>
+            </div>
+          </div>
+          <div id="barra-revision" style="display:none; margin:0.5rem 0; padding:0.6rem 0.8rem; background:#fff8e6; border-left:3px solid #d97706; border-radius:var(--radius); font-size:0.88rem;">
+            <strong>Modo revisión:</strong> cambia las horas o el precio fijo directamente en la tabla (los precios son
+            <strong>sin IVA</strong>; si dejas el precio fijo vacío se calcula como horas × valor hora) y guarda todo junto.
+            <div style="margin-top:0.5rem; display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+              <button type="button" id="guardar-revision-btn">Guardar cambios</button>
+              <button type="button" id="salir-revision-btn" class="btn-secondary">Salir sin guardar</button>
+              <span id="revision-estado" style="color:var(--color-text-muted);"></span>
+            </div>
           </div>
           <table>
             <thead>
@@ -78,7 +91,7 @@
                 <th>Trabajo</th>
                 <th>Categoría</th>
                 <th>Horas</th>
-                <th>Precio mano de obra</th>
+                <th>Precio mano de obra <small style="font-weight:400;">(sin IVA)</small></th>
                 <th>Acciones</th>
               </tr>
             </thead>
@@ -148,27 +161,85 @@
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
+    let modoRevision = false;
+    const cambiosRevision = new Map();   // id -> { horas_estimadas, precio_fijo }
+
+    // Avisos para detectar precios que conviene revisar
+    function alertasTrabajo(t) {
+      const avisos = [];
+      const clave = (x) => String(x.nombre || '').trim().toLowerCase();
+      if (trabajosCache.filter(x => clave(x) === clave(t)).length > 1) avisos.push('Nombre repetido: ¿está duplicado?');
+      if (t.precio_fijo != null && valorHora > 0 && Number(t.precio_fijo) === valorHora && Number(t.horas_estimadas) > 1.25) {
+        avisos.push(`Precio fijo igual a 1 hora (${fmtMoneda(valorHora)}) para ${Number(t.horas_estimadas).toLocaleString('es-CL')} h: ¿desactualizado?`);
+      }
+      if (t.precio_fijo == null && !(Number(t.horas_estimadas) > 0)) avisos.push('Sin horas ni precio fijo: no se puede calcular');
+      return avisos;
+    }
+
+    function valorEnRevision(t) {
+      const c = cambiosRevision.get(t.id);
+      return c ? { ...t, ...c } : t;
+    }
+
     function renderTrabajos(trabajos) {
       const tbody = document.getElementById('trabajos-body');
+      document.getElementById('contador-trabajos').textContent = `(${trabajos.length} de ${trabajosCache.length})`;
       if (!trabajos.length) {
         tbody.innerHTML = '<tr><td colspan="5">No se encontraron trabajos.</td></tr>';
         return;
       }
-      tbody.innerHTML = trabajos.map(t => {
+      tbody.innerHTML = trabajos.map(t0 => {
+        const t = valorEnRevision(t0);
         const categoria = categoriasCache.find(c => c.id === t.categoria_id);
         const fijo = t.precio_fijo != null ? '' : ' <span class="badge">calculado</span>';
+        const avisos = alertasTrabajo(t).map(a => `<br><small style="color:#b45309;">⚠ ${a}</small>`).join('');
+        const nombre = `${t.nombre}${t.descripcion ? `<br><small style="color:var(--color-text-muted);">${t.descripcion}</small>` : ''}${avisos}`;
+        if (modoRevision) {
+          return `
+          <tr data-id="${t.id}"${cambiosRevision.has(t.id) ? ' style="background:#fffbea;"' : ''}>
+            <td>${nombre}</td>
+            <td>${categoria ? categoria.nombre : '–'}</td>
+            <td><input type="number" class="rev-horas" data-id="${t.id}" value="${t.horas_estimadas ?? ''}" min="0" step="0.25" style="width:90px;" /></td>
+            <td style="white-space:nowrap;">
+              <input type="number" class="rev-precio" data-id="${t.id}" value="${t.precio_fijo ?? ''}" min="0" step="1" placeholder="calculado" style="width:130px;" />
+              <small class="rev-total" style="display:block; color:var(--color-text-muted);">${fmtMoneda(precioTrabajo(t))} + IVA${fijo ? ' (calculado)' : ''}</small>
+            </td>
+            <td></td>
+          </tr>`;
+        }
         return `
         <tr>
-          <td>${t.nombre}${t.descripcion ? `<br><small style="color:var(--color-text-muted);">${t.descripcion}</small>` : ''}</td>
+          <td>${nombre}</td>
           <td>${categoria ? categoria.nombre : '–'}</td>
           <td>${Number(t.horas_estimadas).toLocaleString('es-CL')} h</td>
-          <td>${fmtMoneda(precioTrabajo(t))}${fijo}</td>
+          <td style="white-space:nowrap;">${fmtMoneda(precioTrabajo(t))} <small style="color:var(--color-text-muted);">+ IVA</small>${fijo}</td>
           <td class="table-actions">
             <button type="button" class="btn-secondary edit-btn" data-id="${t.id}">Editar</button>
             <button type="button" class="btn-danger delete-btn" data-id="${t.id}">Desactivar</button>
           </td>
         </tr>`;
       }).join('');
+
+      if (modoRevision) {
+        const base = (id) => trabajosCache.find(x => x.id === id);
+        tbody.querySelectorAll('.rev-horas, .rev-precio').forEach(inp => inp.addEventListener('input', () => {
+          const id = inp.dataset.id;
+          const fila = tbody.querySelector(`tr[data-id="${id}"]`);
+          const horas = fila.querySelector('.rev-horas').value;
+          const precio = fila.querySelector('.rev-precio').value;
+          const original = base(id);
+          const nuevo = { horas_estimadas: horas === '' ? 0 : Number(horas), precio_fijo: precio === '' ? null : Number(precio) };
+          const igual = Number(original.horas_estimadas) === nuevo.horas_estimadas
+            && (original.precio_fijo == null ? null : Number(original.precio_fijo)) === nuevo.precio_fijo;
+          if (igual) cambiosRevision.delete(id); else cambiosRevision.set(id, nuevo);
+          const t = { ...original, ...nuevo };
+          fila.querySelector('.rev-total').textContent = `${fmtMoneda(precioTrabajo(t))} + IVA${t.precio_fijo == null ? ' (calculado)' : ''}`;
+          fila.style.background = igual ? '' : '#fffbea';
+          actualizarEstadoRevision();
+        }));
+        return;
+      }
+
 
       tbody.querySelectorAll('.edit-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -188,8 +259,59 @@
 
     function applyFilter() {
       const categoriaId = document.getElementById('filter-categoria').value;
-      renderTrabajos(categoriaId ? trabajosCache.filter(t => t.categoria_id === categoriaId) : trabajosCache);
+      const texto = document.getElementById('buscar-trabajo').value.trim();
+      let lista = categoriaId ? trabajosCache.filter(t => t.categoria_id === categoriaId) : trabajosCache;
+      // Búsqueda por todas las palabras, sin importar tildes (ranking de layout.js); en revisión se
+      // conserva el orden alfabético para no mover filas mientras se edita.
+      if (texto) lista = modoRevision
+        ? lista.filter(t => buscarCoincidencias([t], texto, x => x.nombre).length)
+        : buscarCoincidencias(lista, texto, t => t.nombre, 500);
+      renderTrabajos(lista);
     }
+
+    function actualizarEstadoRevision() {
+      const n = cambiosRevision.size;
+      document.getElementById('revision-estado').textContent = n ? `${n} trabajo(s) con cambios sin guardar` : 'Sin cambios todavía';
+      document.getElementById('guardar-revision-btn').disabled = n === 0;
+    }
+
+    function entrarRevision(activo) {
+      modoRevision = activo;
+      cambiosRevision.clear();
+      document.getElementById('barra-revision').style.display = activo ? 'block' : 'none';
+      document.getElementById('revisar-btn').style.display = activo ? 'none' : '';
+      if (activo) actualizarEstadoRevision();
+      applyFilter();
+    }
+
+    document.getElementById('revisar-btn').addEventListener('click', () => entrarRevision(true));
+    document.getElementById('salir-revision-btn').addEventListener('click', () => {
+      if (cambiosRevision.size && !confirm(`Tienes ${cambiosRevision.size} cambio(s) sin guardar. ¿Salir y descartarlos?`)) return;
+      entrarRevision(false);
+    });
+    document.getElementById('guardar-revision-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('guardar-revision-btn');
+      const estado = document.getElementById('revision-estado');
+      if (!cambiosRevision.size) return;
+      btn.disabled = true;
+      estado.textContent = 'Guardando...';
+      let fallos = 0;
+      for (const [id, c] of cambiosRevision) {
+        const { error } = await supabaseClient.from('trabajos').update(c).eq('id', id);
+        if (error) fallos++;
+      }
+      if (fallos) {
+        estado.textContent = `No se pudieron guardar ${fallos} trabajo(s). Revisa tu conexión e intenta de nuevo.`;
+        btn.disabled = false;
+        return;
+      }
+      const n = cambiosRevision.size;
+      cambiosRevision.clear();
+      await loadTrabajos();
+      actualizarEstadoRevision();
+      estado.textContent = `✓ Se actualizaron ${n} trabajo(s).`;
+    });
+    document.getElementById('buscar-trabajo').addEventListener('input', applyFilter);
 
     async function loadTrabajos() {
       const { data, error } = await supabaseClient.from('trabajos').select('*').eq('activo', true).order('nombre');

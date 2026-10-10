@@ -114,7 +114,8 @@
 
     function mostrarPaso(id) { document.getElementById(id).hidden = false; }
 
-    const etiquetaTrabajo = (t) => `${t.nombre}${t.precio_fijo != null ? ` — ${fmtMoneda(t.precio_fijo)}` : ''}`;
+    // Los valores se informan SIN IVA (neto)
+    const etiquetaTrabajo = (t) => `${t.nombre}${t.precio_fijo != null ? ` — ${fmtMoneda(t.precio_fijo)} + IVA` : ''}`;
     const OPCION_OTRO = { id: '__otro__', label: 'Otro (no está en la lista)…' };
 
     // Buscador de servicios: se escribe y la lista se va acotando (todas las palabras, sin
