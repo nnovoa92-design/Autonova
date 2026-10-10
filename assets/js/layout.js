@@ -142,14 +142,56 @@ function netoVigenteCotizacion(cot) {
   return subtotal - calcularDescuento(subtotal, fuente).monto;
 }
 
-// Precio NETO (sin IVA) de la mano de obra de un trabajo del catálogo: su precio fijo,
-// o horas de taller x valor hora. Devuelve null si no se puede calcular.
+// Opciones obligatorias (combos) de un trabajo: [{ nombre, precio (neto, mano de obra), horas }].
+// Si tiene opciones, el servicio no se vende solo: al agregarlo se elige una.
+function opcionesDeTrabajo(trabajo) {
+  const o = trabajo && trabajo.opciones;
+  return Array.isArray(o) ? o.filter(x => x && String(x.nombre || '').trim() && Number(x.precio) >= 0 && x.precio !== '' && x.precio != null) : [];
+}
+
+// Precio NETO (sin IVA) de la mano de obra de un trabajo del catálogo: el menor precio de sus
+// opciones ("desde"), su precio fijo, o horas de taller x valor hora. null si no se puede calcular.
 function precioNetoTrabajo(trabajo, valorHora) {
   if (!trabajo) return null;
+  const ops = opcionesDeTrabajo(trabajo);
+  if (ops.length) return Math.min(...ops.map(o => Number(o.precio)));
   if (trabajo.precio_fijo != null && trabajo.precio_fijo !== '') return Number(trabajo.precio_fijo);
   const horas = Number(trabajo.horas_estimadas ?? trabajo.horas);
   const vh = Number(valorHora);
   return (horas > 0 && vh > 0) ? horas * vh : null;
+}
+
+// Pregunta con qué opción se agrega un servicio que no se vende solo. Devuelve la opción elegida
+// o null si se cancela. No depende de ninguna pantalla: arma su propia ventana.
+function elegirOpcionTrabajo(trabajo) {
+  return new Promise((resolve) => {
+    const ops = opcionesDeTrabajo(trabajo);
+    const fondo = document.createElement('div');
+    fondo.className = 'modal-backdrop abierto';
+    fondo.style.zIndex = '200';
+    fondo.innerHTML = `
+      <div class="modal" role="dialog" aria-modal="true">
+        <h3>${htmlSeguro(trabajo.nombre)}</h3>
+        <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
+          Este servicio no se realiza solo. ¿Con qué opción? (valor de mano de obra, sin IVA)
+        </p>
+        ${ops.map((o, i) => `
+          <button type="button" class="opcion-servicio" data-i="${i}" style="display:flex; justify-content:space-between; align-items:center; gap:1rem; width:100%; text-align:left; margin:0.4rem 0; padding:0.8rem 1rem; background:#fff; color:var(--color-text); border:1px solid var(--color-border); font-weight:600;">
+            <span>${htmlSeguro(o.nombre)}</span>
+            <span style="white-space:nowrap;">${fmtMoneda(o.precio)} <small style="font-weight:400; color:var(--color-text-muted);">+ IVA</small></span>
+          </button>`).join('')}
+        <div class="modal-acciones"><button type="button" class="btn-secondary" id="opcion-cancelar">Cancelar</button></div>
+      </div>`;
+    const cerrar = (valor) => { fondo.remove(); document.removeEventListener('keydown', alEsc); resolve(valor); };
+    const alEsc = (e) => { if (e.key === 'Escape') cerrar(null); };
+    fondo.addEventListener('click', (e) => {
+      if (e.target === fondo || e.target.id === 'opcion-cancelar') return cerrar(null);
+      const b = e.target.closest('.opcion-servicio');
+      if (b) cerrar(ops[Number(b.dataset.i)]);
+    });
+    document.addEventListener('keydown', alEsc);
+    document.body.appendChild(fondo);
+  });
 }
 
 function fmtPorcentaje(n) {

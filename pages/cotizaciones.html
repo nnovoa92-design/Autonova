@@ -224,13 +224,21 @@
     }
 
     // Carga un trabajo del catálogo (n veces) como líneas: mano de obra + sus insumos.
-    function agregarTrabajoCompleto(t, n = 1, horasPorTrabajo = null) {
+    // Si el trabajo tiene opciones obligatorias (combos), antes pregunta con cuál: la línea sale con
+    // el precio cerrado de esa combinación.
+    async function agregarTrabajoCompleto(t, n = 1, horasPorTrabajo = null) {
       n = Math.max(1, Number(n) || 1);
+      let opcion = null;
+      if (opcionesDeTrabajo(t).length) {
+        opcion = await elegirOpcionTrabajo(t);
+        if (!opcion) return;
+      }
       const sufijo = n > 1 ? ` (x${n})` : '';
-      const moPrecio = t.precio_fijo != null ? Number(t.precio_fijo) : Number(config.valor_hora);
+      const moPrecio = opcion ? Number(opcion.precio) : (t.precio_fijo != null ? Number(t.precio_fijo) : Number(config.valor_hora));
       const horas = horasPorTrabajo != null ? Number(horasPorTrabajo) : Number(t.horas_estimadas || 0);
-      const moCantidad = (t.precio_fijo != null ? 1 : horas) * n;
-      itemsActuales.push({ tipo: 'mano_obra', trabajo_id: t.id, repuesto_id: null, descripcion: t.nombre + sufijo, cantidad: moCantidad, precio_unitario: moPrecio });
+      const moCantidad = (opcion || t.precio_fijo != null ? 1 : horas) * n;
+      const nombreLinea = opcion ? `${t.nombre} — ${opcion.nombre}` : t.nombre;
+      itemsActuales.push({ tipo: 'mano_obra', trabajo_id: t.id, repuesto_id: null, descripcion: nombreLinea + sufijo, cantidad: moCantidad, precio_unitario: moPrecio });
       // La descripción larga del trabajo (qué incluye, etc.) siempre queda
       // registrada en Notas, para que el cliente vea el detalle de la
       // mano de obra y no solo el nombre corto del ítem en la tabla.
@@ -249,7 +257,8 @@
     }
 
     function precioTrabajo(t) {
-      return t.precio_fijo != null ? Number(t.precio_fijo) : Number(t.horas_estimadas) * Number(config.valor_hora);
+      const p = precioNetoTrabajo(t, config.valor_hora);
+      return p != null ? p : 0;
     }
 
     // Agrupa cada ítem en una de 4 categorías (sin cajón de sastre "otros"):
@@ -468,7 +477,7 @@
     function actualizarCamposTrabajo() {
       const tipo = document.getElementById('item-tipo').value;
       const t = tipo === 'mano_obra' ? trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value) : null;
-      const mostrarHoras = !!(t && t.precio_fijo == null);
+      const mostrarHoras = !!(t && t.precio_fijo == null && !opcionesDeTrabajo(t).length);
       document.getElementById('grupo-horas-trabajo').style.display = mostrarHoras ? 'block' : 'none';
       actualizarPreviewTrabajo();
     }
@@ -480,7 +489,10 @@
       const t = trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value);
       if (!t) { previewEl.textContent = ''; return; }
       const cantidad = Math.max(1, Number(document.getElementById('item-cantidad').value) || 1);
-      if (t.precio_fijo != null) {
+      const ops = opcionesDeTrabajo(t);
+      if (ops.length) {
+        previewEl.textContent = `Este servicio no se realiza solo: al agregarlo se elige una opción (desde ${fmtMoneda(precioNetoTrabajo(t, config.valor_hora))} + IVA).`;
+      } else if (t.precio_fijo != null) {
         previewEl.textContent = `Total: ${cantidad} × ${fmtMoneda(t.precio_fijo)} = ${fmtMoneda(Number(t.precio_fijo) * cantidad)}`;
       } else {
         const horas = Math.max(0, Number(document.getElementById('item-horas').value) || 0);

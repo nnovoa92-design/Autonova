@@ -100,11 +100,13 @@
           <h3>4. Valor del diagnóstico</h3>
           <p style="color:var(--color-text-muted); font-size:0.82rem; margin-top:0;">
             Horas de taller dedicadas a diagnosticar. Es lo que se cobra aunque el cliente no apruebe los trabajos. Valores sin IVA.
+            <strong>Se cobra mínimo 1 hora y luego por cuarto de hora</strong> (cualquier fracción sube al siguiente cuarto).
           </p>
           <div class="form-row" style="align-items:end;">
             <div class="form-group" style="max-width:170px;">
               <label for="diag-horas">Horas de taller</label>
               <input type="number" id="diag-horas" min="0" step="0.25" value="0" />
+              <small id="diag-horas-nota" style="color:var(--color-text-muted);"></small>
             </div>
             <div class="form-group" style="max-width:200px;">
               <label for="diag-valor-hora">Valor hora ($)</label>
@@ -373,8 +375,14 @@
     // Antes de convertir se arma desde las horas; al convertir se copia a la cotización/OT y desde
     // ahí vive en sus líneas (por eso itemsConDiagnostico no la suma dos veces).
     const fmtHoras = (h) => Number(h).toLocaleString('es-CL', { maximumFractionDigits: 2 });
+    // El diagnóstico se cobra mínimo 1 hora y luego por cuarto de hora (cualquier fracción sube al siguiente cuarto).
+    function horasCobradas(horas) {
+      const h = Number(horas) || 0;
+      if (h <= 0) return 0;
+      return Math.max(1, Math.ceil(h * 4 - 1e-9) / 4);
+    }
     function lineaDiagnostico(horas, valorHora) {
-      horas = Number(horas) || 0; valorHora = Number(valorHora) || 0;
+      horas = horasCobradas(horas); valorHora = Number(valorHora) || 0;
       if (!(horas > 0 && valorHora > 0)) return null;
       return { tipo: 'mano_obra', tipo_otro: null, trabajo_id: null, repuesto_id: null, descripcion: `Diagnóstico (${fmtHoras(horas)} h de taller)`, cantidad: horas, precio_unitario: valorHora };
     }
@@ -703,13 +711,21 @@
       return r ? { repuesto_id: r.id, precio: Number(r.precio_venta || 0) } : { repuesto_id: null, precio: 0 };
     }
 
-    function agregarTrabajoCompleto(t, n = 1, horasPorTrabajo = null) {
+    // Si el trabajo tiene opciones obligatorias (combos), antes pregunta con cuál: la línea sale con
+    // el precio cerrado de esa combinación.
+    async function agregarTrabajoCompleto(t, n = 1, horasPorTrabajo = null) {
       n = Math.max(1, Number(n) || 1);
+      let opcion = null;
+      if (opcionesDeTrabajo(t).length) {
+        opcion = await elegirOpcionTrabajo(t);
+        if (!opcion) return;
+      }
       const sufijo = n > 1 ? ` (x${n})` : '';
-      const moPrecio = t.precio_fijo != null ? Number(t.precio_fijo) : Number(config.valor_hora);
+      const moPrecio = opcion ? Number(opcion.precio) : (t.precio_fijo != null ? Number(t.precio_fijo) : Number(config.valor_hora));
       const horas = horasPorTrabajo != null ? Number(horasPorTrabajo) : Number(t.horas_estimadas || 0);
-      const moCantidad = (t.precio_fijo != null ? 1 : horas) * n;
-      itemsActuales.push({ tipo: 'mano_obra', trabajo_id: t.id, repuesto_id: null, descripcion: t.nombre + sufijo, cantidad: moCantidad, precio_unitario: moPrecio });
+      const moCantidad = (opcion || t.precio_fijo != null ? 1 : horas) * n;
+      const nombreLinea = opcion ? `${t.nombre} — ${opcion.nombre}` : t.nombre;
+      itemsActuales.push({ tipo: 'mano_obra', trabajo_id: t.id, repuesto_id: null, descripcion: nombreLinea + sufijo, cantidad: moCantidad, precio_unitario: moPrecio });
       (t.insumos || []).forEach(ins => {
         const m = matchInventario(ins.descripcion);
         itemsActuales.push({ tipo: ins.categoria || 'otro', trabajo_id: null, repuesto_id: m.repuesto_id, descripcion: ins.descripcion, cantidad: n, precio_unitario: m.precio });
@@ -751,7 +767,7 @@
     function actualizarCamposTrabajo() {
       const tipo = document.getElementById('item-tipo').value;
       const t = tipo === 'mano_obra' ? trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value) : null;
-      document.getElementById('grupo-horas-trabajo').style.display = (t && t.precio_fijo == null) ? 'block' : 'none';
+      document.getElementById('grupo-horas-trabajo').style.display = (t && t.precio_fijo == null && !opcionesDeTrabajo(t).length) ? 'block' : 'none';
       actualizarPreviewTrabajo();
     }
 
@@ -761,7 +777,9 @@
       const t = tipo === 'mano_obra' ? trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value) : null;
       if (!t) { previewEl.textContent = ''; return; }
       const cantidad = Math.max(1, Number(document.getElementById('item-cantidad').value) || 1);
-      if (t.precio_fijo != null) {
+      if (opcionesDeTrabajo(t).length) {
+        previewEl.textContent = `Este servicio no se realiza solo: al agregarlo se elige una opción (desde ${fmtMoneda(precioNetoTrabajo(t, config.valor_hora))} + IVA).`;
+      } else if (t.precio_fijo != null) {
         previewEl.textContent = `Total: ${cantidad} × ${fmtMoneda(t.precio_fijo)} = ${fmtMoneda(Number(t.precio_fijo) * cantidad)}`;
       } else {
         const horas = Math.max(0, Number(document.getElementById('item-horas').value) || 0);
@@ -868,8 +886,11 @@
       const bloqueado = lineasBloqueadas();
       const lDiag = lineaDiagnosticoEditor();
       const valorDiag = lDiag ? sumaBruta([lDiag]) : 0;
-      const horas = Number(document.getElementById('diag-horas').value) || 0;
+      const horasIngresadas = Number(document.getElementById('diag-horas').value) || 0;
+      const horas = horasCobradas(horasIngresadas);
       document.getElementById('diag-monto').textContent = fmtMoneda(horas * (Number(document.getElementById('diag-valor-hora').value) || 0));
+      document.getElementById('diag-horas-nota').textContent =
+        horas > 0 && horas !== horasIngresadas ? `Se cobran ${fmtHoras(horas)} h (mínimo 1 h, por cuarto de hora)` : '';
 
       const t = calcularTotales(itemsParaTotales(), leerDescuentoUI('descuento_pct', 'descuento_tipo'), conIva);
       actualizarEquivDescuentoUI('descuento_pct', 'descuento_tipo', t.subtotal);
@@ -1063,7 +1084,7 @@
       if (ingresoTocado || ingresoActual.length) payload.checklist_recepcion = ingresoActual;
       // Con cotización/OT creada, el valor del diagnóstico, el descuento y el IVA ya no se tocan desde acá
       if (!bloqueado) {
-        payload.horas_diagnostico = Math.max(0, Number(document.getElementById('diag-horas').value) || 0);
+        payload.horas_diagnostico = horasCobradas(document.getElementById('diag-horas').value);
         payload.valor_hora_diagnostico = Math.max(0, Number(document.getElementById('diag-valor-hora').value) || 0);
         Object.assign(payload, campoDescuento(leerDescuentoUI('descuento_pct', 'descuento_tipo'), calcularTotales(itemsParaTotales(), 0, true).subtotal));
         payload.con_iva = document.getElementById('con_iva').value === 'true';
@@ -1627,6 +1648,12 @@
     document.getElementById('item-cantidad').addEventListener('input', actualizarPreviewTrabajo);
     document.getElementById('item-horas').addEventListener('input', actualizarPreviewTrabajo);
     document.getElementById('diag-horas').addEventListener('input', renderTotales);
+    // Al salir del campo queda escrito lo que realmente se cobra (mínimo 1 h, por cuarto de hora)
+    document.getElementById('diag-horas').addEventListener('change', () => {
+      const el = document.getElementById('diag-horas');
+      if (Number(el.value) > 0) el.value = horasCobradas(el.value);
+      renderTotales();
+    });
     document.getElementById('diag-valor-hora').addEventListener('input', renderTotales);
     document.getElementById('descuento_pct').addEventListener('input', renderTotales);
     // Cambiar entre % y pesos conserva el descuento: solo cambia cómo se expresa

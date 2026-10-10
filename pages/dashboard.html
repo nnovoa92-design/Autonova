@@ -125,7 +125,7 @@
       const aviso = 'Si en la revisión encontramos algo adicional, se lo avisamos antes de hacerlo — nunca le cobramos sin su autorización.';
       if (precio && precio.monto != null) {
         return precio.origen === 'catalogo'
-          ? `• Valor de la mano de obra de este servicio: ${fmtMoneda(precio.monto)} + IVA (los repuestos o insumos, si corresponden, se cotizan aparte). ${aviso}`
+          ? `• Valor de la mano de obra de este servicio: ${precio.desde ? 'desde ' : ''}${fmtMoneda(precio.monto)} + IVA${precio.desde ? ' (según la opción que corresponda al revisar el vehículo)' : ''} (los repuestos o insumos, si corresponden, se cotizan aparte). ${aviso}`
           : `• Presupuesto de su cotización: ${fmtMoneda(precio.monto)} + IVA. ${aviso}`;
       }
       return '• Le confirmaremos el valor una vez evaluado el vehículo. Nunca le cobramos algo sin avisarle antes.';
@@ -178,7 +178,7 @@
       }
       if (c.trabajos) {
         const neto = precioNetoTrabajo(c.trabajos, tallerHorarios && tallerHorarios.valor_hora);
-        if (neto != null) return { monto: neto, origen: 'catalogo' };
+        if (neto != null) return { monto: neto, origen: 'catalogo', desde: opcionesDeTrabajo(c.trabajos).length > 0 };
       }
       if (!c.cliente_id) return null;
       let query = supabaseClient.from('cotizaciones')

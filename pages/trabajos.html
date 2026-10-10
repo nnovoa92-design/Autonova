@@ -56,6 +56,16 @@
               </div>
             </div>
             <div class="form-group">
+              <label>Opciones obligatorias (el servicio no se realiza solo)</label>
+              <p style="color:var(--color-text-muted); font-size:0.8rem; margin:0 0 0.4rem;">
+                Ej.: «Cambio de pastillas de freno» con las opciones «con cambio de discos» y «con rectificación de discos».
+                Cada opción lleva su <strong>precio cerrado de mano de obra, sin IVA</strong>. Si defines opciones, al cotizar este
+                servicio el sistema pregunta con cuál. Déjalo vacío si el servicio se vende solo.
+              </p>
+              <div id="opciones-editor"></div>
+              <button type="button" id="agregar-opcion-btn" class="btn-secondary btn-mini">+ Agregar opción</button>
+            </div>
+            <div class="form-group">
               <label for="descripcion">Descripción</label>
               <textarea id="descripcion" rows="2"></textarea>
             </div>
@@ -113,9 +123,47 @@
     let trabajosCache = [];
     let valorHora = 0;
 
+    // Precio neto (sin IVA): el menor de sus opciones ("desde"), su precio fijo, u horas x valor hora
     function precioTrabajo(t) {
-      return t.precio_fijo != null ? Number(t.precio_fijo) : Number(t.horas_estimadas) * valorHora;
+      const p = precioNetoTrabajo(t, valorHora);
+      return p != null ? p : 0;
     }
+
+    // ---------- Opciones obligatorias (combos) del trabajo que se edita ----------
+    let opcionesForm = [];          // [{ nombre, precio, horas }]
+    let tuvoOpciones = false;       // el trabajo editado ya tenía opciones guardadas
+
+    function renderOpcionesForm() {
+      const cont = document.getElementById('opciones-editor');
+      cont.innerHTML = opcionesForm.map((o, i) => `
+        <div class="form-row" style="align-items:end; margin-bottom:0.4rem;">
+          <div class="form-group"><label>Opción</label>
+            <input type="text" class="op-nombre" data-i="${i}" value="${htmlSeguro(o.nombre)}" placeholder="Ej: con rectificación de discos" /></div>
+          <div class="form-group" style="max-width:190px;"><label>Precio mano de obra (neto)</label>
+            <input type="number" class="op-precio" data-i="${i}" value="${o.precio ?? ''}" min="0" step="1" placeholder="Ej: 56000" /></div>
+          <div class="form-group" style="max-width:120px;"><label>Horas</label>
+            <input type="number" class="op-horas" data-i="${i}" value="${o.horas ?? ''}" min="0" step="0.25" placeholder="opcional" /></div>
+          <div class="form-group" style="flex:0;">
+            <button type="button" class="btn-danger op-quitar" data-i="${i}" title="Quitar opción">✕</button></div>
+        </div>`).join('');
+    }
+    document.getElementById('opciones-editor').addEventListener('input', (e) => {
+      const i = Number(e.target.dataset.i);
+      if (!opcionesForm[i]) return;
+      if (e.target.classList.contains('op-nombre')) opcionesForm[i].nombre = e.target.value;
+      else if (e.target.classList.contains('op-precio')) opcionesForm[i].precio = e.target.value;
+      else if (e.target.classList.contains('op-horas')) opcionesForm[i].horas = e.target.value;
+    });
+    document.getElementById('opciones-editor').addEventListener('click', (e) => {
+      const b = e.target.closest('.op-quitar');
+      if (!b) return;
+      opcionesForm.splice(Number(b.dataset.i), 1);
+      renderOpcionesForm();
+    });
+    document.getElementById('agregar-opcion-btn').addEventListener('click', () => {
+      opcionesForm.push({ nombre: '', precio: '', horas: '' });
+      renderOpcionesForm();
+    });
 
     function populateCategoriaSelects() {
       const opts = categoriasCache.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
@@ -142,6 +190,7 @@
         document.getElementById(id).value = '';
       });
       document.getElementById('categoria_id').value = '';
+      opcionesForm = []; tuvoOpciones = false; renderOpcionesForm();
       document.getElementById('form-title').textContent = 'Nuevo trabajo';
       document.getElementById('submit-btn').textContent = 'Guardar trabajo';
       document.getElementById('cancel-btn').style.display = 'none';
@@ -155,6 +204,9 @@
       document.getElementById('horas_estimadas').value = t.horas_estimadas ?? '';
       document.getElementById('precio_fijo').value = t.precio_fijo ?? '';
       document.getElementById('descripcion').value = t.descripcion ?? '';
+      opcionesForm = (Array.isArray(t.opciones) ? t.opciones : []).map(o => ({ nombre: o.nombre || '', precio: o.precio ?? '', horas: o.horas ?? '' }));
+      tuvoOpciones = opcionesForm.length > 0;
+      renderOpcionesForm();
       document.getElementById('form-title').textContent = `Editar trabajo: ${t.nombre}`;
       document.getElementById('submit-btn').textContent = 'Actualizar trabajo';
       document.getElementById('cancel-btn').style.display = 'inline-block';
@@ -169,10 +221,16 @@
       const avisos = [];
       const clave = (x) => String(x.nombre || '').trim().toLowerCase();
       if (trabajosCache.filter(x => clave(x) === clave(t)).length > 1) avisos.push('Nombre repetido: ¿está duplicado?');
-      if (t.precio_fijo != null && valorHora > 0 && Number(t.precio_fijo) === valorHora && Number(t.horas_estimadas) > 1.25) {
-        avisos.push(`Precio fijo igual a 1 hora (${fmtMoneda(valorHora)}) para ${Number(t.horas_estimadas).toLocaleString('es-CL')} h: ¿desactualizado?`);
+      const ops = opcionesDeTrabajo(t);
+      // Precio fijo claramente por debajo de horas x valor hora (típico cuando subió el valor hora
+      // o el precio fijo quedó de cuando el trabajo era más corto)
+      if (!ops.length && t.precio_fijo != null && valorHora > 0 && Number(t.horas_estimadas) > 0) {
+        const porHoras = Number(t.horas_estimadas) * valorHora;
+        if (Number(t.precio_fijo) < porHoras * 0.85) {
+          avisos.push(`Precio fijo ${fmtMoneda(t.precio_fijo)} menor que ${Number(t.horas_estimadas).toLocaleString('es-CL')} h × ${fmtMoneda(valorHora)} = ${fmtMoneda(porHoras)}: ¿desactualizado?`);
+        }
       }
-      if (t.precio_fijo == null && !(Number(t.horas_estimadas) > 0)) avisos.push('Sin horas ni precio fijo: no se puede calcular');
+      if (!ops.length && t.precio_fijo == null && !(Number(t.horas_estimadas) > 0)) avisos.push('Sin horas ni precio fijo: no se puede calcular');
       return avisos;
     }
 
@@ -191,9 +249,23 @@
       tbody.innerHTML = trabajos.map(t0 => {
         const t = valorEnRevision(t0);
         const categoria = categoriasCache.find(c => c.id === t.categoria_id);
-        const fijo = t.precio_fijo != null ? '' : ' <span class="badge">calculado</span>';
+        const ops = opcionesDeTrabajo(t);
+        const fijo = (t.precio_fijo != null || ops.length) ? '' : ' <span class="badge">calculado</span>';
         const avisos = alertasTrabajo(t).map(a => `<br><small style="color:#b45309;">⚠ ${a}</small>`).join('');
-        const nombre = `${t.nombre}${t.descripcion ? `<br><small style="color:var(--color-text-muted);">${t.descripcion}</small>` : ''}${avisos}`;
+        const listaOps = ops.length
+          ? `<br><small style="color:var(--color-text-muted);">Opciones: ${ops.map(o => `${htmlSeguro(o.nombre)} (${fmtMoneda(o.precio)})`).join(' · ')}</small>` : '';
+        const nombre = `${t.nombre}${t.descripcion ? `<br><small style="color:var(--color-text-muted);">${t.descripcion}</small>` : ''}${listaOps}${avisos}`;
+        if (modoRevision && ops.length) {
+          return `
+          <tr data-id="${t.id}">
+            <td>${nombre}</td>
+            <td>${categoria ? categoria.nombre : '–'}</td>
+            <td>${Number(t.horas_estimadas).toLocaleString('es-CL')} h</td>
+            <td style="white-space:nowrap;">desde ${fmtMoneda(precioTrabajo(t))} <small style="color:var(--color-text-muted);">+ IVA</small>
+              <small style="display:block; color:var(--color-text-muted);">Se edita con «Editar» (opciones)</small></td>
+            <td></td>
+          </tr>`;
+        }
         if (modoRevision) {
           return `
           <tr data-id="${t.id}"${cambiosRevision.has(t.id) ? ' style="background:#fffbea;"' : ''}>
@@ -212,7 +284,7 @@
           <td>${nombre}</td>
           <td>${categoria ? categoria.nombre : '–'}</td>
           <td>${Number(t.horas_estimadas).toLocaleString('es-CL')} h</td>
-          <td style="white-space:nowrap;">${fmtMoneda(precioTrabajo(t))} <small style="color:var(--color-text-muted);">+ IVA</small>${fijo}</td>
+          <td style="white-space:nowrap;">${ops.length ? 'desde ' : ''}${fmtMoneda(precioTrabajo(t))} <small style="color:var(--color-text-muted);">+ IVA</small>${fijo}${ops.length ? ` <span class="badge badge-blue">${ops.length} opción(es)</span>` : ''}</td>
           <td class="table-actions">
             <button type="button" class="btn-secondary edit-btn" data-id="${t.id}">Editar</button>
             <button type="button" class="btn-danger delete-btn" data-id="${t.id}">Desactivar</button>
@@ -350,6 +422,15 @@
         precio_fijo: document.getElementById('precio_fijo').value || null,
         descripcion: document.getElementById('descripcion').value || null,
       };
+      // Las opciones solo se escriben si hay o había (así guardar funciona aunque falte v40)
+      const opcionesValidas = opcionesForm
+        .filter(o => String(o.nombre).trim() && o.precio !== '' && o.precio != null && Number(o.precio) >= 0)
+        .map(o => ({ nombre: String(o.nombre).trim(), precio: Number(o.precio), horas: o.horas === '' || o.horas == null ? null : Number(o.horas) }));
+      if (opcionesForm.some(o => String(o.nombre).trim() && (o.precio === '' || o.precio == null))) {
+        errorEl.textContent = 'Cada opción necesita su precio de mano de obra.';
+        return;
+      }
+      if (opcionesValidas.length || tuvoOpciones) payload.opciones = opcionesValidas;
 
       let error;
       if (id) {
@@ -359,7 +440,9 @@
       }
 
       if (error) {
-        errorEl.textContent = `Error: ${error.message}`;
+        errorEl.textContent = /opciones/.test(error.message || '')
+          ? `Falta ejecutar sql/actualizacion-v40-servicios-con-opciones.sql en el SQL Editor de Supabase. Detalle: ${error.message}`
+          : `Error: ${error.message}`;
         return;
       }
       clearForm();
