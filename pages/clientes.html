@@ -30,7 +30,7 @@
               </div>
               <div class="form-group">
                 <label for="telefono">Teléfono</label>
-                <input type="tel" id="telefono" placeholder="+56 9 ..." />
+                <input type="tel" id="telefono" placeholder="+56 9 1234 5678" />
               </div>
               <div class="form-group">
                 <label for="email">Email</label>
@@ -153,11 +153,14 @@
 
     function applyFilter() {
       const q = document.getElementById('buscar').value.trim().toLowerCase();
+      // Si se busca por números, se compara sin puntos, guion ni espacios (RUT o teléfono)
+      const qNum = /^[\d.\-+\sk]+$/.test(q) ? q.replace(/[^0-9k]/g, '') : '';
       const filtered = q
         ? clientesCache.filter(c =>
             (c.nombre || '').toLowerCase().includes(q) ||
             (c.rut || '').toLowerCase().includes(q) ||
-            (c.telefono || '').toLowerCase().includes(q))
+            (c.telefono || '').toLowerCase().includes(q) ||
+            (qNum.length >= 3 && (rutLimpio(c.rut).toLowerCase().includes(qNum) || String(c.telefono || '').replace(/\D/g, '').includes(qNum))))
         : clientesCache;
       renderClientes(filtered);
     }

@@ -48,6 +48,13 @@ Extras integrados:
 > (`security definer`) que solo devuelven una orden si se conoce patente +
 > número, o una cotización si se conoce su link único.
 
+
+> **Formato único de RUT y teléfono**: todas las casillas de RUT (`12.345.678-9`) y de teléfono
+> (`+56 9 1234 5678`) se formatean solas al escribir, en toda la app, desde `assets/js/layout.js`
+> (se detectan por el `id` de la casilla o `type="tel"`; para excluir una, `data-formato="ninguno"`).
+> Los datos ya guardados se unifican con `sql/actualizacion-v42-unificar-rut-telefono.sql`
+> (deja respaldo de lo que cambia).
+
 ## Puesta en marcha (15 minutos)
 
 ### 1. Crear el proyecto en Supabase

@@ -731,7 +731,6 @@
       clearTimeout(rutTimer);
       rutTimer = setTimeout(buscarPorRut, 400);
     });
-    enlazarFormato('nuevo-telefono', formatearTelefonoCL);
     enlazarFormato('nv-patente', normalizarPatente, () => {
       clearTimeout(patenteTimer);
       patenteTimer = setTimeout(resolverPatente, 350);
