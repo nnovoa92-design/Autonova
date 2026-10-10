@@ -525,6 +525,139 @@ async function getTallerConfig() {
   return tallerConfigCache;
 }
 
+// ---------- Campanita de novedades ----------
+// Muestra, arriba a la derecha, las novedades que genera el cliente (reservas online,
+// cotizaciones y diagnósticos respondidos, inspecciones firmadas). Cada novedad vive en la
+// tabla `notificaciones`; si esa tabla aún no existe (falta v38), la campanita no aparece.
+function haceTiempo(iso) {
+  const seg = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (seg < 60) return 'justo ahora';
+  if (seg < 3600) return `hace ${Math.floor(seg / 60)} min`;
+  if (seg < 86400) return `hace ${Math.floor(seg / 3600)} h`;
+  if (seg < 172800) return 'ayer';
+  return fmtFecha(iso);
+}
+
+function iniciarCampanita() {
+  const topbar = document.querySelector('.topbar');
+  if (!topbar || document.getElementById('campanita-btn')) return;
+
+  const tituloBase = document.title;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.id = 'campanita-btn';
+  btn.className = 'campanita';
+  btn.setAttribute('aria-label', 'Novedades');
+  btn.title = 'Novedades';
+  btn.hidden = true;                       // se muestra cuando se confirma que la tabla existe
+  btn.innerHTML = '🔔<span class="campanita-badge" id="campanita-badge" hidden>0</span>';
+  topbar.appendChild(btn);
+
+  const panel = document.createElement('div');
+  panel.id = 'campanita-panel';
+  panel.className = 'campanita-panel';
+  panel.hidden = true;
+  document.body.appendChild(panel);
+
+  let items = [];
+  let sinLeer = 0;
+  let baseline = false;                    // la primera carga no cuenta como "nueva"
+  const vistos = new Set();
+
+  const permisoNavegador = () => ('Notification' in window) ? Notification.permission : 'unsupported';
+
+  function pintarBadge() {
+    const badge = document.getElementById('campanita-badge');
+    badge.hidden = sinLeer === 0;
+    badge.textContent = sinLeer > 99 ? '99+' : String(sinLeer);
+    document.title = sinLeer > 0 ? `(${sinLeer}) ${tituloBase}` : tituloBase;
+  }
+
+  function pintarPanel() {
+    const avisos = permisoNavegador();
+    panel.innerHTML = `
+      <div class="campanita-cab">
+        <strong>Novedades</strong>
+        <span>
+          <button type="button" class="campanita-link" data-accion="leer-todas" ${sinLeer ? '' : 'disabled'}>Marcar todas como leídas</button>
+        </span>
+      </div>
+      <div class="campanita-lista">
+        ${items.length ? items.map(n => `
+          <div class="campanita-item${n.leida ? '' : ' sin-leer'}" data-id="${n.id}">
+            <div class="campanita-titulo">${htmlSeguro(n.titulo)}</div>
+            ${n.detalle ? `<div class="campanita-detalle">${htmlSeguro(n.detalle)}</div>` : ''}
+            <div class="campanita-hora">${haceTiempo(n.creado_en)}</div>
+          </div>`).join('') : '<p class="campanita-vacio">Sin novedades por ahora.</p>'}
+      </div>
+      <div class="campanita-pie">
+        ${avisos === 'default' ? '<button type="button" class="campanita-link" data-accion="activar-avisos">🔔 Activar avisos del navegador</button>' : ''}
+        ${avisos === 'granted' ? '<span>✓ Avisos del navegador activos</span>' : ''}
+        ${avisos === 'denied' ? '<span>Avisos del navegador bloqueados en este navegador</span>' : ''}
+        ${items.some(n => n.leida) ? '<button type="button" class="campanita-link" data-accion="borrar-leidas">Borrar leídas</button>' : ''}
+      </div>`;
+  }
+
+  async function cargar() {
+    const { data, error } = await supabaseClient.from('notificaciones').select('*')
+      .order('creado_en', { ascending: false }).limit(40);
+    if (error) { btn.hidden = true; return; }          // falta v38: sin campanita
+    btn.hidden = false;
+    items = data || [];
+    sinLeer = items.filter(n => !n.leida).length;
+
+    // Avisos nuevos desde la última vez: aviso del navegador si la pestaña no está a la vista
+    const nuevos = items.filter(n => !n.leida && !vistos.has(n.id));
+    items.forEach(n => vistos.add(n.id));
+    if (baseline && nuevos.length && permisoNavegador() === 'granted' && document.visibilityState === 'hidden') {
+      nuevos.slice(0, 3).forEach(n => { try { new Notification(n.titulo, { body: n.detalle || '' }); } catch (e) { /* sin permiso real */ } });
+    }
+    baseline = true;
+    pintarBadge();
+    if (!panel.hidden) pintarPanel();
+  }
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden) { pintarPanel(); cargar(); }
+  });
+  document.addEventListener('click', (e) => {
+    if (!panel.hidden && !panel.contains(e.target) && e.target !== btn) panel.hidden = true;
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') panel.hidden = true; });
+
+  panel.addEventListener('click', async (e) => {
+    const accion = e.target.closest('[data-accion]');
+    if (accion) {
+      const a = accion.dataset.accion;
+      if (a === 'leer-todas') {
+        await supabaseClient.from('notificaciones').update({ leida: true }).eq('leida', false);
+        await cargar();
+      } else if (a === 'borrar-leidas') {
+        await supabaseClient.from('notificaciones').delete().eq('leida', true);
+        await cargar();
+      } else if (a === 'activar-avisos') {
+        try { await Notification.requestPermission(); } catch (err) { /* navegador sin soporte */ }
+        pintarPanel();
+      }
+      return;
+    }
+    const fila = e.target.closest('.campanita-item');
+    if (!fila) return;
+    const n = items.find(x => x.id === fila.dataset.id);
+    if (!n) return;
+    if (!n.leida) await supabaseClient.from('notificaciones').update({ leida: true }).eq('id', n.id);
+    if (n.url) window.location.href = `/pages/${n.url}`;
+    else await cargar();
+  });
+
+  // Se mantiene al día sola: cada 45 s con la pestaña a la vista, y al volver a ella
+  cargar();
+  setInterval(() => { if (document.visibilityState === 'visible') cargar(); }, 45000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') cargar(); });
+}
+
 async function initLayout(activeKey) {
   const session = await requireAuth();
   if (!session) return;
@@ -570,5 +703,6 @@ async function initLayout(activeKey) {
     }
   }
 
+  iniciarCampanita();
   return session;
 }

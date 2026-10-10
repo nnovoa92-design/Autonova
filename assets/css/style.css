@@ -540,6 +540,69 @@ th {
 .combobox-item { padding: 0.5rem 0.7rem; font-size: 0.88rem; cursor: pointer; }
 .combobox-item:hover, .combobox-item.resaltado { background: var(--color-primary); color: #fff; }
 .combobox-vacio { padding: 0.5rem 0.7rem; font-size: 0.85rem; color: var(--color-text-muted); }
+/* Campanita de novedades (barra superior) */
+.campanita {
+  position: relative;
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  padding: 0.4rem 0.6rem;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.campanita:hover { background: #f1f2f4; color: var(--color-text); }
+.campanita-badge {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+.campanita-panel {
+  position: fixed;
+  top: 3.6rem;
+  right: 1rem;
+  width: min(390px, calc(100vw - 2rem));
+  max-height: 72vh;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.22);
+  z-index: 60;
+}
+.campanita-panel[hidden] { display: none; }
+.campanita-cab, .campanita-pie {
+  display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;
+  padding: 0.6rem 0.8rem; font-size: 0.85rem;
+}
+.campanita-cab { border-bottom: 1px solid var(--color-border); }
+.campanita-pie { border-top: 1px solid var(--color-border); color: var(--color-text-muted); font-size: 0.78rem; flex-wrap: wrap; }
+.campanita-lista { overflow-y: auto; flex: 1; }
+.campanita-item { padding: 0.65rem 0.8rem; border-bottom: 1px solid #eee; cursor: pointer; border-left: 3px solid transparent; }
+.campanita-item:hover { background: #f7f7f8; }
+.campanita-item.sin-leer { background: #fff8f4; border-left-color: var(--color-primary); }
+.campanita-titulo { font-weight: 600; font-size: 0.88rem; }
+.campanita-detalle { font-size: 0.82rem; color: var(--color-text-muted); margin-top: 0.1rem; }
+.campanita-hora { font-size: 0.72rem; color: var(--color-text-muted); margin-top: 0.2rem; }
+.campanita-vacio { padding: 1.2rem 0.8rem; color: var(--color-text-muted); font-size: 0.88rem; margin: 0; }
+.campanita-link {
+  background: none; border: none; padding: 0; color: var(--color-primary);
+  font-size: inherit; font-weight: 600; cursor: pointer; text-decoration: underline;
+}
+.campanita-link:hover { background: none; color: var(--color-primary); }
+.campanita-link:disabled { color: var(--color-text-muted); text-decoration: none; cursor: default; }
+
 /* Descuento en % o en pesos: selector + valor, con la equivalencia debajo */
 .descuento-ctl { display: flex; gap: 0.4rem; align-items: center; }
 .descuento-ctl select { width: auto; flex: 0 0 auto; min-width: 5.2rem; }

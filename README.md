@@ -34,6 +34,9 @@ estático (Netlify, Vercel, Cloudflare Pages).
 > (crea inspecciones, migra las antiguas y agrega los porcentajes de reparto).
 
 Extras integrados:
+- **Campanita de novedades** (arriba a la derecha, en todas las pantallas): avisa reservas
+  online, cotizaciones y diagnósticos que el cliente aprueba/rechaza, e inspecciones firmadas.
+  Contador de sin leer, lista, y aviso del navegador opcional (requiere `sql/actualizacion-v38-notificaciones.sql`).
 - **WhatsApp**: botones en cotizaciones y OTs que abren el chat del cliente con
   el mensaje armado (incluye link de aprobación / link de seguimiento).
 - **Fotos por OT**: se suben desde el detalle de la orden al bucket `fotos-ot`
