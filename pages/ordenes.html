@@ -84,15 +84,6 @@
                 <option value="true">Con IVA</option>
                 <option value="false">Sin IVA (solo neto)</option>
               </select>
-              <div style="display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;" title="Descuento sobre el subtotal, en % o en pesos (se refleja también en la cotización y el diagnóstico)">
-                <label for="detalle-descuento" style="margin:0; font-size:0.85rem; color:var(--color-text);">Descuento</label>
-                <select id="detalle-descuento-tipo" aria-label="Descuento en porcentaje o en pesos" style="width:auto; min-width:5.2rem;">
-                  <option value="pct">%</option>
-                  <option value="monto">$ pesos</option>
-                </select>
-                <input type="number" id="detalle-descuento" min="0" max="100" step="0.5" value="0" style="width:100px;" />
-                <small id="detalle-descuento-equiv" class="descuento-equiv" style="margin:0; min-width:5rem;"></small>
-              </div>
               <button type="button" id="pdf-ot-btn" class="btn-secondary">PDF</button>
               <button type="button" id="whatsapp-ot-btn" class="btn-secondary">Avisar por WhatsApp</button>
               <button type="button" id="email-ot-btn" class="btn-secondary">Avisar por correo</button>
@@ -187,6 +178,21 @@
             </thead>
             <tbody id="items-body"></tbody>
           </table>
+
+          <!-- Descuento de la OT, en % o en pesos. La OT manda: la cotización y el diagnóstico muestran este mismo valor. -->
+          <div class="form-row" style="margin-top:0.75rem; align-items:flex-start;">
+            <div class="form-group" style="max-width:300px;">
+              <label for="detalle-descuento">Descuento</label>
+              <div class="descuento-ctl">
+                <select id="detalle-descuento-tipo" aria-label="Descuento en porcentaje o en pesos">
+                  <option value="pct">%</option>
+                  <option value="monto">$ pesos</option>
+                </select>
+                <input type="number" id="detalle-descuento" min="0" max="100" step="0.5" value="0" />
+              </div>
+              <small id="detalle-descuento-equiv" class="descuento-equiv"></small>
+            </div>
+          </div>
           <div class="totales" id="totales"></div>
 
           <h3 style="margin-top:1.5rem;">Abonos y pagos</h3>

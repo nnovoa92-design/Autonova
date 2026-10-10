@@ -192,7 +192,7 @@ function setupDescuentoUI(idValor, idTipo, getSubtotal, onChange) {
 // los cambios sin tener que volver a llamar a esta función.
 // Minúsculas y sin tildes, para comparar textos al buscar ("Cámbio" = "cambio").
 function normalizarBusqueda(s) {
-  return String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  return String(s ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
 // Busca por TODAS las palabras escritas (en cualquier orden, sin importar tildes ni
