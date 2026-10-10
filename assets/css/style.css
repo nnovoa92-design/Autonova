@@ -831,3 +831,40 @@ th {
   .print-area table { page-break-inside: avoid; width: 100%; }
   .print-area tr { page-break-inside: avoid; }
 }
+
+/* ---------- Reconocimiento de cliente por RUT (agenda) ---------- */
+.reconocer-cliente {
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-primary);
+  border-radius: var(--radius);
+  background: #fafbfc;
+  padding: 0.85rem 1rem 0.5rem;
+  margin-bottom: 1rem;
+}
+.reconocer-cliente h3 { margin: 0 0 0.5rem; font-size: 0.95rem; }
+.reconocer-estado { margin: 0.25rem 0 0; font-size: 0.8rem; color: var(--color-text-muted); min-height: 1.1em; }
+.reconocer-estado.ok { color: #1b6e3c; }
+.reconocer-estado.aviso { color: #92600a; }
+.reconocer-estado.error { color: var(--color-danger); }
+.cliente-ficha {
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.9rem;
+  margin: 0.25rem 0 0.75rem;
+  font-size: 0.9rem;
+}
+.cliente-ficha .ficha-nombre { font-weight: 700; font-size: 1rem; }
+.cliente-ficha .ficha-datos { color: var(--color-text-muted); margin-top: 0.15rem; display: flex; gap: 0.25rem 1rem; flex-wrap: wrap; }
+.cliente-ficha .ficha-vehiculos { margin-top: 0.6rem; border-top: 1px dashed var(--color-border); padding-top: 0.5rem; }
+.ficha-vehiculo {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.35rem 0.5rem; border-radius: 8px; cursor: pointer;
+  border: 1px solid transparent;
+}
+.ficha-vehiculo:hover { background: #f3f5f8; }
+.ficha-vehiculo.elegido { border-color: var(--color-primary); background: #fff4f2; }
+.ficha-vehiculo input { margin: 0; width: auto; }
+.ficha-vehiculo .veh-patente { font-weight: 700; letter-spacing: 0.04em; }
+.ficha-vehiculo .veh-detalle { color: var(--color-text-muted); font-size: 0.85rem; }
+.vehiculo-nuevo-bloque { border-top: 1px dashed var(--color-border); margin-top: 0.5rem; padding-top: 0.6rem; }

@@ -23,7 +23,8 @@ estático (Netlify, Vercel, Cloudflare Pages).
 | `pages/inventario.html` | Repuestos con stock, mínimos, entradas/salidas/ajustes |
 | `pages/pagos.html` | Pagos por OT con saldo pendiente |
 | `pages/inspecciones.html` | Inspecciones precompra: checklist de 7 secciones con puntaje 0-100, recomendación, ítems extra, WhatsApp, impresión y link público |
-| `pages/configuracion.html` | Configuración: datos del taller, valor hora, IVA y porcentajes de reparto de mano de obra (manuales) |
+| `pages/configuracion.html` | Configuración: datos del taller, valor hora, IVA y porcentajes de reparto de mano de obra (manuales), horarios y bloqueos, plantillas de mensajes y la **clave de consulta de patentes** (requiere `sql/actualizacion-v41-clave-patentes.sql`) |
+| `pages/agenda.html` | Agenda de citas (día/semana). Al crear una cita, el **RUT** (se formatea solo con puntos y guion) reconoce al cliente y muestra sus datos y vehículos para elegir el que corresponde; si no existe, pide nombre, RUT y teléfono (+56 automático) y, con la **patente**, trae marca/modelo/año del registro público (boostr.cl, con la clave de Configuración) y crea cliente y vehículo junto con la cita |
 | `portal.html` | **Público**: el cliente consulta el estado de su vehículo con patente + N° de OT (incluye fotos y detalle) |
 | `cotizacion.html` | **Público**: el cliente revisa y aprueba/rechaza la cotización desde el link que le envías por WhatsApp |
 | `inspeccion.html` | **Público**: informe completo de inspección precompra desde el link único |

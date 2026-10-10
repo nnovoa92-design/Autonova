@@ -186,6 +186,26 @@
         </div>
 
         <div class="card">
+          <h2 style="margin-top:0;">Consulta de patentes</h2>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
+            Con una clave del servicio <strong>boostr.cl</strong>, al ingresar una patente en la agenda se completan
+            solos la marca, el modelo y el año desde el registro público de vehículos.
+            La clave se guarda solo en tu base de datos y solo la ven los usuarios del taller.
+            Sin clave todo funciona igual: los datos del vehículo se escriben a mano.
+          </p>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="api_patentes_key">Clave de consulta de patentes</label>
+              <input type="password" id="api_patentes_key" autocomplete="off" placeholder="Pega aquí la clave" />
+            </div>
+          </div>
+          <button type="button" id="guardar-patentes-btn">Guardar clave</button>
+          <button type="button" id="probar-patentes-btn" class="btn-secondary">Probar con una patente</button>
+          <p class="error-message" id="patentes-error"></p>
+          <p id="patentes-ok" style="color:#1b6e3c; font-size:0.85rem;"></p>
+        </div>
+
+        <div class="card">
           <h2 style="margin-top:0;">Horario de atención</h2>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
             Define qué días atiendes y en qué horas. Se usa en la agenda y en la reserva online:
@@ -598,6 +618,47 @@
       renderHorarioSemana(data);
     }
 
+    // ---------- Clave de consulta de patentes (independiente del formulario principal) ----------
+    document.getElementById('guardar-patentes-btn').addEventListener('click', async () => {
+      const errorEl = document.getElementById('patentes-error');
+      const okEl = document.getElementById('patentes-ok');
+      errorEl.textContent = ''; okEl.textContent = '';
+      const clave = document.getElementById('api_patentes_key').value.trim();
+      const { error } = await supabaseClient.from('taller_config').update({ api_patentes_key: clave || null }).eq('id', 1);
+      if (error) {
+        errorEl.textContent = /api_patentes_key/.test(error.message || '')
+          ? 'Falta ejecutar sql/actualizacion-v41-clave-patentes.sql en el SQL Editor de Supabase.'
+          : `Error: ${error.message}`;
+        return;
+      }
+      tallerConfigCache = null;
+      okEl.textContent = clave ? 'Clave guardada. Ya puedes probarla con una patente.' : 'Clave eliminada: los datos del vehículo se escribirán a mano.';
+    });
+
+    document.getElementById('probar-patentes-btn').addEventListener('click', async () => {
+      const errorEl = document.getElementById('patentes-error');
+      const okEl = document.getElementById('patentes-ok');
+      errorEl.textContent = ''; okEl.textContent = '';
+      const patente = normalizarPatente(prompt('Escribe una patente para probar (ej. ABCD12):') || '');
+      if (!patente) return;
+      tallerConfigCache = null;
+      okEl.textContent = 'Consultando…';
+      const r = await consultarPatente(patente);
+      okEl.textContent = '';
+      if (r.estado === 'ok') {
+        okEl.textContent = `Funciona: ${patente} → ${[r.datos.marca, r.datos.modelo, r.datos.anio].filter(Boolean).join(' ')}`;
+      } else {
+        const msg = {
+          sin_clave: 'Aún no hay una clave guardada.',
+          clave_invalida: 'El servicio rechazó la clave: revisa que esté completa y bien copiada.',
+          no_encontrado: 'La clave funciona, pero esa patente no aparece en el registro.',
+          invalida: 'La patente no tiene un formato válido.',
+          limite: 'Se alcanzó el límite de consultas del servicio. Intenta más tarde.',
+        }[r.estado] || `No se pudo consultar${r.mensaje ? `: ${r.mensaje}` : '.'}`;
+        errorEl.textContent = msg;
+      }
+    });
+
     document.getElementById('guardar-horario-btn').addEventListener('click', async () => {
       const errorEl = document.getElementById('horario-error');
       const okEl = document.getElementById('horario-ok');
@@ -701,6 +762,7 @@
       actualizarSuma();
 
       document.getElementById('slot_min').value = String(data.slot_min || 60);
+      if (data.api_patentes_key) document.getElementById('api_patentes_key').value = data.api_patentes_key;
       cargarHorario().catch(e => console.error('Error en cargarHorario:', e));
       cargarBloqueos().catch(e => console.error('Error en cargarBloqueos:', e));
 

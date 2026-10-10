@@ -104,9 +104,56 @@
         <div class="card" id="form-card" style="display:none;">
           <h2 id="form-title" style="margin-top:0;">Nueva cita</h2>
           <input type="hidden" id="cita-id" />
+
+          <!-- Reconocimiento del cliente por RUT -->
+          <div class="reconocer-cliente" id="reconocer-cliente">
+            <h3>👤 ¿Quién viene?</h3>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="rut-buscar">RUT del cliente</label>
+                <input type="text" id="rut-buscar" placeholder="12.345.678-9" autocomplete="off" maxlength="12" />
+                <p class="reconocer-estado" id="rut-estado"></p>
+              </div>
+            </div>
+            <div id="cliente-ficha" style="display:none;"></div>
+            <div id="cliente-nuevo" style="display:none;">
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="nuevo-nombre">Nombre *</label>
+                  <input type="text" id="nuevo-nombre" autocomplete="off" />
+                </div>
+                <div class="form-group">
+                  <label for="nuevo-telefono">Teléfono *</label>
+                  <input type="tel" id="nuevo-telefono" placeholder="+56 9 1234 5678" autocomplete="off" />
+                </div>
+              </div>
+            </div>
+            <div id="vehiculo-nuevo" class="vehiculo-nuevo-bloque" style="display:none;">
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="nv-patente">Patente del vehículo</label>
+                  <input type="text" id="nv-patente" placeholder="ABCD12" maxlength="7" autocomplete="off" style="text-transform:uppercase;" />
+                </div>
+                <div class="form-group">
+                  <label for="nv-marca">Marca</label>
+                  <input type="text" id="nv-marca" />
+                </div>
+                <div class="form-group">
+                  <label for="nv-modelo">Modelo</label>
+                  <input type="text" id="nv-modelo" />
+                </div>
+                <div class="form-group">
+                  <label for="nv-anio">Año</label>
+                  <input type="number" id="nv-anio" min="1950" max="2100" />
+                </div>
+              </div>
+              <p class="reconocer-estado" id="nv-estado" style="margin:-0.4rem 0 0.5rem;"></p>
+            </div>
+          </div>
+
           <div class="form-row">
             <div class="form-group">
-              <label for="cliente_id">Cliente</label>
+              <label for="cliente_id">Cliente (o elígelo de la lista)</label>
               <select id="cliente_id"></select>
             </div>
             <div class="form-group">
@@ -337,11 +384,18 @@
       document.getElementById('grupo-direccion').style.display = modalidad === 'taller' ? 'none' : 'block';
     }
 
+    // La dirección del cliente se sugiere sola; si el cliente cambia, la sugerencia anterior se retira
+    // (lo que el usuario escribió a mano no se toca).
+    let direccionAutoprellenada = null;
     function prellenarDireccion() {
+      const input = document.getElementById('direccion');
+      if (direccionAutoprellenada !== null && input.value === direccionAutoprellenada) input.value = '';
+      direccionAutoprellenada = null;
       const clienteId = document.getElementById('cliente_id').value;
       const cliente = clientesCache.find(c => c.id === clienteId);
-      if (cliente && cliente.direccion && !document.getElementById('direccion').value) {
-        document.getElementById('direccion').value = cliente.direccion;
+      if (cliente && cliente.direccion && !input.value) {
+        input.value = cliente.direccion;
+        direccionAutoprellenada = cliente.direccion;
       }
     }
 
@@ -381,13 +435,346 @@
         document.getElementById('direccion').value = '';
         document.getElementById('notas').value = '';
       }
+      sincronizarReconocimiento();
       actualizarVisibilidadDireccion();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
+    // ---------- Reconocimiento del cliente por RUT ----------
+    // El RUT es la puerta de entrada: si el cliente existe se cargan sus datos y vehículos;
+    // si no, se piden nombre, teléfono y patente (los datos del vehículo se traen solos).
+    // El cliente/vehículo que queda elegido siempre vive en los selects #cliente_id / #vehiculo_id.
+    const MSG_RUT_INICIAL = 'Escríbelo con o sin puntos: se completan solos el formato y la búsqueda.';
+    let modoCliente = null;           // 'nuevo' = se creará un cliente al guardar la cita
+    let vehiculoNuevoActivo = false;  // se creará un vehículo al guardar la cita
+    let datosPatente = null;          // { patente, numero_motor, tipo } de la última consulta pública
+    let consultaPatenteSeq = 0;
+    let rutTimer = null;
+    let patenteTimer = null;
+
+    function setEstado(id, texto, clase, html) {
+      const el = document.getElementById(id);
+      el.className = 'reconocer-estado' + (clase ? ` ${clase}` : '');
+      if (html) el.innerHTML = texto; else el.textContent = texto;
+    }
+
+    function limpiarNuevo() {
+      ['nuevo-nombre', 'nuevo-telefono', 'nv-patente', 'nv-marca', 'nv-modelo', 'nv-anio'].forEach(id => { document.getElementById(id).value = ''; });
+      setEstado('nv-estado', '');
+      datosPatente = null;
+      consultaPatenteSeq++;
+    }
+
+    function ocultarBloquesNuevo() {
+      modoCliente = null;
+      vehiculoNuevoActivo = false;
+      document.getElementById('cliente-nuevo').style.display = 'none';
+      document.getElementById('vehiculo-nuevo').style.display = 'none';
+      limpiarNuevo();
+    }
+
+    function mostrarVehiculoNuevo() {
+      vehiculoNuevoActivo = true;
+      document.getElementById('vehiculo-nuevo').style.display = 'block';
+      document.getElementById('nv-patente').focus();
+    }
+
+    function mostrarClienteNuevo() {
+      if (modoCliente === 'nuevo') return;
+      modoCliente = 'nuevo';
+      document.getElementById('cliente-nuevo').style.display = 'block';
+      vehiculoNuevoActivo = true;
+      document.getElementById('vehiculo-nuevo').style.display = 'block';
+      document.getElementById('nuevo-nombre').focus();
+    }
+
+    // Ficha del cliente elegido, con sus vehículos para escoger el que corresponde.
+    function renderFicha() {
+      const cont = document.getElementById('cliente-ficha');
+      const c = clientesCache.find(x => x.id === document.getElementById('cliente_id').value);
+      if (!c) { cont.style.display = 'none'; cont.innerHTML = ''; return; }
+      const vehs = vehiculosCache.filter(v => v.cliente_id === c.id);
+      const elegido = document.getElementById('vehiculo_id').value;
+      const encabezado = vehs.length === 0 ? 'No tiene vehículos registrados: ingresa la patente.'
+        : vehs.length === 1 ? 'Vehículo del cliente:'
+        : `Tiene ${vehs.length} vehículos: elige el que corresponde.`;
+      cont.innerHTML = `
+        <div class="cliente-ficha">
+          <div class="ficha-nombre">✅ ${htmlSeguro(c.nombre)}</div>
+          <div class="ficha-datos">
+            <span>RUT: ${c.rut ? htmlSeguro(formatearRut(c.rut)) : 'no registrado'}</span>
+            ${c.telefono ? `<span>📞 ${htmlSeguro(c.telefono)}</span>` : ''}
+            ${c.email ? `<span>✉️ ${htmlSeguro(c.email)}</span>` : ''}
+            ${c.direccion ? `<span>📍 ${htmlSeguro(c.direccion)}</span>` : ''}
+          </div>
+          <div class="ficha-vehiculos">
+            <div style="font-size:0.8rem; color:var(--color-text-muted); margin-bottom:0.25rem;">${encabezado}</div>
+            ${vehs.map(v => `
+              <label class="ficha-vehiculo${v.id === elegido && !vehiculoNuevoActivo ? ' elegido' : ''}">
+                <input type="radio" name="veh-elegido" value="${v.id}" ${v.id === elegido && !vehiculoNuevoActivo ? 'checked' : ''} />
+                <span class="veh-patente">${htmlSeguro(v.patente)}</span>
+                <span class="veh-detalle">${htmlSeguro([v.marca, v.modelo, v.anio].filter(Boolean).join(' '))}${v.kilometraje ? ` · ${Number(v.kilometraje).toLocaleString('es-CL')} km` : ''}</span>
+              </label>`).join('')}
+            <label class="ficha-vehiculo${vehiculoNuevoActivo ? ' elegido' : ''}">
+              <input type="radio" name="veh-elegido" value="__nuevo__" ${vehiculoNuevoActivo ? 'checked' : ''} />
+              <span class="veh-detalle">➕ Otro vehículo (ingresar patente)</span>
+            </label>
+          </div>
+        </div>`;
+      cont.style.display = 'block';
+    }
+
+    // Estado del bloque RUT/ficha según lo que haya en los selects (al abrir el formulario o cambiarlos).
+    function sincronizarReconocimiento() {
+      ocultarBloquesNuevo();
+      const c = clientesCache.find(x => x.id === document.getElementById('cliente_id').value);
+      document.getElementById('rut-buscar').value = c && c.rut ? formatearRut(c.rut) : '';
+      if (c) setEstado('rut-estado', c.rut ? '✅ Cliente reconocido.' : 'Cliente sin RUT registrado.', c.rut ? 'ok' : 'aviso');
+      else setEstado('rut-estado', MSG_RUT_INICIAL);
+      renderFicha();
+    }
+
+    // Elige un cliente existente: carga sus vehículos y, si tiene uno solo, lo deja elegido.
+    function seleccionarCliente(id) {
+      document.getElementById('cliente_id').value = id;
+      actualizarVehiculos();
+      actualizarCotizaciones();
+      prellenarDireccion();
+      ocultarBloquesNuevo();
+      const c = clientesCache.find(x => x.id === id);
+      document.getElementById('rut-buscar').value = c && c.rut ? formatearRut(c.rut) : '';
+      setEstado('rut-estado', c && c.rut ? '✅ Cliente reconocido.' : 'Cliente sin RUT registrado.', c && c.rut ? 'ok' : 'aviso');
+      const vehs = vehiculosCache.filter(v => v.cliente_id === id);
+      if (vehs.length === 1) document.getElementById('vehiculo_id').value = vehs[0].id;
+      if (vehs.length === 0) mostrarVehiculoNuevo();
+      renderFicha();
+    }
+
+    function buscarPorRut() {
+      const sel = document.getElementById('cliente_id');
+      const limpio = rutLimpio(document.getElementById('rut-buscar').value);
+      const actual = clientesCache.find(c => c.id === sel.value);
+      if (actual && actual.rut && rutLimpio(actual.rut) === limpio) return;   // sin cambios
+      // Si cambió el RUT, se suelta el cliente anterior antes de buscar de nuevo
+      if (sel.value || modoCliente) {
+        sel.value = '';
+        actualizarVehiculos();
+        actualizarCotizaciones();
+        prellenarDireccion();
+        ocultarBloquesNuevo();
+        renderFicha();
+      }
+      if (!limpio) { setEstado('rut-estado', MSG_RUT_INICIAL); return; }
+      if (limpio.length < 7) { setEstado('rut-estado', 'Sigue escribiendo el RUT…'); return; }
+      const encontrado = clientesCache.find(c => c.rut && rutLimpio(c.rut) === limpio);
+      if (encontrado) {
+        seleccionarCliente(encontrado.id);
+        setEstado('rut-estado', '✅ Cliente reconocido.', 'ok');
+        return;
+      }
+      if (!rutValido(limpio)) {
+        setEstado('rut-estado', limpio.length >= 8 ? '⚠ El RUT no es válido: revisa el dígito verificador.' : 'Sigue escribiendo el RUT…', limpio.length >= 8 ? 'aviso' : '');
+        return;
+      }
+      mostrarClienteNuevo();
+      setEstado('rut-estado', 'ℹ️ Este RUT no está en tus clientes. Completa sus datos: se crea junto con la cita.', 'aviso');
+    }
+
+    // Patente → ¿ya está en el sistema? → si no, datos del registro público.
+    async function resolverPatente() {
+      const p = normalizarPatente(document.getElementById('nv-patente').value);
+      const seq = ++consultaPatenteSeq;
+      datosPatente = null;
+      if (!p) { setEstado('nv-estado', ''); return; }
+      if (!patenteValida(p)) {
+        setEstado('nv-estado', p.length >= 6 ? '⚠ La patente no tiene un formato válido (ej. ABCD12 o AB1234).' : '', 'aviso');
+        return;
+      }
+      const existente = vehiculosCache.find(v => v.patente === p);
+      if (existente) {
+        const propio = existente.cliente_id === document.getElementById('cliente_id').value;
+        if (propio) {
+          document.getElementById('vehiculo_id').value = existente.id;
+          vehiculoNuevoActivo = false;
+          document.getElementById('vehiculo-nuevo').style.display = 'none';
+          document.getElementById('nv-patente').value = '';
+          renderFicha();
+          return;
+        }
+        const dueno = clientesCache.find(c => c.id === existente.cliente_id);
+        setEstado('nv-estado', `⚠ Esa patente ya está registrada${dueno ? ` a nombre de <strong>${htmlSeguro(dueno.nombre)}</strong>` : ''}. <button type="button" class="btn-secondary btn-mini" id="usar-dueno-btn" data-cliente="${htmlSeguro(existente.cliente_id)}" data-vehiculo="${htmlSeguro(existente.id)}">Usar ese cliente y vehículo</button>`, 'aviso', true);
+        return;
+      }
+      setEstado('nv-estado', 'Buscando los datos del vehículo…');
+      const r = await consultarPatente(p);
+      if (seq !== consultaPatenteSeq) return;   // mientras tanto escribieron otra patente
+      if (r.estado === 'ok') {
+        const d = r.datos;
+        document.getElementById('nv-marca').value = d.marca || '';
+        document.getElementById('nv-modelo').value = d.modelo || '';
+        document.getElementById('nv-anio').value = d.anio || '';
+        datosPatente = { patente: p, numero_motor: d.numero_motor, tipo: d.tipo };
+        setEstado('nv-estado', `✅ Datos obtenidos del registro público: ${[d.marca, d.modelo, d.anio].filter(Boolean).join(' ')}. Revísalos antes de guardar.`, 'ok');
+      } else if (r.estado === 'sin_clave') {
+        setEstado('nv-estado', 'Completa marca, modelo y año a mano. Para que se llenen solos, falta ingresar la clave de consulta de patentes en Configuración.', 'aviso');
+      } else if (r.estado === 'no_encontrado') {
+        setEstado('nv-estado', 'No encontré esa patente en el registro público: completa los datos a mano.', 'aviso');
+      } else if (r.estado === 'clave_invalida') {
+        setEstado('nv-estado', 'La clave de consulta de patentes no es válida: revísala en Configuración. Mientras, completa los datos a mano.', 'error');
+      } else if (r.estado === 'limite') {
+        setEstado('nv-estado', 'Se alcanzó el límite de consultas del servicio de patentes. Completa los datos a mano.', 'aviso');
+      } else {
+        setEstado('nv-estado', `No se pudo consultar la patente${r.mensaje ? ` (${r.mensaje})` : ''}. Completa los datos a mano.`, 'aviso');
+      }
+    }
+
+    // Antes de guardar la cita: crea el cliente y/o el vehículo nuevos y deja los selects apuntando a ellos.
+    // Devuelve { error } con un texto para mostrar, o {} si todo quedó listo.
+    async function prepararClienteYVehiculo() {
+      const sel = document.getElementById('cliente_id');
+      const creaCliente = modoCliente === 'nuevo' && !sel.value;
+      const patente = normalizarPatente(document.getElementById('nv-patente').value);
+      const creaVehiculo = (creaCliente || vehiculoNuevoActivo) && !!patente;
+      if (!creaCliente && !creaVehiculo) return {};
+
+      let nombre = '', rut = '', telefono = '';
+      if (creaCliente) {
+        nombre = document.getElementById('nuevo-nombre').value.trim();
+        rut = formatearRut(document.getElementById('rut-buscar').value);
+        telefono = formatearTelefonoCL(document.getElementById('nuevo-telefono').value);
+        if (!nombre) return { error: 'Ingresa el nombre del cliente nuevo.' };
+        if (!rutValido(rut)) return { error: 'El RUT del cliente no es válido: revisa el dígito verificador.' };
+        if (!telefonoValidoCL(telefono)) return { error: 'Ingresa un teléfono válido (9 dígitos, ej. +56 9 1234 5678).' };
+      }
+      if (creaVehiculo) {
+        if (!patenteValida(patente)) return { error: 'La patente no tiene un formato válido (ej. ABCD12 o AB1234).' };
+        const dupe = vehiculosCache.find(v => v.patente === patente);
+        if (dupe) {
+          const dueno = clientesCache.find(c => c.id === dupe.cliente_id);
+          if (!creaCliente && dupe.cliente_id === sel.value) {
+            document.getElementById('vehiculo_id').value = dupe.id;
+            return {};
+          }
+          return { error: `La patente ${patente} ya está registrada${dueno ? ` a nombre de ${dueno.nombre}` : ''}. Usa «Usar ese cliente y vehículo».` };
+        }
+      }
+
+      let clienteId = sel.value;
+      if (creaCliente) {
+        // ¿Ya existe con ese teléfono pero sin RUT cargado? Evita duplicar al cliente.
+        const tel = telefonoNacional(telefono);
+        const mismoTel = clientesCache.find(c => !c.rut && c.telefono && telefonoNacional(c.telefono) === tel);
+        if (mismoTel && confirm(`Ya existe «${mismoTel.nombre}» con ese teléfono y sin RUT registrado.\n\n¿Es la misma persona?\n\nAceptar: usar ese cliente y guardarle este RUT.\nCancelar: crear un cliente nuevo.`)) {
+          const { error } = await supabaseClient.from('clientes').update({ rut }).eq('id', mismoTel.id);
+          if (error) return { error: `No se pudo guardar el RUT: ${error.message}` };
+          mismoTel.rut = rut;
+          clienteId = mismoTel.id;
+        } else {
+          const { data, error } = await supabaseClient.from('clientes')
+            .insert({ nombre, rut, telefono })
+            .select('id, nombre, rut, telefono, email, direccion')
+            .single();
+          if (error) {
+            return { error: /duplicate|unique|23505/i.test(error.message || error.code || '')
+              ? `Ya existe un cliente con el RUT ${rut} (puede estar desactivado: revísalo en Clientes).`
+              : `No se pudo crear el cliente: ${error.message}` };
+          }
+          clientesCache.push(data);
+          clienteId = data.id;
+        }
+        poblarClientes();
+        sel.value = clienteId;
+        actualizarVehiculos();
+        actualizarCotizaciones();
+      }
+
+      if (creaVehiculo) {
+        const extras = [];
+        if (datosPatente && datosPatente.patente === patente) {
+          if (datosPatente.numero_motor) extras.push(`N° de motor: ${datosPatente.numero_motor}`);
+          if (datosPatente.tipo) extras.push(`Tipo: ${tituloVehiculo(datosPatente.tipo)}`);
+        }
+        const { data, error } = await supabaseClient.from('vehiculos')
+          .insert({
+            cliente_id: clienteId,
+            patente,
+            marca: document.getElementById('nv-marca').value.trim() || null,
+            modelo: document.getElementById('nv-modelo').value.trim() || null,
+            anio: document.getElementById('nv-anio').value || null,
+            notas: extras.length ? extras.join(' · ') : null,
+          })
+          .select('*')
+          .single();
+        if (error) {
+          return { error: /duplicate|unique|23505/i.test(error.message || error.code || '')
+            ? `La patente ${patente} ya existe en el sistema (puede estar desactivada: revísala en Vehículos).`
+            : `No se pudo guardar el vehículo: ${error.message}` };
+        }
+        vehiculosCache.push(data);
+        actualizarVehiculos();
+        document.getElementById('vehiculo_id').value = data.id;
+      }
+      modoCliente = null;
+      vehiculoNuevoActivo = false;
+      return {};
+    }
+
+    function poblarClientes() {
+      const sel = document.getElementById('cliente_id');
+      const actual = sel.value;
+      sel.innerHTML = '<option value="">Sin cliente</option>' +
+        clientesCache.slice().sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')).map(c => `<option value="${c.id}">${htmlSeguro(c.nombre)}</option>`).join('');
+      sel.value = actual;
+    }
+
+    enlazarFormato('rut-buscar', formatearRut, () => {
+      clearTimeout(rutTimer);
+      rutTimer = setTimeout(buscarPorRut, 400);
+    });
+    enlazarFormato('nuevo-telefono', formatearTelefonoCL);
+    enlazarFormato('nv-patente', normalizarPatente, () => {
+      clearTimeout(patenteTimer);
+      patenteTimer = setTimeout(resolverPatente, 350);
+    });
+
+    document.getElementById('cliente-ficha').addEventListener('change', (e) => {
+      if (!e.target.matches('input[name="veh-elegido"]')) return;
+      if (e.target.value === '__nuevo__') {
+        document.getElementById('vehiculo_id').value = '';
+        mostrarVehiculoNuevo();
+      } else {
+        vehiculoNuevoActivo = false;
+        document.getElementById('vehiculo-nuevo').style.display = 'none';
+        setEstado('nv-estado', '');
+        document.getElementById('vehiculo_id').value = e.target.value;
+      }
+      renderFicha();
+    });
+
+    document.getElementById('vehiculo-nuevo').addEventListener('click', (e) => {
+      const b = e.target.closest('#usar-dueno-btn');
+      if (!b) return;
+      const clienteId = b.dataset.cliente, vehiculoId = b.dataset.vehiculo;
+      seleccionarCliente(clienteId);
+      document.getElementById('vehiculo_id').value = vehiculoId;
+      const c = clientesCache.find(x => x.id === clienteId);
+      document.getElementById('rut-buscar').value = c && c.rut ? formatearRut(c.rut) : '';
+      setEstado('rut-estado', '✅ Cliente reconocido.', 'ok');
+      renderFicha();
+    });
+
+    document.getElementById('vehiculo_id').addEventListener('change', renderFicha);
+
     document.getElementById('nueva-btn').addEventListener('click', () => abrirForm(null));
     document.getElementById('cancelar-form-btn').addEventListener('click', () => document.getElementById('form-card').style.display = 'none');
-    document.getElementById('cliente_id').addEventListener('change', () => { actualizarVehiculos(); actualizarCotizaciones(); prellenarDireccion(); });
+    document.getElementById('cliente_id').addEventListener('change', () => {
+      const id = document.getElementById('cliente_id').value;
+      if (id) { seleccionarCliente(id); return; }
+      actualizarVehiculos();
+      actualizarCotizaciones();
+      prellenarDireccion();
+      sincronizarReconocimiento();
+    });
     document.getElementById('modalidad').addEventListener('change', () => { actualizarVisibilidadDireccion(); prellenarDireccion(); });
 
     document.getElementById('guardar-btn').addEventListener('click', async () => {
@@ -400,6 +787,17 @@
       if (!document.getElementById('cita-id').value) {
         const aviso = avisoFueraDeHorario(fecha, hora);
         if (aviso && !confirm(`${aviso}\n\n¿Agendar igual?`)) return;
+      }
+      // Cliente y/o vehículo nuevos (por RUT / patente): se crean antes de guardar la cita
+      const guardarBtn = document.getElementById('guardar-btn');
+      guardarBtn.disabled = true;
+      let preparado;
+      try { preparado = await prepararClienteYVehiculo(); } finally { guardarBtn.disabled = false; }
+      if (preparado.error) { errorEl.textContent = preparado.error; return; }
+      {
+        const cid = document.getElementById('cliente_id').value;
+        const tiene = vehiculosCache.some(v => v.cliente_id === cid);
+        if (cid && tiene && !document.getElementById('vehiculo_id').value && !confirm('No elegiste ningún vehículo del cliente.\n\n¿Guardar la cita sin vehículo?')) return;
       }
       const fechaHora = new Date(`${fecha}T${hora}:00`).toISOString();
       const payload = {
@@ -1122,7 +1520,7 @@
       const session = await initLayout('agenda');
       if (!session) return;
       const [clientes, vehiculos, trabajos, personal, cotizaciones, config, horario, bloqueos] = await Promise.all([
-        supabaseClient.from('clientes').select('id, nombre, direccion').eq('activo', true).order('nombre'),
+        supabaseClient.from('clientes').select('id, nombre, rut, telefono, email, direccion').eq('activo', true).order('nombre'),
         supabaseClient.from('vehiculos').select('*').eq('activo', true).order('patente'),
         supabaseClient.from('trabajos').select('*').eq('activo', true).order('nombre'),
         supabaseClient.from('personal').select('*').eq('activo', true).order('nombre'),
@@ -1144,8 +1542,7 @@
       cotizacionesCache = cotizaciones.data || [];
       tallerHorarios = config;
 
-      document.getElementById('cliente_id').innerHTML =
-        '<option value="">Sin cliente</option>' + clientesCache.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
+      poblarClientes();
       poblarTrabajosCita();
       mantenerCatalogoAlDia(recargarCatalogo);
       document.getElementById('personal_id').innerHTML =
@@ -1166,6 +1563,7 @@
         document.getElementById('vehiculo_id').value = params.get('vehiculo_id') || '';
         document.getElementById('cotizacion_id').value = cotizacionId;
         prellenarDireccion();
+        sincronizarReconocimiento();
         window.history.replaceState({}, '', 'agenda.html');
       }
     })();

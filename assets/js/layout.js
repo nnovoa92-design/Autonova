@@ -373,6 +373,132 @@ function linkWhatsApp(telefono, mensaje) {
   return `https://wa.me/${digits}?text=${encodeURIComponent(mensaje)}`;
 }
 
+// ---------- RUT, teléfono y patente (Chile) ----------
+// Los campos se van formateando solos mientras se escribe: RUT con puntos y guion,
+// teléfono con +56 y patente en mayúsculas.
+function rutLimpio(valor) {
+  return String(valor == null ? '' : valor).replace(/[^0-9kK]/g, '').toUpperCase();
+}
+
+function formatearRut(valor) {
+  const v = rutLimpio(valor);
+  if (v.length < 2) return v;
+  const cuerpo = v.slice(0, -1).replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+  return cuerpo.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + '-' + v.slice(-1);
+}
+
+// Dígito verificador (módulo 11). Acepta cuerpos de 6 a 8 dígitos.
+function rutValido(valor) {
+  const v = rutLimpio(valor);
+  if (v.length < 7 || v.length > 9) return false;
+  const cuerpo = v.slice(0, -1);
+  if (!/^\d+$/.test(cuerpo)) return false;
+  let suma = 0, mul = 2;
+  for (let i = cuerpo.length - 1; i >= 0; i--) {
+    suma += Number(cuerpo[i]) * mul;
+    mul = mul === 7 ? 2 : mul + 1;
+  }
+  const r = 11 - (suma % 11);
+  const esperado = r === 11 ? '0' : r === 10 ? 'K' : String(r);
+  return v.slice(-1) === esperado;
+}
+
+// "+56 9 12345678" (mismo estilo que el teléfono del taller). Si lo escrito no es de Chile, no lo toca.
+function formatearTelefonoCL(valor) {
+  const crudo = String(valor == null ? '' : valor).trim();
+  let d = crudo.replace(/\D/g, '');
+  if (d.startsWith('56') && (crudo.startsWith('+') || d.length > 9)) d = d.slice(2);
+  d = d.replace(/^0+/, '').slice(0, 9);
+  if (!d) return '';
+  return d.startsWith('9') ? `+56 9${d.length > 1 ? ' ' + d.slice(1) : ''}` : `+56 ${d}`;
+}
+
+function telefonoNacional(valor) {
+  let d = String(valor == null ? '' : valor).replace(/\D/g, '');
+  if (d.startsWith('56') && d.length > 9) d = d.slice(2);
+  return d.replace(/^0+/, '');
+}
+
+function telefonoValidoCL(valor) {
+  return telefonoNacional(valor).length === 9;
+}
+
+function normalizarPatente(valor) {
+  return String(valor == null ? '' : valor).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+}
+
+// Autos nuevos (ABCD12), antiguos (AB1234) y motos (ABC12 / AB123).
+function patenteValida(valor) {
+  const p = normalizarPatente(valor);
+  return /^[A-Z]{4}\d{2}$/.test(p) || /^[A-Z]{2}\d{4}$/.test(p) || /^[A-Z]{3}\d{2}$/.test(p) || /^[A-Z]{2}\d{3}$/.test(p);
+}
+
+function enlazarFormato(input, formateador, alCambiar) {
+  const el = typeof input === 'string' ? document.getElementById(input) : input;
+  if (!el || el.dataset.formatoEnlazado) return;
+  el.dataset.formatoEnlazado = '1';
+  el.addEventListener('input', () => {
+    const nuevo = formateador(el.value);
+    if (nuevo !== el.value) el.value = nuevo;
+    if (alCambiar) alCambiar(nuevo);
+  });
+}
+
+// El registro entrega MARCA Y MODELO EN MAYÚSCULAS: se pasan a "Marca Modelo" dejando
+// en mayúsculas las siglas cortas y los códigos (WRX, 2.0T, AWD).
+function tituloVehiculo(texto) {
+  return String(texto || '').trim().split(/\s+/).map(p => {
+    if (p.length < 5 || /\d/.test(p)) return p;
+    return p.charAt(0) + p.slice(1).toLowerCase();
+  }).join(' ');
+}
+
+const TIPOS_VEHICULO = { 'AUTOMOVIL': 'Automóvil', 'CAMION': 'Camión', 'FURGON': 'Furgón', 'MINIBUS': 'Minibús', 'TRACTOCAMION': 'Tractocamión' };
+
+// Datos públicos del vehículo por patente (boostr.cl). La clave vive en Configuración
+// (taller_config.api_patentes_key), nunca en el código. Siempre devuelve { estado, ... }:
+//   ok · sin_clave · clave_invalida · no_encontrado · invalida · limite · error
+async function consultarPatente(patente) {
+  const p = normalizarPatente(patente);
+  if (!patenteValida(p)) return { estado: 'invalida' };
+  const cfg = await getTallerConfig();
+  const clave = cfg && cfg.api_patentes_key;
+  if (!clave) return { estado: 'sin_clave' };
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 9000);
+  try {
+    const r = await fetch(`https://api.boostr.cl/vehicle/${encodeURIComponent(p)}.json`, {
+      headers: { 'X-API-KEY': clave },
+      signal: ctrl.signal,
+    });
+    let j = null;
+    try { j = await r.json(); } catch (e) { j = null; }
+    if (r.ok && j && j.status === 'success' && j.data) {
+      const d = j.data;
+      return {
+        estado: 'ok',
+        datos: {
+          marca: tituloVehiculo(d.make),
+          modelo: tituloVehiculo(d.model),
+          anio: Number(d.year) > 1900 ? Number(d.year) : null,
+          tipo: d.type ? (TIPOS_VEHICULO[String(d.type).trim().toUpperCase()] || tituloVehiculo(d.type)) : '',
+          numero_motor: d.engine ? String(d.engine).trim() : '',
+        },
+      };
+    }
+    const codigo = j && j.code;
+    if (codigo === 'V-02' || r.status === 404) return { estado: 'no_encontrado' };
+    if (codigo === 'V-04') return { estado: 'invalida' };
+    if (r.status === 401 || r.status === 403) return { estado: 'clave_invalida' };
+    if (r.status === 429) return { estado: 'limite' };
+    return { estado: 'error', mensaje: (j && j.message) || `HTTP ${r.status}` };
+  } catch (e) {
+    return { estado: 'error', mensaje: e.name === 'AbortError' ? 'el servicio tardó demasiado en responder' : e.message };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Abre Gmail con el correo ya redactado (asunto + cuerpo). El usuario
 // solo presiona Enviar. Funciona a cualquier destinatario, sin dominio.
 function linkGmail(para, asunto, cuerpo) {
