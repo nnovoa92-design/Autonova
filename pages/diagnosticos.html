@@ -820,7 +820,16 @@
       let error;
       if (diagActual.esNuevo) ({ error } = await supabaseClient.from('diagnosticos').insert({ id: diagActual.id, ...payload }));
       else ({ error } = await supabaseClient.from('diagnosticos').update(payload).eq('id', diagActual.id));
-      if (error) { errorEl.textContent = `Error: ${error.message} (¿ejecutaste los SQL v32, v34 y v36 de la carpeta sql?)`; return null; }
+      if (error) {
+        const m = error.message || '';
+        const falta = /descuento_(tipo|monto)/.test(m) ? 'sql/actualizacion-v36-descuento-pesos.sql (descuento en pesos)'
+          : /horas_diagnostico|valor_hora_diagnostico/.test(m) ? 'sql/actualizacion-v34-diagnostico-valor.sql (valor del diagnóstico)'
+          : /diagnosticos|diagnostico_items/.test(m) ? 'sql/actualizacion-v32-diagnosticos.sql (módulo de diagnósticos)' : null;
+        errorEl.textContent = falta
+          ? `Falta ejecutar ${falta} en el SQL Editor de Supabase. Detalle: ${m}`
+          : `Error: ${m}`;
+        return null;
+      }
       diagActual.esNuevo = false;
 
       if (!bloqueado) {
