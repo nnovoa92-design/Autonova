@@ -88,6 +88,7 @@
               <button type="button" id="whatsapp-ot-btn" class="btn-secondary">Avisar por WhatsApp</button>
               <button type="button" id="email-ot-btn" class="btn-secondary">Avisar por correo</button>
               <button type="button" id="expediente-btn" class="btn-secondary" title="Documento interno completo, con todo el respaldo, para uso judicial si fuese necesario">📁 Expediente</button>
+              <button type="button" id="eliminar-ot-btn" class="btn-danger" title="Eliminar esta OT (ej. un duplicado)">🗑 Eliminar OT</button>
               <button type="button" id="cerrar-detalle-btn" class="btn-secondary">Volver al listado</button>
             </div>
           </div>
@@ -1082,6 +1083,106 @@
       renderOrdenes();
     }
 
+    // ---------- Eliminar OT (ej. duplicados) ----------
+    // Con la OT se borran sus ítems, horas, abonos e historial. Los pagos quedan registrados
+    // (sin OT asociada) y la cotización de origen vuelve a "aprobada" para poder convertirla de nuevo.
+    async function borrarArchivosDeOrden(ordenId) {
+      // Fotos de avances, inspección y firmas viven bajo <ordenId>/...; si algo falla, no importa
+      try {
+        const bucket = supabaseClient.storage.from('fotos-ot');
+        const rutas = [];
+        for (const sub of ['', '/avance', '/inspeccion']) {
+          const { data } = await bucket.list(`${ordenId}${sub}`, { limit: 1000 });
+          (data || []).filter(f => f.id).forEach(f => rutas.push(`${ordenId}${sub}/${f.name}`));
+        }
+        if (rutas.length) await bucket.remove(rutas);
+      } catch (e) { console.warn('No se pudieron borrar los archivos de la OT', e); }
+    }
+
+    async function eliminarOrden(ordenId) {
+      const o = ordenesCache.find(x => x.id === ordenId);
+      if (!o) return;
+      const codigo = fmtNumero('OT', o.numero);
+      const quien = `${o.clientes ? o.clientes.nombre : 'sin cliente'}${o.vehiculos ? ' · ' + o.vehiculos.patente : ''}`;
+      const items = (o.orden_items || []).length;
+      const horas = (o.registro_horas || []).length;
+      const avances = (o.avances || []).length;
+      const pagos = o.pagos || [], abonos = o.abonos || [];
+      const montoPagos = pagos.reduce((s, p) => s + Number(p.monto), 0);
+      const montoAbonos = abonos.reduce((s, a) => s + Number(a.monto), 0);
+
+      const detalle = [
+        items ? `${items} ítem(s)` : null,
+        horas ? `${horas} registro(s) de horas` : null,
+        avances ? `${avances} avance(s) con sus fotos` : null,
+        abonos.length ? `${abonos.length} abono(s) por ${fmtMoneda(montoAbonos)}` : null,
+      ].filter(Boolean);
+      if (!confirm(
+        `¿Eliminar la ${codigo} (${quien})?\n\n` +
+        (detalle.length ? `Se borrará con ella: ${detalle.join(', ')}.\n\n` : '') +
+        'Esta acción no se puede deshacer.'
+      )) return;
+
+      if (pagos.length || abonos.length) {
+        if (!confirm(
+          `⚠ La ${codigo} tiene dinero registrado:\n` +
+          (abonos.length ? `• Abonos: ${fmtMoneda(montoAbonos)} (se borrarán junto con la OT)\n` : '') +
+          (pagos.length ? `• Pagos: ${fmtMoneda(montoPagos)} (quedarán registrados en Pagos, sin OT asociada)\n` : '') +
+          '\n¿Eliminar de todos modos?'
+        )) return;
+      }
+
+      // Repuestos que esta OT descontó del inventario (se leen antes de borrar: el vínculo se pierde con la OT)
+      const { data: salidas } = await supabaseClient.from('movimientos_stock')
+        .select('repuesto_id, cantidad').eq('orden_id', ordenId).eq('tipo', 'salida');
+      let devolverStock = false;
+      if (salidas && salidas.length) {
+        devolverStock = confirm(
+          `La ${codigo} descontó repuestos del inventario (${salidas.length} movimiento(s)).\n\n` +
+          'Aceptar = devolverlos al inventario\nCancelar = dejar el stock como está'
+        );
+      }
+
+      const { error } = await supabaseClient.from('ordenes').delete().eq('id', ordenId);
+      if (error) { alert('No se pudo eliminar la OT: ' + error.message); return; }
+
+      // Lo demás es limpieza: si algo falla no deshace la eliminación
+      const avisos = [];
+      if (devolverStock) {
+        try {
+          const porRepuesto = {};
+          salidas.forEach(m => { porRepuesto[m.repuesto_id] = (porRepuesto[m.repuesto_id] || 0) + Number(m.cantidad); });
+          for (const [repuestoId, cantidad] of Object.entries(porRepuesto)) {
+            const { data: r } = await supabaseClient.from('repuestos').select('id, stock_actual').eq('id', repuestoId).single();
+            if (!r) continue;
+            await supabaseClient.from('movimientos_stock').insert({
+              repuesto_id: repuestoId, tipo: 'entrada', cantidad, motivo: `Devuelto al eliminar ${codigo}`,
+            });
+            const nuevo = Number(r.stock_actual) + cantidad;
+            await supabaseClient.from('repuestos').update({ stock_actual: nuevo }).eq('id', repuestoId);
+            const enCache = repuestosCache.find(x => x.id === repuestoId);
+            if (enCache) enCache.stock_actual = nuevo;
+          }
+        } catch (e) { avisos.push('No se pudo devolver todo el stock; revísalo en Inventario.'); }
+      }
+      // La cotización de origen queda lista para convertirse otra vez (si ninguna otra OT depende de ella)
+      if (o.cotizacion_id && !ordenesCache.some(x => x.id !== ordenId && x.cotizacion_id === o.cotizacion_id)) {
+        await supabaseClient.from('cotizaciones').update({ estado: 'aprobada' }).eq('id', o.cotizacion_id).eq('estado', 'convertida');
+      }
+      // Recordatorio de mantención de esta OT (programado o "no recordar")
+      await supabaseClient.from('recordatorios').delete().eq('tipo', 'mantencion').ilike('detalle', `%${codigo}%`);
+      await borrarArchivosDeOrden(ordenId);
+
+      if (ordenActual && ordenActual.id === ordenId) {
+        ordenActual = null;
+        document.getElementById('detalle-card').style.display = 'none';
+        document.getElementById('listado-card').style.display = 'block';
+      }
+      await loadOrdenes();
+      renderOrdenes();
+      alert(`${codigo} eliminada.${avisos.length ? '\n\n' + avisos.join('\n') : ''}`);
+    }
+
     function renderItemsDetalle() {
       const items = ordenActual.orden_items || [];
       const tbody = document.getElementById('items-body');
@@ -1355,12 +1456,16 @@
           <td style="white-space:nowrap;">${badgeEstado(o.estado, ESTADOS_ORDEN)}</td>
           <td class="table-actions">
             <button type="button" class="btn-secondary abrir-btn" data-id="${o.id}">Abrir</button>
+            <button type="button" class="btn-danger eliminar-fila-btn" data-id="${o.id}" title="Eliminar esta OT (ej. un duplicado)">Eliminar</button>
           </td>
         </tr>`;
       }).join('');
 
       tbody.querySelectorAll('.abrir-btn').forEach(btn => {
         btn.addEventListener('click', () => abrirDetalle(btn.dataset.id));
+      });
+      tbody.querySelectorAll('.eliminar-fila-btn').forEach(btn => {
+        btn.addEventListener('click', () => eliminarOrden(btn.dataset.id));
       });
     }
 
@@ -1404,6 +1509,7 @@
     });
     document.getElementById('crear-ot-btn').addEventListener('click', crearOrden);
     document.getElementById('cerrar-detalle-btn').addEventListener('click', cerrarDetalle);
+    document.getElementById('eliminar-ot-btn').addEventListener('click', () => { if (ordenActual) eliminarOrden(ordenActual.id); });
     document.getElementById('nueva-cliente').addEventListener('change', actualizarVehiculosNueva);
     document.getElementById('item-tipo').addEventListener('change', onTipoChange);
     document.getElementById('item-trabajo').addEventListener('change', onTrabajoChange);
