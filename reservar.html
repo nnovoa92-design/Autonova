@@ -83,10 +83,19 @@
             <div class="ficha-nombre" id="r-saludo"></div>
             <div class="ficha-vehiculos" id="r-vehiculos"></div>
           </div>
-          <p class="reconocer-estado" id="r-tel-aviso" hidden>
-            📞 Te contactaremos al número que tenemos registrado (termina en <strong id="r-tel-final"></strong>).
-            <a href="#" id="r-otro-tel">Usar otro número</a>
-          </p>
+          <div class="cliente-ficha" id="r-tel-aviso" hidden>
+            <div class="ficha-vehiculos" style="margin-top:0; border-top:0; padding-top:0;">
+              <div style="font-size:0.85rem; color:var(--color-text-muted); margin-bottom:0.25rem;">¿A qué número te contactamos?</div>
+              <label class="ficha-vehiculo" id="lab-tel-reg">
+                <input type="radio" name="r-tel-modo" value="registrado" checked />
+                <span>Usar el número que tenemos registrado: <strong>•••• <span id="r-tel-final"></span></strong></span>
+              </label>
+              <label class="ficha-vehiculo" id="lab-tel-otro">
+                <input type="radio" name="r-tel-modo" value="otro" />
+                <span>Indicar otro número</span>
+              </label>
+            </div>
+          </div>
         </div>
 
         <!-- Datos personales (cliente nuevo) y teléfono de contacto -->
@@ -259,10 +268,17 @@
       const clasico = estadoRut === 'clasico';
       mostrar('r-reconocido', reco);
       mostrar('g-nombre', nuevo || clasico);
-      const telRegistrado = reco && reconocido && reconocido.telefonoFinal && !usarOtroTel;
+      const tieneTelRegistrado = !!(reco && reconocido && reconocido.telefonoFinal);
+      const telRegistrado = tieneTelRegistrado && !usarOtroTel;
       mostrar('g-tel', (reco && !telRegistrado) || nuevo || clasico);
-      mostrar('r-tel-aviso', !!telRegistrado);
-      if (telRegistrado) document.getElementById('r-tel-final').textContent = reconocido.telefonoFinal;
+      mostrar('r-tel-aviso', tieneTelRegistrado);
+      if (tieneTelRegistrado) {
+        document.getElementById('r-tel-final').textContent = reconocido.telefonoFinal;
+        document.querySelector('input[name="r-tel-modo"][value="registrado"]').checked = !usarOtroTel;
+        document.querySelector('input[name="r-tel-modo"][value="otro"]').checked = usarOtroTel;
+        document.getElementById('lab-tel-reg').classList.toggle('elegido', !usarOtroTel);
+        document.getElementById('lab-tel-otro').classList.toggle('elegido', usarOtroTel);
+      }
       mostrar('g-vehiculo', nuevo || clasico || (reco && vehiculoElegido === '__nuevo__'));
       mostrar('g-notas', reco || nuevo || clasico);
       mostrar('reservar-btn', reco || nuevo || clasico);
@@ -339,11 +355,11 @@
       rutTimer = setTimeout(evaluarRut, 450);   // el formato del RUT lo aplica layout.js al escribir
     });
     document.getElementById('r-patente').addEventListener('input', (e) => { e.target.value = normalizarPatente(e.target.value); });
-    document.getElementById('r-otro-tel').addEventListener('click', (e) => {
-      e.preventDefault();
-      usarOtroTel = true;
+    document.getElementById('r-tel-aviso').addEventListener('change', (e) => {
+      if (!e.target.matches('input[name="r-tel-modo"]')) return;
+      usarOtroTel = e.target.value === 'otro';
       aplicarVistaDatos();
-      document.getElementById('r-tel').focus();
+      if (usarOtroTel) document.getElementById('r-tel').focus();
     });
 
     document.getElementById('reservar-btn').addEventListener('click', async () => {
