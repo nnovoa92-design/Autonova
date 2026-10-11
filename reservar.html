@@ -83,6 +83,10 @@
             <div class="ficha-nombre" id="r-saludo"></div>
             <div class="ficha-vehiculos" id="r-vehiculos"></div>
           </div>
+          <p class="reconocer-estado" id="r-tel-aviso" hidden>
+            📞 Te contactaremos al número que tenemos registrado (termina en <strong id="r-tel-final"></strong>).
+            <a href="#" id="r-otro-tel">Usar otro número</a>
+          </p>
         </div>
 
         <!-- Datos personales (cliente nuevo) y teléfono de contacto -->
@@ -240,6 +244,7 @@
     let reconocido = null;         // { nombre, vehiculos: [{ id, patente, marca, modelo, anio }] }
     let vehiculoElegido = null;    // id de un vehículo del cliente, '__nuevo__' o null
     let rutTimer = null, rutSeq = 0;
+    let usarOtroTel = false;       // el cliente reconocido quiere indicar otro teléfono
 
     const setEstadoRut = (texto, clase) => {
       const el = document.getElementById('r-rut-estado');
@@ -254,7 +259,10 @@
       const clasico = estadoRut === 'clasico';
       mostrar('r-reconocido', reco);
       mostrar('g-nombre', nuevo || clasico);
-      mostrar('g-tel', reco || nuevo || clasico);
+      const telRegistrado = reco && reconocido && reconocido.telefonoFinal && !usarOtroTel;
+      mostrar('g-tel', (reco && !telRegistrado) || nuevo || clasico);
+      mostrar('r-tel-aviso', !!telRegistrado);
+      if (telRegistrado) document.getElementById('r-tel-final').textContent = reconocido.telefonoFinal;
       mostrar('g-vehiculo', nuevo || clasico || (reco && vehiculoElegido === '__nuevo__'));
       mostrar('g-notas', reco || nuevo || clasico);
       mostrar('reservar-btn', reco || nuevo || clasico);
@@ -312,7 +320,8 @@
       }
       if (data.encontrado) {
         estadoRut = 'reconocido';
-        reconocido = { nombre: data.nombre || 'cliente', vehiculos: Array.isArray(data.vehiculos) ? data.vehiculos : [] };
+        reconocido = { nombre: data.nombre || 'cliente', telefonoFinal: data.telefono_final || null, vehiculos: Array.isArray(data.vehiculos) ? data.vehiculos : [] };
+        usarOtroTel = false;
         if (reconocido.vehiculos.length === 1) vehiculoElegido = reconocido.vehiculos[0].id;
         else if (reconocido.vehiculos.length === 0) vehiculoElegido = '__nuevo__';
         setEstadoRut('✅ Te reconocimos como cliente.', 'ok');
@@ -330,6 +339,12 @@
       rutTimer = setTimeout(evaluarRut, 450);   // el formato del RUT lo aplica layout.js al escribir
     });
     document.getElementById('r-patente').addEventListener('input', (e) => { e.target.value = normalizarPatente(e.target.value); });
+    document.getElementById('r-otro-tel').addEventListener('click', (e) => {
+      e.preventDefault();
+      usarOtroTel = true;
+      aplicarVistaDatos();
+      document.getElementById('r-tel').focus();
+    });
 
     document.getElementById('reservar-btn').addEventListener('click', async () => {
       const errorEl = document.getElementById('error');
@@ -338,9 +353,11 @@
       const clasico = estadoRut === 'clasico';
       if (!reco && estadoRut !== 'nuevo' && !clasico) { errorEl.textContent = 'Ingresa tu RUT.'; return; }
       const nombre = reco ? reconocido.nombre : document.getElementById('r-nombre').value.trim();
-      const tel = document.getElementById('r-tel').value.trim();
-      if (!nombre || !tel) { errorEl.textContent = reco ? 'Completa tu teléfono.' : 'Completa nombre y teléfono.'; return; }
-      if (!telefonoValidoCL(tel)) { errorEl.textContent = 'Revisa tu teléfono (ej. +56 9 1234 5678).'; return; }
+      // Cliente reconocido con teléfono registrado: no se le vuelve a pedir (se usa el de su ficha)
+      const usaTelRegistrado = reco && reconocido.telefonoFinal && !usarOtroTel;
+      const tel = usaTelRegistrado ? '' : document.getElementById('r-tel').value.trim();
+      if (!nombre || (!tel && !usaTelRegistrado)) { errorEl.textContent = reco ? 'Completa tu teléfono.' : 'Completa nombre y teléfono.'; return; }
+      if (tel && !telefonoValidoCL(tel)) { errorEl.textContent = 'Revisa tu teléfono (ej. +56 9 1234 5678).'; return; }
       if ((!selTrabajo && !selOtro) || !selYmd || !selSlot) { errorEl.textContent = 'Elige servicio, día y hora.'; return; }
       const otroTexto = document.getElementById('r-otro').value.trim();
       if (selOtro && otroTexto.length < 3) {
@@ -366,7 +383,7 @@
       // Día y hora viajan por separado: el servidor los interpreta en hora de Chile
       // (no depende de la zona horaria del celular del cliente).
       const params = {
-        p_nombre: nombre, p_telefono: tel,
+        p_nombre: nombre, p_telefono: tel || null,
         p_patente: usaVehiculoNuevo ? (patente || null) : null,
         p_fecha: selYmd, p_hora: selSlot, p_trabajo_id: selTrabajo ? selTrabajo.id : null,
       };
