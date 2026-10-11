@@ -71,15 +71,38 @@
       <!-- Paso 3: datos -->
       <div class="paso" id="p-datos" hidden>
         <h3>3. Tus datos</h3>
-        <div class="form-row">
-          <div class="form-group"><label for="r-nombre">Nombre *</label><input type="text" id="r-nombre" /></div>
-          <div class="form-group"><label for="r-tel">Teléfono / WhatsApp *</label><input type="tel" id="r-tel" placeholder="+56 9 1234 5678" /></div>
+        <div class="form-group" id="g-rut">
+          <label for="r-rut">RUT *</label>
+          <input type="text" id="r-rut" placeholder="12.345.678-9" maxlength="12" autocomplete="off" />
+          <p class="reconocer-estado" id="r-rut-estado">Escríbelo con o sin puntos: te reconocemos si ya eres cliente.</p>
         </div>
-        <div class="form-row">
-          <div class="form-group"><label for="r-patente">Patente</label><input type="text" id="r-patente" style="text-transform:uppercase;" /></div>
+
+        <!-- Cliente reconocido: saludo y elección de vehículo -->
+        <div id="r-reconocido" hidden>
+          <div class="cliente-ficha">
+            <div class="ficha-nombre" id="r-saludo"></div>
+            <div class="ficha-vehiculos" id="r-vehiculos"></div>
+          </div>
         </div>
-        <div class="form-group"><label for="r-notas">Comentario (opcional)</label><input type="text" id="r-notas" /></div>
-        <button type="button" id="reservar-btn">Confirmar reserva</button>
+
+        <!-- Datos personales (cliente nuevo) y teléfono de contacto -->
+        <div class="form-row">
+          <div class="form-group" id="g-nombre" hidden><label for="r-nombre">Nombre *</label><input type="text" id="r-nombre" autocomplete="name" /></div>
+          <div class="form-group" id="g-tel" hidden><label for="r-tel">Teléfono / WhatsApp *</label><input type="tel" id="r-tel" placeholder="+56 9 1234 5678" autocomplete="tel" /></div>
+        </div>
+
+        <!-- Vehículo (cliente nuevo, u «otro vehículo» de un cliente conocido) -->
+        <div id="g-vehiculo" class="vehiculo-nuevo-bloque" hidden>
+          <div class="form-row">
+            <div class="form-group"><label for="r-patente">Patente</label><input type="text" id="r-patente" placeholder="ABCD12" maxlength="7" autocomplete="off" style="text-transform:uppercase;" /></div>
+            <div class="form-group"><label for="r-marca">Marca</label><input type="text" id="r-marca" /></div>
+            <div class="form-group"><label for="r-modelo">Modelo</label><input type="text" id="r-modelo" /></div>
+            <div class="form-group"><label for="r-anio">Año</label><input type="number" id="r-anio" min="1950" max="2100" /></div>
+          </div>
+        </div>
+
+        <div class="form-group" id="g-notas" hidden><label for="r-notas">Comentario (opcional)</label><input type="text" id="r-notas" /></div>
+        <button type="button" id="reservar-btn" hidden>Confirmar reserva</button>
         <p class="error-message" id="error"></p>
       </div>
     </div>
@@ -210,17 +233,131 @@
     document.getElementById('sem-prev').addEventListener('click', () => cambiarSemana(-7));
     document.getElementById('sem-next').addEventListener('click', () => cambiarSemana(7));
 
+    // ---------- Reconocimiento por RUT ----------
+    // Si ya es cliente: saludo por su primer nombre y elección de vehículo. Si no: nombre, teléfono y
+    // datos del vehículo. Sin la función del servidor (falta v44) se usa el formulario de antes.
+    let estadoRut = 'vacio';       // vacio | incompleto | invalido | reconocido | nuevo | clasico
+    let reconocido = null;         // { nombre, vehiculos: [{ id, patente, marca, modelo, anio }] }
+    let vehiculoElegido = null;    // id de un vehículo del cliente, '__nuevo__' o null
+    let rutTimer = null, rutSeq = 0;
+
+    const setEstadoRut = (texto, clase) => {
+      const el = document.getElementById('r-rut-estado');
+      el.textContent = texto;
+      el.className = 'reconocer-estado' + (clase ? ` ${clase}` : '');
+    };
+
+    function aplicarVistaDatos() {
+      const mostrar = (id, si) => { document.getElementById(id).hidden = !si; };
+      const reco = estadoRut === 'reconocido';
+      const nuevo = estadoRut === 'nuevo';
+      const clasico = estadoRut === 'clasico';
+      mostrar('r-reconocido', reco);
+      mostrar('g-nombre', nuevo || clasico);
+      mostrar('g-tel', reco || nuevo || clasico);
+      mostrar('g-vehiculo', nuevo || clasico || (reco && vehiculoElegido === '__nuevo__'));
+      mostrar('g-notas', reco || nuevo || clasico);
+      mostrar('reservar-btn', reco || nuevo || clasico);
+      document.getElementById('g-rut').hidden = clasico;
+      if (reco) renderVehiculosReconocido();
+    }
+
+    function renderVehiculosReconocido() {
+      const vehs = (reconocido && reconocido.vehiculos) || [];
+      document.getElementById('r-saludo').textContent = `Hola, ${reconocido.nombre} 👋`;
+      const encabezado = vehs.length === 0 ? 'Aún no tenemos un vehículo tuyo registrado: cuéntanos cuál traes.'
+        : vehs.length === 1 ? '¿Vienes con este vehículo?' : 'Elige el vehículo que traes:';
+      document.getElementById('r-vehiculos').innerHTML = `
+        <div style="font-size:0.85rem; color:var(--color-text-muted); margin-bottom:0.25rem;">${encabezado}</div>
+        ${vehs.map(v => `
+          <label class="ficha-vehiculo${vehiculoElegido === v.id ? ' elegido' : ''}">
+            <input type="radio" name="r-veh" value="${htmlSeguro(v.id)}" ${vehiculoElegido === v.id ? 'checked' : ''} />
+            <span class="veh-patente">${htmlSeguro(v.patente)}</span>
+            <span class="veh-detalle">${htmlSeguro([v.marca, v.modelo, v.anio].filter(Boolean).join(' '))}</span>
+          </label>`).join('')}
+        <label class="ficha-vehiculo${vehiculoElegido === '__nuevo__' ? ' elegido' : ''}">
+          <input type="radio" name="r-veh" value="__nuevo__" ${vehiculoElegido === '__nuevo__' ? 'checked' : ''} />
+          <span class="veh-detalle">➕ Otro vehículo</span>
+        </label>`;
+    }
+
+    document.getElementById('r-vehiculos').addEventListener('change', (e) => {
+      if (!e.target.matches('input[name="r-veh"]')) return;
+      vehiculoElegido = e.target.value;
+      aplicarVistaDatos();
+      if (vehiculoElegido === '__nuevo__') document.getElementById('r-patente').focus();
+    });
+
+    async function evaluarRut() {
+      const limpio = rutLimpio(document.getElementById('r-rut').value);
+      const seq = ++rutSeq;
+      reconocido = null; vehiculoElegido = null;
+      if (!limpio) { estadoRut = 'vacio'; setEstadoRut('Escríbelo con o sin puntos: te reconocemos si ya eres cliente.'); aplicarVistaDatos(); return; }
+      if (limpio.length < 7) { estadoRut = 'incompleto'; setEstadoRut('Sigue escribiendo tu RUT…'); aplicarVistaDatos(); return; }
+      if (!rutValido(limpio)) {
+        estadoRut = 'invalido';
+        setEstadoRut(limpio.length >= 8 ? '⚠ El RUT no es válido: revisa el dígito verificador.' : 'Sigue escribiendo tu RUT…', limpio.length >= 8 ? 'aviso' : '');
+        aplicarVistaDatos();
+        return;
+      }
+      setEstadoRut('Buscando…');
+      const { data, error } = await supabaseClient.rpc('reservar_reconocer', { p_rut: formatearRut(limpio) });
+      if (seq !== rutSeq) return;   // mientras tanto cambió el RUT
+      if (error || !data) {
+        // El servidor aún no tiene esta función (v44) o no respondió: se reserva como antes
+        estadoRut = 'clasico';
+        setEstadoRut('');
+        aplicarVistaDatos();
+        return;
+      }
+      if (data.encontrado) {
+        estadoRut = 'reconocido';
+        reconocido = { nombre: data.nombre || 'cliente', vehiculos: Array.isArray(data.vehiculos) ? data.vehiculos : [] };
+        if (reconocido.vehiculos.length === 1) vehiculoElegido = reconocido.vehiculos[0].id;
+        else if (reconocido.vehiculos.length === 0) vehiculoElegido = '__nuevo__';
+        setEstadoRut('✅ Te reconocimos como cliente.', 'ok');
+      } else {
+        estadoRut = 'nuevo';
+        setEstadoRut(data.limite
+          ? 'Hiciste muchas consultas seguidas. Completa tus datos abajo y reserva igual.'
+          : 'Aún no estás en nuestros registros: completa tus datos para reservar.', data.limite ? 'aviso' : '');
+      }
+      aplicarVistaDatos();
+    }
+
+    document.getElementById('r-rut').addEventListener('input', () => {
+      clearTimeout(rutTimer);
+      rutTimer = setTimeout(evaluarRut, 450);   // el formato del RUT lo aplica layout.js al escribir
+    });
+    document.getElementById('r-patente').addEventListener('input', (e) => { e.target.value = normalizarPatente(e.target.value); });
+
     document.getElementById('reservar-btn').addEventListener('click', async () => {
       const errorEl = document.getElementById('error');
       errorEl.textContent = '';
-      const nombre = document.getElementById('r-nombre').value.trim();
+      const reco = estadoRut === 'reconocido';
+      const clasico = estadoRut === 'clasico';
+      if (!reco && estadoRut !== 'nuevo' && !clasico) { errorEl.textContent = 'Ingresa tu RUT.'; return; }
+      const nombre = reco ? reconocido.nombre : document.getElementById('r-nombre').value.trim();
       const tel = document.getElementById('r-tel').value.trim();
-      if (!nombre || !tel) { errorEl.textContent = 'Completa nombre y teléfono.'; return; }
+      if (!nombre || !tel) { errorEl.textContent = reco ? 'Completa tu teléfono.' : 'Completa nombre y teléfono.'; return; }
+      if (!telefonoValidoCL(tel)) { errorEl.textContent = 'Revisa tu teléfono (ej. +56 9 1234 5678).'; return; }
       if ((!selTrabajo && !selOtro) || !selYmd || !selSlot) { errorEl.textContent = 'Elige servicio, día y hora.'; return; }
       const otroTexto = document.getElementById('r-otro').value.trim();
       if (selOtro && otroTexto.length < 3) {
         errorEl.textContent = 'Cuéntanos qué necesitas en el recuadro de «Otro».';
         document.getElementById('r-otro').focus();
+        return;
+      }
+      const patente = normalizarPatente(document.getElementById('r-patente').value);
+      const usaVehiculoNuevo = !reco || vehiculoElegido === '__nuevo__';
+      if (usaVehiculoNuevo && patente && !patenteValida(patente)) {
+        errorEl.textContent = 'La patente no tiene un formato válido (ej. ABCD12 o AB1234).';
+        document.getElementById('r-patente').focus();
+        return;
+      }
+      if (reco && vehiculoElegido === '__nuevo__' && !patente) {
+        errorEl.textContent = 'Ingresa la patente del vehículo que traes.';
+        document.getElementById('r-patente').focus();
         return;
       }
 
@@ -230,14 +367,29 @@
       // (no depende de la zona horaria del celular del cliente).
       const params = {
         p_nombre: nombre, p_telefono: tel,
-        p_patente: document.getElementById('r-patente').value.trim() || null,
+        p_patente: usaVehiculoNuevo ? (patente || null) : null,
         p_fecha: selYmd, p_hora: selSlot, p_trabajo_id: selTrabajo ? selTrabajo.id : null,
       };
       const notas = document.getElementById('r-notas').value.trim() || null;
-      let { data, error } = await supabaseClient.rpc('reservar_cita_v3', { ...params, p_servicio_otro: selOtro ? otroTexto : null, p_notas: notas });
-      // Si el servidor aún no tiene la versión con «Otro» (falta ejecutar v35), un servicio del listado se reserva igual
-      if (error && !selOtro && (error.code === 'PGRST202' || /reservar_cita_v3/.test(error.message || ''))) {
-        ({ data, error } = await supabaseClient.rpc('reservar_cita_v2', { ...params, p_notas: notas }));
+      const anio = Number(document.getElementById('r-anio').value) || null;
+      let data = null, error = null;
+      if (!clasico) {
+        ({ data, error } = await supabaseClient.rpc('reservar_cita_v4', {
+          ...params, p_servicio_otro: selOtro ? otroTexto : null, p_notas: notas,
+          p_rut: formatearRut(document.getElementById('r-rut').value),
+          p_vehiculo_id: reco && vehiculoElegido && vehiculoElegido !== '__nuevo__' ? vehiculoElegido : null,
+          p_marca: usaVehiculoNuevo ? (document.getElementById('r-marca').value.trim() || null) : null,
+          p_modelo: usaVehiculoNuevo ? (document.getElementById('r-modelo').value.trim() || null) : null,
+          p_anio: usaVehiculoNuevo ? anio : null,
+        }));
+      }
+      // Sin la versión con RUT (falta v44), se reserva como antes
+      if (clasico || (error && (error.code === 'PGRST202' || /reservar_cita_v4/.test(error.message || '')))) {
+        ({ data, error } = await supabaseClient.rpc('reservar_cita_v3', { ...params, p_servicio_otro: selOtro ? otroTexto : null, p_notas: notas }));
+        // Si el servidor aún no tiene la versión con «Otro» (falta ejecutar v35), un servicio del listado se reserva igual
+        if (error && !selOtro && (error.code === 'PGRST202' || /reservar_cita_v3/.test(error.message || ''))) {
+          ({ data, error } = await supabaseClient.rpc('reservar_cita_v2', { ...params, p_notas: notas }));
+        }
       }
       btn.disabled = false; btn.textContent = 'Confirmar reserva';
       if (error || !data || data.ok === false) {
@@ -245,11 +397,12 @@
         if (data && data.error && /disponible|tomado/.test(data.error)) { selYmd = null; selSlot = null; cargarSemana(); }
         return;
       }
+      const nombreMostrado = reco ? reconocido.nombre : nombre;
       document.getElementById('confirm-detalle').innerHTML = `
         <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>Servicio</span><strong style="text-align:right;">${htmlSeguro(selOtro ? `Otro: ${otroTexto}` : selTrabajo.nombre)}</strong></div>
         <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>Día</span><strong>${textoDia(selYmd, { weekday: 'long', day: 'numeric', month: 'long' })}</strong></div>
         <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>Hora</span><strong>${selSlot} hrs</strong></div>
-        <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>A nombre de</span><strong>${htmlSeguro(nombre)}</strong></div>`;
+        <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>A nombre de</span><strong>${htmlSeguro(nombreMostrado)}</strong></div>`;
       document.getElementById('wizard').style.display = 'none';
       document.getElementById('confirmacion').style.display = 'block';
       document.getElementById('confirmacion').scrollIntoView({ behavior: 'smooth' });
