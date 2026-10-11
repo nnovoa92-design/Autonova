@@ -6,3 +6,6 @@
 planillas/*.xlsx
 planillas/*.sql
 planillas/*.json
+
+# Documentos de traspaso a otros sistemas (no van al repo)
+portar-a-otro-sistema/
