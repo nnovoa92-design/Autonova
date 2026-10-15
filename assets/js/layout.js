@@ -562,6 +562,32 @@ document.addEventListener('focusin', (e) => {
   if (e.target.value) aplicarFormatoChile(e.target, false);
 });
 
+// ---------- Fechas en hora de Chile ----------
+// new Date().toISOString() entrega la fecha en UTC: después de las 21:00 en Chile ya es «mañana».
+// Estas funciones usan siempre la hora de Chile, estés donde estés.
+function ymdChile(fecha) {
+  return (fecha ? new Date(fecha) : new Date()).toLocaleDateString('en-CA', { timeZone: 'America/Santiago' });
+}
+function hoyChile() { return ymdChile(); }
+// Suma (o resta) días a una fecha YYYY-MM-DD sin depender de la zona horaria.
+function sumarDiasYmd(ymd, n) {
+  const d = new Date(`${ymd}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+// Instantes UTC (ISO) de las 00:00 y las 23:59:59 de un día en Chile, para filtrar por fecha_hora.
+function limitesDiaChile(ymd) {
+  const ref = new Date(`${ymd}T12:00:00Z`);
+  const p = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Santiago', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(ref).reduce((o, x) => { o[x.type] = x.value; return o; }, {});
+  const comoUtc = Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day), Number(p.hour) % 24, Number(p.minute), Number(p.second));
+  const offsetMs = ref.getTime() - comoUtc;                 // 3 h (verano) o 4 h (invierno)
+  const ini = new Date(Date.parse(`${ymd}T00:00:00Z`) + offsetMs);
+  return { desde: ini.toISOString(), hasta: new Date(ini.getTime() + 86400000 - 1000).toISOString() };
+}
+
 // ---------- Horas: decimales y minutos ----------
 // Toda casilla de horas (de trabajo, diagnóstico, registro de horas, catálogo…) acepta cualquier
 // decimal (0,5 · 0,33 · 1,25) y trae al lado un campo «o minutos»: se escribe 30 y la casilla de

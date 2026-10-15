@@ -260,7 +260,7 @@
     // ---------- Formulario ----------
     function limpiarForm() {
       document.getElementById('mov-id').value = '';
-      document.getElementById('fecha').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('fecha').value = hoyChile();
       ['patente','vehiculo','cliente','telefono','descripcion','num_doc'].forEach(id => document.getElementById(id).value = '');
       ['horas','mo_neta','costo_repuesto','precio_repuesto'].forEach(id => document.getElementById(id).value = '0');
       document.getElementById('quien_trabajo').value = 'ambos';

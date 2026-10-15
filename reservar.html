@@ -114,6 +114,11 @@
           </div>
         </div>
 
+        <!-- Campo trampa: las personas no lo ven; los programas automáticos suelen completarlo -->
+        <div aria-hidden="true" style="position:absolute; left:-9999px; top:auto; width:1px; height:1px; overflow:hidden;">
+          <label for="r-trampa">No completar este campo</label>
+          <input type="text" id="r-trampa" name="trampa_q7x" tabindex="-1" autocomplete="off" />
+        </div>
         <div class="form-group" id="g-notas" hidden><label for="r-notas">Comentario (opcional)</label><input type="text" id="r-notas" /></div>
         <button type="button" id="reservar-btn" hidden>Confirmar reserva</button>
         <p class="error-message" id="error"></p>
@@ -138,8 +143,7 @@
     let selTrabajo = null, selOtro = false, selYmd = null, selSlot = null;
     let semanaDesde = null, hoy = null, semanaCargada = false;
 
-    // Fecha de hoy en Chile (YYYY-MM-DD), sin depender de la zona horaria del dispositivo.
-    const hoyChile = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santiago' });
+    // Fecha de hoy en Chile (YYYY-MM-DD): hoyChile() viene de layout.js (no depende de la zona horaria del dispositivo).
     // Suma días a una fecha YYYY-MM-DD (en UTC, para que el horario de verano no la corra).
     function sumarDias(ymd, n) {
       const d = new Date(`${ymd}T00:00:00Z`);
@@ -365,6 +369,12 @@
     document.getElementById('reservar-btn').addEventListener('click', async () => {
       const errorEl = document.getElementById('error');
       errorEl.textContent = '';
+      // Campo trampa lleno = programa automático: se muestra la confirmación pero no se guarda nada
+      if (document.getElementById('r-trampa').value.trim()) {
+        document.getElementById('wizard').style.display = 'none';
+        document.getElementById('confirmacion').style.display = 'block';
+        return;
+      }
       const reco = estadoRut === 'reconocido';
       const clasico = estadoRut === 'clasico';
       if (!reco && estadoRut !== 'nuevo' && !clasico) { errorEl.textContent = 'Ingresa tu RUT.'; return; }

@@ -50,6 +50,9 @@ Extras integrados:
 > número, o una cotización si se conoce su link único.
 
 
+> **Antes de publicar**: pega `tools/verificar-paginas.js` en la consola del navegador con el sitio abierto; debe devolver
+> `sintaxis` y `choques` vacíos (detecta errores de sintaxis y nombres repetidos entre una página y `layout.js`).
+
 > **Horas**: toda casilla de horas acepta decimales (0,5 · 0,33 · 1,25) y trae al lado «o minutos»: se escribe `30` y queda `0,5 h`
 > (20 min = 0,33 h; 45 min = 0,75 h). Se detectan por id (`…horas…`) o `data-horas` en `assets/js/layout.js`.
 

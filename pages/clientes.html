@@ -119,21 +119,30 @@
       tbody.innerHTML = clientes.map(c => {
         const vehiculos = vehiculosPorCliente[c.id] || [];
         const vehiculosStr = vehiculos.length
-          ? vehiculos.map(v => `<span class="badge">${v.patente}</span>`).join(' ')
+          ? vehiculos.map(v => `<span class="badge">${htmlSeguro(v.patente)}</span>`).join(' ')
           : '–';
         return `
         <tr>
-          <td>${c.nombre}</td>
-          <td>${c.rut ?? '–'}</td>
-          <td>${c.telefono ?? '–'}</td>
-          <td>${c.email ?? '–'}</td>
+          <td>${htmlSeguro(c.nombre)}${c.por_revisar ? ' <span class="badge badge-yellow" title="Se creó desde la reserva web: revisa que sus datos estén bien">🌐 Por revisar</span>' : ''}</td>
+          <td>${htmlSeguro(c.rut ?? '–')}</td>
+          <td>${htmlSeguro(c.telefono ?? '–')}</td>
+          <td>${htmlSeguro(c.email ?? '–')}</td>
           <td>${vehiculosStr}</td>
           <td class="table-actions">
+            ${c.por_revisar ? `<button type="button" class="btn-secondary revisado-btn" data-id="${c.id}">✓ Revisado</button>` : ''}
             <button type="button" class="btn-secondary edit-btn" data-id="${c.id}">Editar</button>
             <button type="button" class="btn-danger delete-btn" data-id="${c.id}">Desactivar</button>
           </td>
         </tr>`;
       }).join('');
+
+      tbody.querySelectorAll('.revisado-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const { error } = await supabaseClient.from('clientes').update({ por_revisar: false }).eq('id', btn.dataset.id);
+          if (error) { alert('No se pudo marcar como revisado: ' + error.message); return; }
+          await loadClientes();
+        });
+      });
 
       tbody.querySelectorAll('.edit-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -199,6 +208,9 @@
         direccion: document.getElementById('direccion').value || null,
         notas: document.getElementById('notas').value || null,
       };
+      // Al guardar un cliente que venía de la reserva web, queda como revisado
+      const original = id ? clientesCache.find(x => x.id === id) : null;
+      if (original && original.por_revisar) payload.por_revisar = false;
 
       let error;
       if (id) {

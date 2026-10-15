@@ -414,7 +414,7 @@
         document.getElementById('trabajo_id').value = cita.trabajo_id ?? '';
         document.getElementById('personal_id').value = cita.personal_id ?? '';
         const d = new Date(cita.fecha_hora);
-        document.getElementById('fecha').value = d.toISOString().slice(0, 10);
+        document.getElementById('fecha').value = ymdChile(d);
         document.getElementById('hora').value = fmtHora(cita.fecha_hora);
         document.getElementById('duracion').value = cita.duracion_min ?? 60;
         document.getElementById('modalidad').value = cita.modalidad || 'taller';
@@ -428,7 +428,7 @@
         document.getElementById('cotizacion_id').innerHTML = '<option value="">Sin cotización</option>';
         document.getElementById('trabajo_id').value = '';
         document.getElementById('personal_id').value = '';
-        document.getElementById('fecha').value = document.getElementById('dia-actual').value || new Date().toISOString().slice(0, 10);
+        document.getElementById('fecha').value = document.getElementById('dia-actual').value || hoyChile();
         document.getElementById('hora').value = '10:00';
         document.getElementById('duracion').value = String((tallerHorarios && tallerHorarios.slot_min) || 60);
         document.getElementById('modalidad').value = 'taller';
@@ -1305,13 +1305,12 @@
     // Citas de mañana pendientes de recordar al cliente por WhatsApp
     let mananaPendientes = [];
     async function cargarManana() {
-      const manana = new Date(new Date().toISOString().slice(0, 10) + 'T12:00:00');
-      manana.setDate(manana.getDate() + 1);
-      const dia = manana.toISOString().slice(0, 10);
+      const dia = sumarDiasYmd(hoyChile(), 1);
+      const limites = limitesDiaChile(dia);
       const { data } = await supabaseClient
         .from('citas')
         .select('*, clientes(nombre, telefono), vehiculos(patente), trabajos(nombre, horas_estimadas, precio_fijo)')
-        .gte('fecha_hora', `${dia}T00:00:00`).lte('fecha_hora', `${dia}T23:59:59`)
+        .gte('fecha_hora', limites.desde).lte('fecha_hora', limites.hasta)
         .in('estado', ['pendiente', 'confirmado'])
         .order('fecha_hora');
       mananaPendientes = data || [];

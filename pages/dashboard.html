@@ -338,13 +338,12 @@
       });
 
       // 3) Citas de agenda para mañana (mismo listado que en Agenda)
-      const mananaDate = new Date(hoy.toISOString().slice(0, 10) + 'T12:00:00');
-      mananaDate.setDate(mananaDate.getDate() + 1);
-      const diaManana = mananaDate.toISOString().slice(0, 10);
+      const diaManana = sumarDiasYmd(hoyChile(), 1);
+      const limitesManana = limitesDiaChile(diaManana);
       const { data: citasManana } = await supabaseClient
         .from('citas')
         .select('cliente_id, vehiculo_id, cotizacion_id, fecha_hora, modalidad, direccion, descripcion, telefono_contacto, nombre_contacto, clientes(nombre, telefono, email), vehiculos(patente, marca, modelo), trabajos(nombre, horas_estimadas, precio_fijo)')
-        .gte('fecha_hora', `${diaManana}T00:00:00`).lte('fecha_hora', `${diaManana}T23:59:59`)
+        .gte('fecha_hora', limitesManana.desde).lte('fecha_hora', limitesManana.hasta)
         .in('estado', ['pendiente', 'confirmado'])
         .order('fecha_hora');
       for (const c of (citasManana || [])) {

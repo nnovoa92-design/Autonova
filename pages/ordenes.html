@@ -1936,7 +1936,7 @@
       if (meses === 0) {
         const { error } = await supabaseClient.from('recordatorios').insert({
           vehiculo_id: o.vehiculo_id, cliente_id: o.cliente_id, tipo: 'mantencion',
-          fecha_objetivo: new Date().toISOString().slice(0, 10),
+          fecha_objetivo: hoyChile(),
           detalle: detalleSinRecordatorio(o), enviado: true,
         });
         if (error) { mostrarEstadoMantencion(`Error: ${error.message}`, 'var(--color-danger)'); return; }
@@ -1946,7 +1946,7 @@
 
       const fecha = new Date();
       fecha.setMonth(fecha.getMonth() + meses);
-      const fechaObjetivo = fecha.toISOString().slice(0, 10);
+      const fechaObjetivo = ymdChile(fecha);
       const { error } = await supabaseClient.from('recordatorios').insert({
         vehiculo_id: o.vehiculo_id,
         cliente_id: o.cliente_id,
