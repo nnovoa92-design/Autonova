@@ -733,7 +733,8 @@
     });
     enlazarFormato('nv-patente', normalizarPatente, () => {
       clearTimeout(patenteTimer);
-      patenteTimer = setTimeout(resolverPatente, 350);
+      // 6 caracteres = patente completa; con 5 (motos) se espera más para no gastar consultas del plan mientras escribe
+      patenteTimer = setTimeout(resolverPatente, normalizarPatente(document.getElementById('nv-patente').value).length >= 6 ? 350 : 1800);
     });
 
     document.getElementById('cliente-ficha').addEventListener('change', (e) => {

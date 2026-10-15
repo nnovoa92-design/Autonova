@@ -629,6 +629,16 @@ function tituloVehiculo(texto) {
   }).join(' ');
 }
 
+
+// Fecha de vencimiento de la clave de patentes (viene dentro de la propia clave). null si no se puede leer.
+function claveVence(clave) {
+  try {
+    const partes = String(clave || '').trim().split('.');
+    if (partes.length < 2) return null;
+    const json = JSON.parse(atob(partes[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return json && json.exp ? new Date(json.exp * 1000) : null;
+  } catch (e) { return null; }
+}
 const TIPOS_VEHICULO = { 'AUTOMOVIL': 'Automóvil', 'CAMION': 'Camión', 'FURGON': 'Furgón', 'MINIBUS': 'Minibús', 'TRACTOCAMION': 'Tractocamión' };
 
 // Datos públicos del vehículo por patente (boostr.cl). La clave vive en Configuración
@@ -639,6 +649,12 @@ async function consultarPatente(patente) {
   if (!patenteValida(p)) return { estado: 'invalida' };
   const cfg = await getTallerConfig();
   const clave = cfg && cfg.api_patentes_key;
+  // Cada consulta gasta cupo del plan: lo ya consultado en esta pestaña no se vuelve a pedir
+  const llaveCache = 'patente:' + p;
+  try {
+    const guardado = JSON.parse(sessionStorage.getItem(llaveCache) || 'null');
+    if (guardado && guardado.estado) return guardado;
+  } catch (e) { /* sin almacenamiento: se consulta igual */ }
   if (!clave) return { estado: 'sin_clave' };
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 9000);
@@ -651,7 +667,7 @@ async function consultarPatente(patente) {
     try { j = await r.json(); } catch (e) { j = null; }
     if (r.ok && j && j.status === 'success' && j.data) {
       const d = j.data;
-      return {
+      const resultado = {
         estado: 'ok',
         datos: {
           marca: tituloVehiculo(d.make),
@@ -661,10 +677,17 @@ async function consultarPatente(patente) {
           numero_motor: d.engine ? String(d.engine).trim() : '',
         },
       };
+      try { sessionStorage.setItem(llaveCache, JSON.stringify(resultado)); } catch (e) { /* ok */ }
+      return resultado;
     }
     const codigo = j && j.code;
-    if (codigo === 'V-02' || r.status === 404) return { estado: 'no_encontrado' };
+    if (codigo === 'V-02' || r.status === 404) {
+      const sin = { estado: 'no_encontrado' };
+      try { sessionStorage.setItem(llaveCache, JSON.stringify(sin)); } catch (e) { /* ok */ }
+      return sin;
+    }
     if (codigo === 'V-04') return { estado: 'invalida' };
+    if (r.status === 429 || /LIMIT|QUOTA|RATE|EXCEED/i.test(String(codigo || '') + ' ' + String((j && j.message) || ''))) return { estado: 'limite' };
     if (r.status === 401 || r.status === 403) return { estado: 'clave_invalida' };
     if (r.status === 429) return { estado: 'limite' };
     return { estado: 'error', mensaje: (j && j.message) || `HTTP ${r.status}` };

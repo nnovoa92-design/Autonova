@@ -197,6 +197,7 @@
             <div class="form-group">
               <label for="api_patentes_key">Clave de consulta de patentes</label>
               <input type="password" id="api_patentes_key" autocomplete="off" placeholder="Pega aquí la clave" />
+              <small id="patentes-vence" style="display:block; margin-top:0.25rem; color:var(--color-text-muted);"></small>
             </div>
           </div>
           <button type="button" id="guardar-patentes-btn">Guardar clave</button>
@@ -618,6 +619,21 @@
       renderHorarioSemana(data);
     }
 
+    // Aviso de vencimiento de la clave (la fecha viene dentro de la propia clave)
+    function mostrarVenceClave() {
+      const el = document.getElementById('patentes-vence');
+      const clave = document.getElementById('api_patentes_key').value.trim();
+      if (!clave) { el.textContent = ''; el.style.color = 'var(--color-text-muted)'; return; }
+      const f = claveVence(clave);
+      if (!f) { el.textContent = ''; return; }
+      const dias = Math.ceil((f.getTime() - Date.now()) / 86400000);
+      const fecha = f.toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' });
+      if (dias < 0) { el.textContent = `Esta clave venció el ${fecha}: pide una nueva o contrata un plan en boostr.cl.`; el.style.color = 'var(--color-danger)'; }
+      else if (dias <= 7) { el.textContent = `Esta clave vence el ${fecha} (en ${dias} día${dias === 1 ? '' : 's'}).`; el.style.color = '#92600a'; }
+      else { el.textContent = `Esta clave vence el ${fecha}.`; el.style.color = 'var(--color-text-muted)'; }
+    }
+    document.getElementById('api_patentes_key').addEventListener('input', mostrarVenceClave);
+
     // ---------- Clave de consulta de patentes (independiente del formulario principal) ----------
     document.getElementById('guardar-patentes-btn').addEventListener('click', async () => {
       const errorEl = document.getElementById('patentes-error');
@@ -762,7 +778,7 @@
       actualizarSuma();
 
       document.getElementById('slot_min').value = String(data.slot_min || 60);
-      if (data.api_patentes_key) document.getElementById('api_patentes_key').value = data.api_patentes_key;
+      if (data.api_patentes_key) { document.getElementById('api_patentes_key').value = data.api_patentes_key; mostrarVenceClave(); }
       cargarHorario().catch(e => console.error('Error en cargarHorario:', e));
       cargarBloqueos().catch(e => console.error('Error en cargarBloqueos:', e));
 
