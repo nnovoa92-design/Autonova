@@ -187,6 +187,7 @@
           <table>
             <thead>
               <tr>
+                <th style="width:44px;">N°</th>
                 <th>Tipo</th>
                 <th>Descripción</th>
                 <th style="width:110px;">Cant./Horas</th>
@@ -196,7 +197,7 @@
               </tr>
             </thead>
             <tbody id="items-body">
-              <tr><td colspan="6">Sin trabajos recomendados todavía.</td></tr>
+              <tr><td colspan="7">Sin trabajos recomendados todavía.</td></tr>
             </tbody>
           </table>
           <h3 style="margin-top:1.5rem;">6. Resumen de valores</h3>
@@ -484,6 +485,7 @@
         : pruebasActuales.map((h, idx) => `
         <div class="h-card">
           <div style="display:flex; align-items:center; gap:0.5rem;">
+            <span class="fila-num" title="Prueba N° ${idx + 1}">${idx + 1}</span>
             <input type="text" class="h-item" list="pruebas-sugeridas" data-idx="${idx}" value="${esc(h.item)}" placeholder="Nombre de la prueba (ej: Prueba de compresión)" style="flex:1; min-width:0; font-weight:600;" />
             <button type="button" class="btn-danger h-quitar" data-idx="${idx}" title="Quitar prueba" style="padding:0.3rem 0.6rem; flex-shrink:0;">✕</button>
           </div>
@@ -500,6 +502,8 @@
             </label>
           </div>
         </div>`).join('');
+      // Cada resultado: el primer Enter numera (1., 2., 3.…); Enter sobre un ítem vacío termina la lista
+      document.querySelectorAll('#pruebas-body .h-nota').forEach(t => setupAutoList(t, { iniciar: true }));
     }
 
     // Un solo juego de listeners (delegación): escribir en un campo no vuelve a pintar la lista.
@@ -836,12 +840,13 @@
       const bloqueado = lineasBloqueadas();
       const tbody = document.getElementById('items-body');
       if (!itemsActuales.length) {
-        tbody.innerHTML = '<tr><td colspan="6">Sin trabajos recomendados todavía.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7">Sin trabajos recomendados todavía.</td></tr>';
         renderTotales();
         return;
       }
       tbody.innerHTML = itemsActuales.map((i, idx) => bloqueado ? `
         <tr>
+          <td class="fila-num-cell">${idx + 1}</td>
           <td>${badgeItem(i.tipo_otro && i.tipo === 'otro' ? i.tipo_otro : i.tipo)}</td>
           <td>${esc(i.descripcion)}</td>
           <td>${Number(i.cantidad).toLocaleString('es-CL')}</td>
@@ -850,6 +855,7 @@
           <td></td>
         </tr>` : `
         <tr>
+          <td class="fila-num-cell">${idx + 1}</td>
           <td>${badgeItem(i.tipo_otro && i.tipo === 'otro' ? i.tipo_otro : i.tipo)}</td>
           <td><input type="text" class="cell-desc" data-idx="${idx}" value="${esc(i.descripcion)}" style="min-width:150px;" /></td>
           <td><input type="number" class="cell-cant" data-idx="${idx}" value="${i.cantidad}" min="0" step="0.25" /></td>
@@ -1216,11 +1222,12 @@
       const veh = d.vehiculos;
       const pruebas = (d.hallazgos || []).filter(h => h.item);
 
-      const filasPruebas = pruebas.map(h => {
+      const filasPruebas = pruebas.map((h, ip) => {
+        const nPrueba = ip + 1;
         const fotos = (h.fotos || []).length
           ? `<div style="display:flex; flex-wrap:wrap; gap:0.3rem; margin-top:0.3rem;">${h.fotos.map(u => `<img src="${u}" style="width:90px; height:68px; object-fit:cover; border:1px solid #ccc; border-radius:3px;" />`).join('')}</div>` : '';
         return `<tr style="border-bottom:1px solid #ccc;">
-          <td style="padding:4px; vertical-align:top; width:32%;"><strong>${esc(h.item)}</strong></td>
+          <td style="padding:4px; vertical-align:top; width:32%;"><strong>${nPrueba}. ${esc(h.item)}</strong></td>
           <td style="padding:4px; vertical-align:top;">${escMulti(resultadoPrueba(h))}${fotos}</td>
         </tr>`;
       }).join('');
@@ -1248,8 +1255,8 @@
           </p>
         </div>` : '';
 
-      const filasTrabajos = items.map(i => `<tr style="border-bottom:1px solid #ccc;">
-          <td style="padding:4px;">${esc(i.descripcion)}</td>
+      const filasTrabajos = items.map((i, it) => `<tr style="border-bottom:1px solid #ccc;">
+          <td style="padding:4px;">${it + 1}. ${esc(i.descripcion)}</td>
           <td style="text-align:right; padding:4px;">${Number(i.cantidad).toLocaleString('es-CL')}</td>
           <td style="text-align:right; padding:4px;">${fmtMoneda(i.precio_unitario)}</td>
           <td style="text-align:right; padding:4px;">${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td>
@@ -1658,6 +1665,9 @@
     document.getElementById('item-cantidad').addEventListener('input', actualizarPreviewTrabajo);
     document.getElementById('item-horas').addEventListener('input', actualizarPreviewTrabajo);
     document.getElementById('diag-horas').addEventListener('input', renderTotales);
+    // Autonumeración de renglones (1., 2., 3.…) en los cuadros de texto del diagnóstico
+    setupAutoList('motivo', { iniciar: true });
+    setupAutoList('conclusion', { iniciar: true });
     // Al salir del campo queda escrito lo que realmente se cobra (hasta 2 decimales)
     document.getElementById('diag-horas').addEventListener('change', () => {
       const el = document.getElementById('diag-horas');

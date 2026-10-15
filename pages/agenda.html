@@ -360,7 +360,7 @@
       const propios = vehiculosCache.filter(v => v.cliente_id === clienteId);
       document.getElementById('vehiculo_id').innerHTML =
         '<option value="">Sin vehículo</option>' +
-        propios.map(v => `<option value="${v.id}">${v.patente} · ${[v.marca, v.modelo].filter(Boolean).join(' ')}</option>`).join('');
+        propios.map(v => `<option value="${v.id}">${escapar(v.patente)} · ${escapar([v.marca, v.modelo].filter(Boolean).join(' '))}</option>`).join('');
     }
 
     // Valor NETO (sin IVA) de la cotización: es el que se le muestra al cliente.
@@ -983,11 +983,11 @@
       return `<div class="cita-card">
         <div class="cita-info">
           ${badgeEstado(c.estado, ESTADOS_CITA)}${online}
-          <strong>${nombreCliente(c)}</strong>
-          ${veh  ? `<span style="color:var(--color-text-muted);">· ${veh}</span>`        : ''}
-          ${trab ? `<span style="color:var(--color-text-muted);">· ${trab}</span>`       : ''}
-          ${mec  ? `<span style="color:var(--color-text-muted);">· ${mec.nombre}</span>` : ''}
-          ${c.telefono_contacto ? `<span style="color:var(--color-text-muted); font-size:0.82rem;">${c.telefono_contacto}</span>` : ''}
+          <strong>${escapar(nombreCliente(c))}</strong>
+          ${veh  ? `<span style="color:var(--color-text-muted);">· ${escapar(veh)}</span>`        : ''}
+          ${trab ? `<span style="color:var(--color-text-muted);">· ${escapar(trab)}</span>`       : ''}
+          ${mec  ? `<span style="color:var(--color-text-muted);">· ${escapar(mec.nombre)}</span>` : ''}
+          ${c.telefono_contacto ? `<span style="color:var(--color-text-muted); font-size:0.82rem;">${escapar(c.telefono_contacto)}</span>` : ''}
         </div>
         <div class="cita-actions">${accionesCita(c)}</div>
       </div>`;
@@ -1018,7 +1018,7 @@
       }
       const citasHtml = citas.map(renderCitaCard).join('');
       const continuaHtml = (continua || []).map(c =>
-        `<div class="cita-continua">↳ ${nombreCliente(c)} (ocupado hasta las ${fmtHoraFin(c)})</div>`).join('');
+        `<div class="cita-continua">↳ ${escapar(nombreCliente(c))} (ocupado hasta las ${fmtHoraFin(c)})</div>`).join('');
       return `<div class="horario-slot">
         <div class="slot-hora">${slot}</div>
         <div class="slot-content">
@@ -1284,9 +1284,9 @@
       document.getElementById('online-body').innerHTML = `<table><tbody>${onlinePendientes.map(c => `
         <tr>
           <td><strong>${fmtFecha(c.fecha_hora)} ${fmtHora(c.fecha_hora)}</strong></td>
-          <td>${nombreCliente(c)}${c.telefono_contacto ? ` · ${c.telefono_contacto}` : ''}</td>
-          <td>${c.trabajos ? c.trabajos.nombre : (c.descripcion || '–')}</td>
-          <td>${c.patente_contacto || (c.vehiculos ? c.vehiculos.patente : '–')}</td>
+          <td>${escapar(nombreCliente(c))}${c.telefono_contacto ? ` · ${escapar(c.telefono_contacto)}` : ''}</td>
+          <td>${escapar(c.trabajos ? c.trabajos.nombre : (c.descripcion || '–'))}</td>
+          <td>${escapar(c.patente_contacto || (c.vehiculos ? c.vehiculos.patente : '–'))}</td>
           <td class="table-actions">
             <button type="button" class="btn-secondary act" data-id="${c.id}" data-e="confirmado">Confirmar</button>
             <button type="button" class="btn-danger act" data-id="${c.id}" data-e="cancelado">Rechazar</button>
@@ -1321,8 +1321,8 @@
       document.getElementById('manana-body').innerHTML = `<table><tbody>${mananaPendientes.map(c => `
         <tr>
           <td><strong>${fmtHora(c.fecha_hora)}</strong></td>
-          <td>${nombreCliente(c)}${telefonoCita(c) ? ` · ${telefonoCita(c)}` : ' · sin teléfono'}</td>
-          <td>${servicioCita(c) || '–'}</td>
+          <td>${escapar(nombreCliente(c))}${telefonoCita(c) ? ` · ${escapar(telefonoCita(c))}` : ' · sin teléfono'}</td>
+          <td>${escapar(servicioCita(c) || '–')}</td>
           <td class="table-actions">
             <button type="button" class="btn-secondary recordar-wa" data-id="${c.id}" ${telefonoCita(c) ? '' : 'disabled'}>Recordar por WhatsApp</button>
           </td>

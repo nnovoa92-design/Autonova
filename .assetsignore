@@ -1,0 +1,10 @@
+# Archivos del repositorio que NO deben publicarse en el sitio web
+# (el sitio solo necesita las páginas, assets/ y el manifest).
+sql/
+tools/
+RESPALDO/
+README.md
+GUIA-CAMBIOS-MANUALES.md
+wrangler.jsonc
+.gitignore
+.assetsignore

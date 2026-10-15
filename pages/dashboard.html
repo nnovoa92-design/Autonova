@@ -285,7 +285,7 @@
       } else {
         cotBody.innerHTML = cots.map(c => `<tr>
           <td style="white-space:nowrap;">${fmtNumero('COT', c.numero)}</td>
-          <td>${c.clientes ? c.clientes.nombre : '–'}</td>
+          <td>${htmlSeguro(c.clientes ? c.clientes.nombre : '–')}</td>
           <td>${c.vehiculos ? `${c.vehiculos.patente} · ${c.vehiculos.marca} ${c.vehiculos.modelo}` : '–'}</td>
           <td style="white-space:nowrap;">${fmtFecha(c.fecha)}</td>
           <td style="white-space:nowrap;">${badgeEstado(c.estado, ESTADOS_COTIZACION)}</td>

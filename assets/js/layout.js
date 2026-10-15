@@ -717,7 +717,7 @@ function abrirEnlace(url) {
 // Auto-numeración en textareas: al presionar Enter en una línea que empieza con
 // "1. ", "a. ", "- ", "• " o "* ", la línea siguiente continúa la lista (2., b., -...).
 // Enter sobre un ítem vacío termina la lista. Acepta el elemento o su id.
-function setupAutoList(textareaOrId) {
+function setupAutoList(textareaOrId, opciones = {}) {
   const textarea = typeof textareaOrId === 'string' ? document.getElementById(textareaOrId) : textareaOrId;
   if (!textarea || textarea.dataset.autoList) return;
   textarea.dataset.autoList = '1';
@@ -728,7 +728,19 @@ function setupAutoList(textareaOrId) {
     const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
     const line = text.substring(lineStart, pos);
     const match = line.match(/^(\d+\.|[a-z]\.|[-•*])\s+/);
-    if (!match) return;
+    if (!match) {
+      // Modo «iniciar»: el primer Enter sobre una línea con texto la convierte en el ítem 1 y abre el 2.
+      // Si más arriba ya hay una lista (o se cerró con un ítem vacío) no se toca nada.
+      if (!opciones.iniciar || !line.trim()) return;
+      const antes = text.substring(0, lineStart);
+      if (antes.split('\n').some(l => /^(\d+\.|[a-z]\.|[-•*])\s+/.test(l))) return;
+      e.preventDefault();
+      const nueva = antes + '1. ' + line + '\n2. ';
+      textarea.value = nueva + text.substring(pos);
+      textarea.selectionStart = textarea.selectionEnd = nueva.length;
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      return;
+    }
     e.preventDefault();
     // Ítem vacío (solo el marcador): se quita y la lista termina
     if (!line.substring(match[0].length).trim()) {
