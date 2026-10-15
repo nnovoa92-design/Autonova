@@ -1012,6 +1012,7 @@ function iniciarCampanita() {
           <div class="campanita-item${n.leida ? '' : ' sin-leer'}" data-id="${n.id}">
             <div class="campanita-titulo">${htmlSeguro(n.titulo)}</div>
             ${n.detalle ? `<div class="campanita-detalle">${htmlSeguro(n.detalle)}</div>` : ''}
+            ${n.tipo === 'reserva_online' && n.ref_id && !n.leida ? '<div class="campanita-accion">✅ Confirmar agenda y dimensionar las horas →</div>' : ''}
             <div class="campanita-hora">${haceTiempo(n.creado_en)}</div>
           </div>`).join('') : '<p class="campanita-vacio">Sin novedades por ahora.</p>'}
       </div>
@@ -1072,6 +1073,13 @@ function iniciarCampanita() {
     if (!fila) return;
     const n = items.find(x => x.id === fila.dataset.id);
     if (!n) return;
+    // Reserva online pendiente: se abre para confirmarla (queda sin leer hasta que se confirme o rechace)
+    if (n.tipo === 'reserva_online' && n.ref_id && !n.leida) {
+      panel.hidden = true;
+      if (typeof window.abrirConfirmacionCita === 'function') { window.abrirConfirmacionCita(n.ref_id); return; }
+      window.location.href = `/pages/agenda.html?confirmar=${encodeURIComponent(n.ref_id)}`;
+      return;
+    }
     if (!n.leida) await supabaseClient.from('notificaciones').update({ leida: true }).eq('id', n.id);
     if (n.url) window.location.href = `/pages/${n.url}`;
     else await cargar();

@@ -252,6 +252,11 @@
     <div class="modal" id="bloqueo-modal"></div>
   </div>
 
+  <!-- Modal para confirmar una reserva: duración del trabajo y choques -->
+  <div class="modal-backdrop" id="confirmar-backdrop">
+    <div class="modal" id="confirmar-modal" style="max-width:560px;"></div>
+  </div>
+
   <script src="../assets/vendor/supabase.min.js"></script>
   <script src="../assets/js/supabaseClient.js"></script>
   <script src="../assets/js/layout.js"></script>
@@ -788,6 +793,18 @@
         const aviso = avisoFueraDeHorario(fecha, hora);
         if (aviso && !confirm(`${aviso}\n\n¿Agendar igual?`)) return;
       }
+      // Choques con otras citas (para no duplicar vehículos en el taller): se puede sobreagendar a propósito
+      {
+        const idEdit = document.getElementById('cita-id').value;
+        const minutos = Number(document.getElementById('duracion').value) || 60;
+        const inicio = new Date(`${fecha}T${hora}:00`);
+        const original = idEdit ? [...citasDia, ...onlinePendientes].find(x => x.id === idEdit) : null;
+        const cambio = !original || new Date(original.fecha_hora).getTime() !== inicio.getTime() || (Number(original.duracion_min) || 60) !== minutos;
+        if (cambio) {
+          const choques = await buscarChoques(inicio.toISOString(), minutos, idEdit || null);
+          if (choques.length && !confirm(`Esta cita se junta con:\n\n${choques.map(descChoque).join('\n')}\n\n¿Sobreagendar igual?`)) return;
+        }
+      }
       // Cliente y/o vehículo nuevos (por RUT / patente): se crean antes de guardar la cita
       const guardarBtn = document.getElementById('guardar-btn');
       guardarBtn.disabled = true;
@@ -979,7 +996,8 @@
       const veh  = c.vehiculos ? c.vehiculos.patente : (c.patente_contacto || '');
       const trab = c.trabajos  ? c.trabajos.nombre   : (c.descripcion || '');
       const mec  = personalCache.find(p => p.id === c.personal_id);
-      const online = c.origen === 'online' ? ' <span class="badge badge-purple">web</span>' : '';
+      const online = (c.origen === 'online' ? ' <span class="badge badge-purple">web</span>' : '')
+        + (c.bloquea === false ? ' <span class="badge badge-gray" title="No bloquea las horas: permite otro vehículo al mismo tiempo">paralelo</span>' : '');
       return `<div class="cita-card">
         <div class="cita-info">
           ${badgeEstado(c.estado, ESTADOS_CITA)}${online}
@@ -1220,8 +1238,220 @@
       aplicarVista('dia');
     }
 
+    // ---------- Confirmar una reserva: dimensionar las horas del trabajo y cuidar los choques ----------
+    // Las horas que fijes aquí pasan a ocupar la agenda (también para el link público), de modo que no se
+    // dupliquen vehículos en el taller. Si hay otra cita encima, hay que sobreagendar a propósito, o marcar
+    // «permitir otros vehículos al mismo tiempo» para que esta cita no bloquee.
+    let confirmando = null;     // { cita, choques, timer }
+
+    function citaChocaCon(inicioMs, finMs, otra) {
+      const oIni = new Date(otra.fecha_hora).getTime();
+      const oFin = oIni + (Number(otra.duracion_min) || 60) * 60000;
+      return inicioMs < oFin && oIni < finMs;
+    }
+
+    // Citas vivas del mismo día que se cruzan con [inicio, inicio + minutos), sin contar `ignorarId`
+    async function buscarChoques(fechaHora, minutos, ignorarId) {
+      const lim = limitesDiaChile(ymdChile(fechaHora));
+      const { data } = await supabaseClient.from('citas')
+        .select('*, clientes(nombre), vehiculos(patente), trabajos(nombre)')
+        .gte('fecha_hora', lim.desde).lte('fecha_hora', lim.hasta)
+        .neq('estado', 'cancelado');
+      const ini = new Date(fechaHora).getTime();
+      const fin = ini + minutos * 60000;
+      return (data || []).filter(o => o.id !== ignorarId && o.bloquea !== false && citaChocaCon(ini, fin, o));
+    }
+
+    function descChoque(o) {
+      const veh = o.vehiculos ? o.vehiculos.patente : (o.patente_contacto || '');
+      const est = (ESTADOS_CITA[o.estado] || {}).label || o.estado;
+      return `${fmtHora(o.fecha_hora)}–${fmtHoraFin(o)} · ${nombreCliente(o)}${veh ? ' · ' + veh : ''} (${est})`;
+    }
+
+    function cerrarConfirmacion() {
+      document.getElementById('confirmar-backdrop').classList.remove('abierto');
+      if (confirmando && confirmando.timer) clearTimeout(confirmando.timer);
+      confirmando = null;
+    }
+    document.getElementById('confirmar-backdrop').addEventListener('click', (e) => { if (e.target.id === 'confirmar-backdrop') cerrarConfirmacion(); });
+
+    // Avisos del horario (no impiden confirmar): cierre, pausa y bloqueos que se cruzan
+    function avisosHorarioConfirmacion(c, minutos) {
+      const ymd = ymdChile(c.fecha_hora);
+      const avisos = [];
+      const dia = horarioDelDia(new Date(`${ymd}T12:00:00`).getDay());
+      const ini = new Date(c.fecha_hora);
+      const iniMin = ini.getHours() * 60 + ini.getMinutes();
+      const finMin = iniMin + minutos;
+      if (dia.abierto && dia.cierre && finMin > minDeHHMM(dia.cierre)) {
+        avisos.push(`Termina a las ${hhmmDeMin(finMin % 1440)}, después del cierre (${dia.cierre}).`);
+      }
+      if (dia.pausa_desde && dia.pausa_hasta && iniMin < minDeHHMM(dia.pausa_hasta) && minDeHHMM(dia.pausa_desde) < finMin) {
+        avisos.push(`Cruza la pausa (${dia.pausa_desde}–${dia.pausa_hasta}).`);
+      }
+      bloqueosDelDia(ymd).filter(b => b.hora_desde && iniMin < minDeHHMM(b.hora_hasta) && minDeHHMM(b.hora_desde) < finMin)
+        .forEach(b => avisos.push(`Se cruza con un bloqueo (${b.hora_desde}–${b.hora_hasta}${b.motivo ? ': ' + b.motivo : ''}).`));
+      return avisos;
+    }
+
+    async function abrirConfirmacionCita(id) {
+      let c = [...citasDia, ...onlinePendientes].find(x => x.id === id);
+      if (!c) {
+        const { data } = await supabaseClient.from('citas')
+          .select('*, clientes(nombre, telefono), vehiculos(patente, marca, modelo), trabajos(nombre, horas_estimadas, precio_fijo)')
+          .eq('id', id).maybeSingle();
+        c = data;
+      }
+      if (!c) { alert('No encontré esa reserva: puede que ya la hayas eliminado.'); return; }
+      if (c.estado !== 'pendiente') {
+        alert(`Esta reserva ya está ${(ESTADOS_CITA[c.estado] || {}).label ? (ESTADOS_CITA[c.estado].label).toLowerCase() : c.estado}.`);
+        await supabaseClient.from('notificaciones').update({ leida: true }).eq('ref_id', c.id);
+        return;
+      }
+      confirmando = { cita: c, choques: [], timer: null };
+
+      const horasCatalogo = c.trabajos && Number(c.trabajos.horas_estimadas) > 0 ? Number(c.trabajos.horas_estimadas) : 0;
+      const horas0 = horasCatalogo || (Number(c.duracion_min) || 60) / 60;
+      const veh = c.vehiculos ? [c.vehiculos.patente, c.vehiculos.marca, c.vehiculos.modelo].filter(Boolean).join(' · ') : (c.patente_contacto || '');
+      const fechaTxt = new Date(c.fecha_hora).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' });
+      const tel = telefonoCita(c);
+      const chips = [[0.5, '30 min'], [1, '1 h'], [1.5, '1,5 h'], [2, '2 h'], [3, '3 h'], [4, '4 h'], [6, '6 h'], [8, '8 h']];
+
+      document.getElementById('confirmar-modal').innerHTML = `
+        <h3 style="margin-top:0;">Confirmar reserva</h3>
+        <div class="cliente-ficha" style="margin-top:0;">
+          <div class="ficha-nombre">${escapar(nombreCliente(c))}</div>
+          <div class="ficha-datos">
+            <span>📅 ${escapar(fechaTxt)} · ${fmtHora(c.fecha_hora)}</span>
+            ${tel ? `<span>📞 ${escapar(tel)}</span>` : ''}
+            ${veh ? `<span>🚗 ${escapar(veh)}</span>` : ''}
+          </div>
+          <div class="ficha-datos"><span>🔧 ${escapar(servicioCita(c) || 'Servicio por definir')}${horasCatalogo ? ` (referencia del catálogo: ${fmtDuracion(horasCatalogo)})` : ''}</span></div>
+          ${c.notas ? `<div class="ficha-datos"><span>💬 ${escapar(c.notas)}</span></div>` : ''}
+        </div>
+
+        <div class="form-row" style="align-items:flex-end;">
+          <div class="form-group" style="max-width:190px;">
+            <label for="cf-horas">¿Cuánto dura el trabajo? (horas)</label>
+            <input type="number" id="cf-horas" min="0" step="any" value="${Math.round(horas0 * 100) / 100}" />
+          </div>
+          <div class="form-group">
+            <label for="cf-mec">Mecánico (opcional)</label>
+            <select id="cf-mec"><option value="">Sin asignar</option>${personalCache.map(p => `<option value="${p.id}"${p.id === c.personal_id ? ' selected' : ''}>${escapar(p.nombre)}</option>`).join('')}</select>
+          </div>
+        </div>
+        <div style="display:flex; gap:0.35rem; flex-wrap:wrap; margin:0.4rem 0;">
+          ${chips.map(([h, t]) => `<button type="button" class="btn-secondary btn-mini cf-chip" data-h="${h}">${t}</button>`).join('')}
+        </div>
+        <p id="cf-resumen" style="font-weight:600; margin:0.5rem 0 0.25rem;"></p>
+        <div id="cf-choques"></div>
+
+        <label style="display:flex; gap:0.5rem; align-items:flex-start; margin-top:0.6rem; font-weight:500;">
+          <input type="checkbox" id="cf-paralelo" style="margin-top:0.2rem; width:auto;" />
+          <span>Permitir otros vehículos al mismo tiempo <small style="color:var(--color-text-muted);">(esta cita no bloqueará las horas)</small></span>
+        </label>
+        <label id="cf-sobre-box" style="display:none; gap:0.5rem; align-items:flex-start; margin-top:0.4rem; font-weight:500; color:#92600a;">
+          <input type="checkbox" id="cf-sobre" style="margin-top:0.2rem; width:auto;" />
+          <span>Entiendo que se junta con otra cita y quiero <strong>sobreagendar</strong> igual</span>
+        </label>
+        <label style="display:${tel ? 'flex' : 'none'}; gap:0.5rem; align-items:flex-start; margin-top:0.4rem; font-weight:500;">
+          <input type="checkbox" id="cf-wa" checked style="margin-top:0.2rem; width:auto;" />
+          <span>Avisar al cliente por WhatsApp al confirmar</span>
+        </label>
+
+        <p class="error-message" id="cf-error"></p>
+        <div class="modal-acciones">
+          <button type="button" id="cf-confirmar">Confirmar y bloquear horas</button>
+          <button type="button" class="btn-danger" id="cf-rechazar">Rechazar reserva</button>
+          <button type="button" class="btn-secondary" id="cf-cancelar">Cerrar</button>
+        </div>`;
+      document.getElementById('confirmar-backdrop').classList.add('abierto');
+      enlazarCamposHoras(document.getElementById('confirmar-modal'));
+
+      const minutosActuales = () => Math.round((Number(document.getElementById('cf-horas').value) || 0) * 60);
+      const refrescar = async () => {
+        const minutos = minutosActuales();
+        const resumen = document.getElementById('cf-resumen');
+        const caja = document.getElementById('cf-choques');
+        if (!(minutos > 0)) { resumen.textContent = 'Indica cuánto dura el trabajo.'; caja.innerHTML = ''; return; }
+        const fin = new Date(new Date(c.fecha_hora).getTime() + minutos * 60000);
+        resumen.textContent = `Ocupará de ${fmtHora(c.fecha_hora)} a ${fmtHora(fin.toISOString())} (${fmtDuracion(minutos / 60)}).`;
+        const choques = await buscarChoques(c.fecha_hora, minutos, c.id);
+        if (!confirmando || confirmando.cita.id !== c.id) return;
+        confirmando.choques = choques;
+        const avisos = avisosHorarioConfirmacion(c, minutos);
+        const paralelo = document.getElementById('cf-paralelo').checked;
+        caja.innerHTML = (choques.length && !paralelo
+            ? `<div style="background:#fff4f2; border:1px solid #e3b4ae; border-radius:8px; padding:0.5rem 0.7rem; color:#7a1f14; font-size:0.88rem;">
+                 <strong>⚠ Se junta con ${choques.length === 1 ? 'otra cita' : choques.length + ' citas'}:</strong>
+                 <ul style="margin:0.25rem 0 0; padding-left:1.1rem;">${choques.map(o => `<li>${escapar(descChoque(o))}</li>`).join('')}</ul>
+               </div>`
+            : (choques.length ? '<div style="color:#1b6e3c; font-size:0.85rem;">Se junta con otra cita, pero permitiste vehículos al mismo tiempo.</div>'
+                              : '<div style="color:#1b6e3c; font-size:0.88rem;">✅ Sin choques con otras citas.</div>'))
+          + avisos.map(a => `<div style="color:#92600a; font-size:0.85rem; margin-top:0.25rem;">⚠ ${escapar(a)}</div>`).join('');
+        document.getElementById('cf-sobre-box').style.display = (choques.length && !paralelo) ? 'flex' : 'none';
+      };
+      const programar = () => { clearTimeout(confirmando && confirmando.timer); if (confirmando) confirmando.timer = setTimeout(refrescar, 200); };
+
+      document.getElementById('cf-horas').addEventListener('input', programar);
+      document.getElementById('cf-paralelo').addEventListener('change', refrescar);
+      document.getElementById('confirmar-modal').querySelectorAll('.cf-chip').forEach(b => b.addEventListener('click', () => {
+        const campo = document.getElementById('cf-horas');
+        campo.value = b.dataset.h;
+        campo.dispatchEvent(new Event('input', { bubbles: true }));
+      }));
+      document.getElementById('cf-cancelar').addEventListener('click', cerrarConfirmacion);
+
+      document.getElementById('cf-confirmar').addEventListener('click', async () => {
+        const errorEl = document.getElementById('cf-error');
+        errorEl.textContent = '';
+        const minutos = minutosActuales();
+        if (!(minutos > 0)) { errorEl.textContent = 'Indica cuánto dura el trabajo.'; return; }
+        const paralelo = document.getElementById('cf-paralelo').checked;
+        const choques = await buscarChoques(c.fecha_hora, minutos, c.id);
+        if (choques.length && !paralelo && !document.getElementById('cf-sobre').checked) {
+          confirmando.choques = choques;
+          await refrescar();
+          errorEl.textContent = 'Se junta con otra cita: cambia la duración, marca «permitir otros vehículos» o confirma el sobreagendado.';
+          return;
+        }
+        if (paralelo && !('bloquea' in c)) {
+          errorEl.textContent = 'Para permitir vehículos al mismo tiempo falta ejecutar sql/actualizacion-v48-confirmar-reserva-duracion.sql en Supabase.';
+          return;
+        }
+        const payload = { estado: 'confirmado', duracion_min: minutos, personal_id: document.getElementById('cf-mec').value || null };
+        if ('bloquea' in c) payload.bloquea = !paralelo;
+        const boton = document.getElementById('cf-confirmar');
+        boton.disabled = true;
+        const { error } = await supabaseClient.from('citas').update(payload).eq('id', c.id);
+        boton.disabled = false;
+        if (error) { errorEl.textContent = 'No se pudo confirmar: ' + error.message; return; }
+        const { error: eNotif } = await supabaseClient.from('notificaciones').update({ leida: true }).eq('ref_id', c.id);
+        void eNotif;   // si aún no existe ref_id (falta v48), la campanita se actualiza igual al volver a cargar
+        const actualizada = { ...c, ...payload };
+        const avisar = document.getElementById('cf-wa') && document.getElementById('cf-wa').checked && telefonoCita(c);
+        cerrarConfirmacion();
+        if (avisar) avisarWhatsAppCita(actualizada, await mensajeConfirmacionCita(actualizada));
+        await cargar();
+      });
+
+      document.getElementById('cf-rechazar').addEventListener('click', async () => {
+        if (!confirm('¿Rechazar esta reserva? La hora quedará libre de nuevo.')) return;
+        const { error } = await supabaseClient.from('citas').update({ estado: 'cancelado' }).eq('id', c.id);
+        if (error) { document.getElementById('cf-error').textContent = 'No se pudo rechazar: ' + error.message; return; }
+        const { error: eNotif } = await supabaseClient.from('notificaciones').update({ leida: true }).eq('ref_id', c.id);
+        void eNotif;
+        cerrarConfirmacion();
+        await cargar();
+      });
+
+      refrescar();
+    }
+
     function wireAcciones(cont) {
       cont.querySelectorAll('.act').forEach(b => b.addEventListener('click', async () => {
+        // Confirmar una reserva: primero se define cuánto dura el trabajo (y se revisan choques)
+        if (b.dataset.e === 'confirmado') { abrirConfirmacionCita(b.dataset.id); return; }
         const c = [...citasDia, ...onlinePendientes].find(x => x.id === b.dataset.id);
         await supabaseClient.from('citas').update({ estado: b.dataset.e }).eq('id', b.dataset.id);
         // Al confirmar, se abre WhatsApp automáticamente con el mensaje de confirmación listo para enviar.
@@ -1564,6 +1794,13 @@
         prellenarDireccion();
         sincronizarReconocimiento();
         window.history.replaceState({}, '', 'agenda.html');
+      }
+
+      // Desde la campanita: «Confirmar agenda» abre la reserva para dimensionar sus horas
+      const confirmarId = params.get('confirmar');
+      if (confirmarId) {
+        window.history.replaceState({}, '', 'agenda.html');
+        abrirConfirmacionCita(confirmarId);
       }
     })();
   </script>

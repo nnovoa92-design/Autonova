@@ -884,3 +884,6 @@ th {
   font-size: 0.8rem; font-weight: 700;
 }
 .fila-num-cell { color: var(--color-text-muted); font-weight: 700; }
+
+/* Acción sugerida dentro de un aviso de la campanita (ej. confirmar una reserva) */
+.campanita-accion { margin-top: 0.3rem; font-size: 0.8rem; font-weight: 700; color: var(--color-primary); }
