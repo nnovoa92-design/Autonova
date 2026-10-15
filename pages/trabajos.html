@@ -48,7 +48,7 @@
               </div>
               <div class="form-group">
                 <label for="horas_estimadas">Horas de taller *</label>
-                <input type="number" id="horas_estimadas" min="0" step="0.25" required />
+                <input type="number" id="horas_estimadas" min="0" step="any" required />
               </div>
               <div class="form-group">
                 <label for="precio_fijo">Precio fijo (opcional)</label>
@@ -142,7 +142,7 @@
           <div class="form-group" style="max-width:190px;"><label>Precio mano de obra (neto)</label>
             <input type="number" class="op-precio" data-i="${i}" value="${o.precio ?? ''}" min="0" step="1" placeholder="Ej: 56000" /></div>
           <div class="form-group" style="max-width:120px;"><label>Horas</label>
-            <input type="number" class="op-horas" data-i="${i}" value="${o.horas ?? ''}" min="0" step="0.25" placeholder="opcional" /></div>
+            <input type="number" class="op-horas" data-horas data-i="${i}" value="${o.horas ?? ''}" min="0" step="any" placeholder="opcional" /></div>
           <div class="form-group" style="flex:0;">
             <button type="button" class="btn-danger op-quitar" data-i="${i}" title="Quitar opción">✕</button></div>
         </div>`).join('');
@@ -271,7 +271,7 @@
           <tr data-id="${t.id}"${cambiosRevision.has(t.id) ? ' style="background:#fffbea;"' : ''}>
             <td>${nombre}</td>
             <td>${categoria ? categoria.nombre : '–'}</td>
-            <td><input type="number" class="rev-horas" data-id="${t.id}" value="${t.horas_estimadas ?? ''}" min="0" step="0.25" style="width:90px;" /></td>
+            <td><input type="number" class="rev-horas" data-horas data-id="${t.id}" value="${t.horas_estimadas ?? ''}" min="0" step="any" style="width:90px;" /></td>
             <td style="white-space:nowrap;">
               <input type="number" class="rev-precio" data-id="${t.id}" value="${t.precio_fijo ?? ''}" min="0" step="1" placeholder="calculado" style="width:130px;" />
               <small class="rev-total" style="display:block; color:var(--color-text-muted);">${fmtMoneda(precioTrabajo(t))} + IVA${fijo ? ' (calculado)' : ''}</small>

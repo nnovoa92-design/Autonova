@@ -14,7 +14,7 @@ estático (Netlify, Vercel, Cloudflare Pages).
 |---|---|
 | `index.html` | Login (Supabase Auth) |
 | `pages/dashboard.html` | KPIs: OTs activas, cotizaciones pendientes, stock bajo, horas e ingresos del mes |
-| `pages/diagnosticos.html` | Diagnóstico de un vehículo sin cotización ni OT: motivo de consulta, **pruebas y monitoreos** (nombre + resultado + fotos: compresión, vacío, hermeticidad, scanner…), conclusión, **valor del diagnóstico** (horas de taller × valor hora), trabajos recomendados y resumen de valores (total si acepta / solo diagnóstico si rechaza), con informe PDF. Incluye la **inspección de ingreso** (checklist del estado del vehículo que el cliente firma a distancia y que pasa a la OT al crearla). El cliente acepta o rechaza los trabajos desde su link. Se convierte en cotización y/o OT; desde ahí manda la cotización/OT y el diagnóstico las muestra (requiere `sql/actualizacion-v32-diagnosticos.sql`, `v34-diagnostico-valor`, `v37-diagnostico-respuesta` y `v39-inspeccion-ingreso-diagnostico`) |
+| `pages/diagnosticos.html` | Diagnóstico de un vehículo sin cotización ni OT: motivo de consulta, **pruebas y monitoreos** (nombre + resultado + fotos: compresión, vacío, hermeticidad, scanner…), conclusión, **valor del diagnóstico** (tiempo real: horas con decimales o minutos, × valor hora; sin mínimo), trabajos recomendados y resumen de valores (total si acepta / solo diagnóstico si rechaza), con informe PDF. Incluye la **inspección de ingreso** (checklist del estado del vehículo que el cliente firma a distancia y que pasa a la OT al crearla). El cliente acepta o rechaza los trabajos desde su link. Se convierte en cotización y/o OT; desde ahí manda la cotización/OT y el diagnóstico las muestra (requiere `sql/actualizacion-v32-diagnosticos.sql`, `v34-diagnostico-valor`, `v37-diagnostico-respuesta` y `v39-inspeccion-ingreso-diagnostico`) |
 | `pages/cotizaciones.html` | Crear/editar cotizaciones eligiendo **trabajos precargados** o repuestos, descuento, IVA, impresión y conversión a OT |
 | `pages/ordenes.html` | Órdenes de trabajo con estados (recepción → diagnóstico → en proceso → listo → entregado), ítems, **registro de horas por mecánico** y descuento automático de stock |
 | `pages/clientes.html` | Clientes con sus vehículos |
@@ -49,6 +49,9 @@ Extras integrados:
 > (`security definer`) que solo devuelven una orden si se conoce patente +
 > número, o una cotización si se conoce su link único.
 
+
+> **Horas**: toda casilla de horas acepta decimales (0,5 · 0,33 · 1,25) y trae al lado «o minutos»: se escribe `30` y queda `0,5 h`
+> (20 min = 0,33 h; 45 min = 0,75 h). Se detectan por id (`…horas…`) o `data-horas` en `assets/js/layout.js`.
 
 > **Descuentos**: se eligen en % o en pesos y corren **solo sobre la mano de obra** (nunca sobre repuestos,
 > insumos ni trabajos externos); la línea de descuento lo indica así en cotizaciones, OT, diagnósticos,

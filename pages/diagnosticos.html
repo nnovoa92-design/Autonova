@@ -100,12 +100,12 @@
           <h3>4. Valor del diagnóstico</h3>
           <p style="color:var(--color-text-muted); font-size:0.82rem; margin-top:0;">
             Horas de taller dedicadas a diagnosticar. Es lo que se cobra aunque el cliente no apruebe los trabajos. Valores sin IVA.
-            <strong>Se cobra mínimo 1 hora y luego por cuarto de hora</strong> (cualquier fracción sube al siguiente cuarto).
+            <strong>Se cobra el tiempo real:</strong> anótalo en horas con decimales (0,5 = media hora) o, si fue menos de una hora, en minutos (30 min = 0,5 h).
           </p>
           <div class="form-row" style="align-items:end;">
             <div class="form-group" style="max-width:170px;">
               <label for="diag-horas">Horas de taller</label>
-              <input type="number" id="diag-horas" min="0" step="0.25" value="0" />
+              <input type="number" id="diag-horas" min="0" step="any" value="0" />
               <small id="diag-horas-nota" style="color:var(--color-text-muted);"></small>
             </div>
             <div class="form-group" style="max-width:200px;">
@@ -168,7 +168,7 @@
               </div>
               <div class="form-group" id="grupo-horas-trabajo" style="display:none; max-width:140px;">
                 <label for="item-horas">Horas por trabajo</label>
-                <input type="number" id="item-horas" min="0" step="0.25" />
+                <input type="number" id="item-horas" min="0" step="any" />
               </div>
               <div class="form-group" style="max-width:150px;">
                 <label for="item-precio">Precio unitario</label>
@@ -382,11 +382,11 @@
     // Antes de convertir se arma desde las horas; al convertir se copia a la cotización/OT y desde
     // ahí vive en sus líneas (por eso itemsConDiagnostico no la suma dos veces).
     const fmtHoras = (h) => Number(h).toLocaleString('es-CL', { maximumFractionDigits: 2 });
-    // El diagnóstico se cobra mínimo 1 hora y luego por cuarto de hora (cualquier fracción sube al siguiente cuarto).
+    // El diagnóstico se cobra por el tiempo real, con hasta 2 decimales (30 min = 0,5 h; 20 min = 0,33 h). Sin mínimo.
     function horasCobradas(horas) {
       const h = Number(horas) || 0;
       if (h <= 0) return 0;
-      return Math.max(1, Math.ceil(h * 4 - 1e-9) / 4);
+      return Math.round(h * 100) / 100;
     }
     function lineaDiagnostico(horas, valorHora) {
       horas = horasCobradas(horas); valorHora = Number(valorHora) || 0;
@@ -897,7 +897,7 @@
       const horas = horasCobradas(horasIngresadas);
       document.getElementById('diag-monto').textContent = fmtMoneda(horas * (Number(document.getElementById('diag-valor-hora').value) || 0));
       document.getElementById('diag-horas-nota').textContent =
-        horas > 0 && horas !== horasIngresadas ? `Se cobran ${fmtHoras(horas)} h (mínimo 1 h, por cuarto de hora)` : '';
+        horas > 0 ? `= ${horasAMinutos(horas)} min` : '';
 
       const t = calcularTotales(itemsParaTotales(), leerDescuentoUI('descuento_pct', 'descuento_tipo'), conIva);
       actualizarEquivDescuentoUI('descuento_pct', 'descuento_tipo', t.baseDescuento);
@@ -1658,7 +1658,7 @@
     document.getElementById('item-cantidad').addEventListener('input', actualizarPreviewTrabajo);
     document.getElementById('item-horas').addEventListener('input', actualizarPreviewTrabajo);
     document.getElementById('diag-horas').addEventListener('input', renderTotales);
-    // Al salir del campo queda escrito lo que realmente se cobra (mínimo 1 h, por cuarto de hora)
+    // Al salir del campo queda escrito lo que realmente se cobra (hasta 2 decimales)
     document.getElementById('diag-horas').addEventListener('change', () => {
       const el = document.getElementById('diag-horas');
       if (Number(el.value) > 0) el.value = horasCobradas(el.value);

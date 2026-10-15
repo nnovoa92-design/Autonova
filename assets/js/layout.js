@@ -562,6 +562,64 @@ document.addEventListener('focusin', (e) => {
   if (e.target.value) aplicarFormatoChile(e.target, false);
 });
 
+// ---------- Horas: decimales y minutos ----------
+// Toda casilla de horas (de trabajo, diagnóstico, registro de horas, catálogo…) acepta cualquier
+// decimal (0,5 · 0,33 · 1,25) y trae al lado un campo «o minutos»: se escribe 30 y la casilla de
+// horas queda en 0,5. Los dos campos se mantienen iguales entre sí.
+// Se detectan por id (…horas…) o con data-horas; para excluir una: data-horas="no".
+function minutosAHoras(min) { return Math.round((Number(min) || 0) / 60 * 100) / 100; }
+function horasAMinutos(h) { return Math.round((Number(h) || 0) * 60); }
+
+const PARES_HORAS = [];
+function esCampoHoras(el) {
+  if (!el || el.tagName !== 'INPUT' || (el.type !== 'number' && el.type !== 'text')) return false;
+  if (el.dataset.horas === 'no') return false;
+  if (el.dataset.horas !== undefined) return true;
+  return /(^|[-_])horas($|[-_])/.test((el.id || '').toLowerCase());
+}
+
+function enlazarCampoHoras(input) {
+  if (!esCampoHoras(input) || input.dataset.horasPar) return;
+  input.dataset.horasPar = '1';
+  if (input.type === 'number') { input.step = 'any'; input.min = '0'; }
+  const caja = document.createElement('span');
+  caja.className = 'horas-min';
+  caja.innerHTML = '<span>o minutos</span><input type="number" min="0" step="1" inputmode="numeric" placeholder="min" aria-label="Minutos">';
+  input.insertAdjacentElement('afterend', caja);
+  const min = caja.querySelector('input');
+
+  const sincronizar = () => {
+    if (document.activeElement === min) return;
+    const h = Number(String(input.value).replace(',', '.'));
+    const m = h > 0 ? horasAMinutos(h) : '';
+    if (String(min.value) !== String(m)) min.value = m;
+  };
+  min.addEventListener('input', () => {
+    const m = Number(min.value);
+    input.value = m > 0 ? String(minutosAHoras(m)) : '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  min.addEventListener('change', () => input.dispatchEvent(new Event('change', { bubbles: true })));
+  input.addEventListener('input', sincronizar);
+  PARES_HORAS.push({ input, sincronizar });
+  sincronizar();
+}
+
+function enlazarCamposHoras(raiz) {
+  (raiz || document).querySelectorAll('input').forEach(enlazarCampoHoras);
+}
+// Campos que se crean después (ventanas emergentes, tablas que se redibujan): se enlazan al tocarlos
+document.addEventListener('focusin', (e) => enlazarCampoHoras(e.target));
+// Los valores que la página escribe por código (al abrir un registro) también se reflejan en «minutos»
+setInterval(() => {
+  for (let i = PARES_HORAS.length - 1; i >= 0; i--) {
+    if (!PARES_HORAS[i].input.isConnected) PARES_HORAS.splice(i, 1);
+    else PARES_HORAS[i].sincronizar();
+  }
+}, 600);
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => enlazarCamposHoras());
+else enlazarCamposHoras();
+
 // El registro entrega MARCA Y MODELO EN MAYÚSCULAS: se pasan a "Marca Modelo" dejando
 // en mayúsculas las siglas cortas y los códigos (WRX, 2.0T, AWD).
 function tituloVehiculo(texto) {
