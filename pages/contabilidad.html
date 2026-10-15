@@ -400,7 +400,7 @@
           <td>${fmtFecha(v.fecha)}</td>
           <td>${TIPO_DTE[v.tipo_dte] || ('Tipo ' + v.tipo_dte)}</td>
           <td>${v.folio}</td>
-          <td>${v.receptor || (v.rut_receptor || '–')}</td>
+          <td>${htmlSeguro(v.receptor || (v.rut_receptor || '–'))}</td>
           <td>${fmtMoneda(v.neto)}</td>
           <td>${fmtMoneda(v.iva)}</td>
           <td>${fmtMoneda(v.total)}</td>
@@ -529,7 +529,7 @@
             <td>${fmtFecha(c.fecha)}</td>
             <td>${TIPO_DTE[c.tipo_dte] || ('Tipo ' + c.tipo_dte)}${soloReg ? ' <span class="badge badge-gray">solo registro</span>' : ''}</td>
             <td>${c.folio}</td>
-            <td>${c.emisor || (c.rut_emisor || '–')}</td>
+            <td>${htmlSeguro(c.emisor || (c.rut_emisor || '–'))}</td>
             <td>${fmtMoneda(c.neto)}</td>
             <td>${soloReg ? '–' : fmtMoneda(c.iva)}</td>
             <td>${fmtMoneda(c.total)}</td>
@@ -590,8 +590,8 @@
           return `<tr>
             <td>${fmtFecha(m.fecha)}</td>
             <td>${m.patente ?? '–'}</td>
-            <td>${m.cliente ?? '–'}</td>
-            <td>${m.descripcion ?? '–'}</td>
+            <td>${htmlSeguro(m.cliente ?? '–')}</td>
+            <td>${htmlSeguro(m.descripcion ?? '–')}</td>
             <td>${fmtMoneda(t.moNeta)}</td>
             <td>${m.tipo_doc}${m.num_doc ? ' ' + m.num_doc : ''}</td>
             <td>${fmtMoneda(t.ganRepuesto)}</td>
@@ -652,7 +652,7 @@
       const anio = document.getElementById('filtro-anio').value;
       const filas = movimientosCache.map(m => {
         const t = calc(m);
-        return `<tr><td>${fmtFecha(m.fecha)}</td><td>${m.patente ?? ''}</td><td>${m.cliente ?? ''}</td><td>${m.descripcion ?? ''}</td><td style="text-align:right;">${fmtMoneda(t.moNeta)}</td><td style="text-align:right;">${fmtMoneda(t.totalConRep)}</td><td>${m.estado_pago}</td></tr>`;
+        return `<tr><td>${fmtFecha(m.fecha)}</td><td>${htmlSeguro(m.patente ?? '')}</td><td>${htmlSeguro(m.cliente ?? '')}</td><td>${htmlSeguro(m.descripcion ?? '')}</td><td style="text-align:right;">${fmtMoneda(t.moNeta)}</td><td style="text-align:right;">${fmtMoneda(t.totalConRep)}</td><td>${m.estado_pago}</td></tr>`;
       }).join('');
       const totalMes = movimientosCache.reduce((s, m) => s + calc(m).totalConRep, 0);
       const html = `
