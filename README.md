@@ -85,7 +85,7 @@ Extras integrados:
 > **Reserva pública sin precios y con datos obligatorios**: `reservar.html` ya no muestra el catálogo con valores:
 > el buscador lista solo nombres y el **valor del servicio se informa recién al terminar la reserva**
 > (pantalla de confirmación). Para que tampoco se pueda leer llamando a la función pública, `sql/actualizacion-v53-precios-solo-tras-reservar.sql`
-> hace que `reservar_info()` entregue solo id y nombre, y que `reservar_cita_v4` devuelva el valor del servicio reservado.
+> hace que `reservar_info()` entregue solo id y nombre, y que `reservar_cita_v4` devuelva el valor del servicio reservado (con `sql/actualizacion-v54-descripcion-del-servicio.sql` también su descripción del catálogo, que se muestra bajo el valor).
 > Los datos del vehículo (patente, marca, modelo, año, kilometraje y combustible) son obligatorios (la cilindrada es opcional); una leyenda indica
 > escribir primero la patente y esperar a que se reconozca.
 

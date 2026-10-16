@@ -556,8 +556,12 @@
       const valorServicio = selOtro ? '' : textoValorServicio(data, selTrabajo);
       const filaValor = valorServicio ? `
         <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>Valor del servicio</span><strong style="text-align:right;">${htmlSeguro(valorServicio)}</strong></div>` : '';
+      // Descripción del servicio en el catálogo: también viaja solo con la reserva hecha (v54)
+      const descripcionServicio = selOtro ? '' : String((data && data.descripcion) || '').trim();
+      const filaDescripcion = descripcionServicio ? `
+        <div style="margin:0.25rem 0 0.5rem; padding:0.5rem 0.75rem; background:#f6f6f7; border-radius:var(--radius); font-size:0.88rem; color:var(--color-text-muted); white-space:pre-line;">${htmlSeguro(descripcionServicio)}</div>` : '';
       document.getElementById('confirm-detalle').innerHTML = `
-        <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>Servicio</span><strong style="text-align:right;">${htmlSeguro(selOtro ? `Otro: ${otroTexto}` : selTrabajo.nombre)}</strong></div>${filaValor}
+        <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>Servicio</span><strong style="text-align:right;">${htmlSeguro(selOtro ? `Otro: ${otroTexto}` : selTrabajo.nombre)}</strong></div>${filaValor}${filaDescripcion}
         <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>Día</span><strong>${textoDia(selYmd, { weekday: 'long', day: 'numeric', month: 'long' })}</strong></div>
         <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>Hora</span><strong>${selSlot} hrs</strong></div>
         <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>A nombre de</span><strong>${htmlSeguro(nombreMostrado)}</strong></div>`;
