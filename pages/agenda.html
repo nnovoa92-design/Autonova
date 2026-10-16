@@ -883,8 +883,21 @@
       return c.nombre_contacto || '–';
     }
 
+    // El teléfono que dejó la persona en ESTA reserva manda (puede haber elegido otro distinto al registrado);
+    // las citas internas no lo traen y usan el de la ficha del cliente.
     function telefonoCita(c) {
-      return (c.clientes && c.clientes.telefono) || c.telefono_contacto || '';
+      return c.telefono_contacto || (c.clientes && c.clientes.telefono) || '';
+    }
+
+    // Reserva web de alguien que aún no es cliente: su ficha (y la del vehículo) se crean al confirmar.
+    const esReservaNueva = (c) => c.estado === 'pendiente' && !c.cliente_id;
+    const ETIQUETA_NUEVO = ' <span class="badge badge-yellow" title="Aún no es cliente: se registra al confirmar la reserva">nuevo</span>';
+
+    // Vehículo de la cita: el de la ficha, o la patente (con marca/modelo) que dejó la persona al reservar.
+    function vehiculoTextoCita(c) {
+      if (c.vehiculos) return [c.vehiculos.patente, c.vehiculos.marca, c.vehiculos.modelo].filter(Boolean).join(' · ');
+      const d = c.datos_vehiculo || {};
+      return [c.patente_contacto, d.marca, d.modelo].filter(Boolean).join(' · ');
     }
 
     function servicioCita(c) {
@@ -1020,8 +1033,11 @@
       if (c.estado === 'pendiente')
         btns += `<button type="button" class="btn-secondary btn-mini act" data-id="${c.id}" data-e="confirmado">Confirmar</button>`;
       if (c.estado === 'pendiente' || c.estado === 'confirmado') {
-        btns += `<button type="button" class="btn-secondary btn-mini act" data-id="${c.id}" data-e="completado">Completar</button>`;
-        btns += `<button type="button" class="btn-secondary btn-mini crear-ot" data-id="${c.id}">Crear OT</button>`;
+        // Una reserva web de alguien nuevo primero se confirma (ahí se crea su ficha); recién entonces se completa o pasa a OT
+        if (!esReservaNueva(c)) {
+          btns += `<button type="button" class="btn-secondary btn-mini act" data-id="${c.id}" data-e="completado">Completar</button>`;
+          btns += `<button type="button" class="btn-secondary btn-mini crear-ot" data-id="${c.id}">Crear OT</button>`;
+        }
         btns += `<button type="button" class="btn-danger btn-mini act" data-id="${c.id}" data-e="cancelado">Cancelar</button>`;
       }
       btns += `<button type="button" class="btn-secondary btn-mini avisar-wa" data-id="${c.id}">Avisar por WhatsApp</button>`;
@@ -1035,6 +1051,7 @@
       const trab = c.trabajos  ? c.trabajos.nombre   : (c.descripcion || '');
       const mec  = personalCache.find(p => p.id === c.personal_id);
       const online = (c.origen === 'online' ? ' <span class="badge badge-purple">web</span>' : '')
+        + (esReservaNueva(c) ? ETIQUETA_NUEVO : '')
         + (c.bloquea === false ? ' <span class="badge badge-gray" title="No bloquea las horas: permite otro vehículo al mismo tiempo">paralelo</span>' : '');
       return `<div class="cita-card">
         <div class="cita-info">
@@ -1332,13 +1349,135 @@
       return avisos;
     }
 
+    // ---------- Ficha del cliente y del vehículo: se crean al CONFIRMAR ----------
+    // La reserva web de alguien que aún no es cliente llega sin ficha (v52). Al confirmarla se registra su
+    // cliente y su vehículo; si la rechazas o cancelas, no queda nada. Si la persona ya existía (por RUT, por
+    // el dueño del vehículo o por teléfono), se usa esa ficha en vez de crear otra.
+    const COLS_CLIENTE = 'id, nombre, rut, telefono, email, direccion, activo';
+    const errorDuplicado = (e) => !!e && /duplicate|unique|23505/i.test(`${e.code || ''} ${e.message || ''}`);
+
+    async function buscarClienteDeReserva(c) {
+      if (c.rut_contacto) {
+        const { data } = await supabaseClient.from('clientes').select(COLS_CLIENTE).eq('rut', c.rut_contacto).limit(1);
+        if (data && data[0]) return { cliente: data[0], por: 'RUT' };
+      }
+      // Dueño del vehículo si la patente ya está registrada
+      let vehiculo = null;
+      if (c.vehiculo_id) {
+        ({ data: vehiculo } = await supabaseClient.from('vehiculos').select('cliente_id').eq('id', c.vehiculo_id).maybeSingle());
+      } else if (c.patente_contacto) {
+        const { data } = await supabaseClient.from('vehiculos').select('cliente_id').eq('patente', normalizarPatente(c.patente_contacto)).limit(1);
+        vehiculo = data && data[0];
+      }
+      if (vehiculo && vehiculo.cliente_id) {
+        const { data } = await supabaseClient.from('clientes').select(COLS_CLIENTE).eq('id', vehiculo.cliente_id).maybeSingle();
+        if (data) return { cliente: data, por: 'vehículo' };
+      }
+      if (c.telefono_contacto) {
+        const tel = telefonoNacional(c.telefono_contacto);
+        const mismo = tel && clientesCache.find(x => x.telefono && telefonoNacional(x.telefono) === tel);
+        if (mismo) return { cliente: mismo, por: 'teléfono' };
+      }
+      return { cliente: null, por: null };
+    }
+
+    async function crearClienteDeReserva(c) {
+      const nombre = (c.nombre_contacto || '').trim();
+      if (!nombre) return { error: 'La reserva no trae el nombre de la persona: completa sus datos antes de confirmar.' };
+      const fila = { nombre, rut: c.rut_contacto || null, telefono: c.telefono_contacto || null };
+      const { data, error } = await supabaseClient.from('clientes').insert(fila).select(COLS_CLIENTE).single();
+      if (errorDuplicado(error) && fila.rut) {
+        // El mismo RUT ya existe (p. ej. desactivado): se usa esa ficha
+        const { data: otro } = await supabaseClient.from('clientes').select(COLS_CLIENTE).eq('rut', fila.rut).limit(1);
+        if (otro && otro[0]) return { cliente: otro[0] };
+      }
+      if (error) return { error: `No se pudo crear el cliente: ${error.message}` };
+      return { cliente: data, nuevo: true };
+    }
+
+    // Crea el vehículo de la reserva con lo que escribió la persona y, si se aceptó, los datos del registro.
+    // Devuelve { vehiculoId } | { vehiculoId, deOtro: true } | { error }
+    async function crearVehiculoDeReserva(c, clienteId, ficha) {
+      const patente = normalizarPatente(c.patente_contacto || '');
+      if (!patente) return {};
+      const { data: ya } = await supabaseClient.from('vehiculos').select('id, cliente_id').eq('patente', patente).limit(1);
+      if (ya && ya[0]) return { vehiculoId: ya[0].id, deOtro: ya[0].cliente_id !== clienteId };
+      const dv = c.datos_vehiculo || {};
+      const reg = ficha && ficha.datos ? fichaDesdeRegistro(ficha.datos) : { columnas: {}, notas: '' };
+      const columnas = { ...reg.columnas };
+      // Lo que escribió la persona manda sobre el registro público
+      if (dv.kilometraje) columnas.kilometraje = dv.kilometraje;
+      if (dv.motor) columnas.motor = dv.motor;
+      if (dv.combustible) columnas.combustible = dv.combustible;
+      const basico = {
+        cliente_id: clienteId, patente,
+        marca: dv.marca || (ficha && ficha.datos && ficha.datos.marca) || null,
+        modelo: dv.modelo || (ficha && ficha.datos && ficha.datos.modelo) || null,
+        anio: dv.anio || (ficha && ficha.datos && ficha.datos.anio) || null,
+      };
+      let { data, error } = await supabaseClient.from('vehiculos')
+        .insert({ ...basico, ...columnas, notas: reg.notas || null }).select('*').single();
+      if (faltaColumnaNueva(error)) {
+        // Aún sin v51: lo que no tiene campo propio queda en Notas
+        const { propias, texto } = columnasConocidasHoy(columnas);
+        ({ data, error } = await supabaseClient.from('vehiculos')
+          .insert({ ...basico, ...propias, notas: [texto, reg.notas].filter(Boolean).join(' · ') || null }).select('*').single());
+      }
+      if (errorDuplicado(error)) {
+        const { data: otro } = await supabaseClient.from('vehiculos').select('id, cliente_id').eq('patente', patente).limit(1);
+        if (otro && otro[0]) return { vehiculoId: otro[0].id, deOtro: otro[0].cliente_id !== clienteId };
+      }
+      if (error) return { error: `No se pudo registrar el vehículo ${patente}: ${error.message}` };
+      vehiculosCache.push(data);
+      return { vehiculoId: data.id };
+    }
+
+    // Aviso dentro del cuadro de confirmación: qué se va a registrar al confirmar
+    async function mostrarRegistroPrevio(c) {
+      const caja = document.getElementById('cf-registro');
+      if (!caja) return;
+      const lineas = [];
+      if (!c.cliente_id) {
+        const r = await buscarClienteDeReserva(c);
+        if (r.cliente) {
+          lineas.push(`👤 Ya es cliente: <strong>${escapar(r.cliente.nombre)}</strong> <small style="color:var(--color-text-muted);">(lo reconocí por ${r.por}).</small>`);
+        } else {
+          lineas.push(`👤 <strong>Cliente nuevo</strong>: al confirmar se registra como cliente con estos datos (${escapar([c.nombre_contacto, c.rut_contacto, c.telefono_contacto].filter(Boolean).join(' · '))}).`);
+        }
+      }
+      if (!c.vehiculo_id && c.patente_contacto) {
+        const { data: ya } = await supabaseClient.from('vehiculos').select('id').eq('patente', normalizarPatente(c.patente_contacto)).limit(1);
+        if (!(ya && ya[0])) {
+          const dv = c.datos_vehiculo || {};
+          const detalle = [[dv.marca, dv.modelo, dv.anio].filter(Boolean).join(' '), dv.kilometraje ? `${Number(dv.kilometraje).toLocaleString('es-CL')} km` : '', dv.motor, dv.combustible].filter(Boolean).join(' · ');
+          lineas.push(`🚗 <strong>Vehículo nuevo</strong>: al confirmar se registra ${escapar(normalizarPatente(c.patente_contacto))}${detalle ? ' (' + escapar(detalle) + ')' : ''}.`);
+        }
+      }
+      if (!confirmando || confirmando.cita.id !== c.id) return;
+      caja.innerHTML = lineas.length
+        ? `<div style="background:#f3f8f4; border:1px solid #cfe3d3; border-radius:8px; padding:0.5rem 0.7rem; font-size:0.88rem; margin-top:0.6rem;">${lineas.join('<br>')}</div>`
+        : '';
+    }
+
     // Si el vehículo de la reserva no tiene marca/modelo, se ofrece completarlos con el registro público
     // (solo si hay clave y cupo; si no, se completa a mano en Vehículos). Gasta una consulta del plan.
     async function sugerirFichaVehiculo(c) {
       const caja = document.getElementById('cf-vehiculo');
-      if (!caja || !c.vehiculo_id) return;
-      const { data: v } = await supabaseClient.from('vehiculos')
-        .select('id, patente, marca, modelo, anio, kilometraje, notas').eq('id', c.vehiculo_id).maybeSingle();
+      if (!caja) return;
+      const patente = c.patente_contacto ? normalizarPatente(c.patente_contacto) : '';
+      const cols = '*';   // todas las columnas: solo se completa lo que esté vacío
+      let v = null;
+      if (c.vehiculo_id) {
+        ({ data: v } = await supabaseClient.from('vehiculos').select(cols).eq('id', c.vehiculo_id).maybeSingle());
+      } else if (patente) {
+        const { data: ya } = await supabaseClient.from('vehiculos').select(cols).eq('patente', patente).limit(1);
+        if (ya && ya[0]) v = ya[0];
+        else {
+          // Vehículo aún sin ficha: lo que escribió la persona al reservar (se crea al confirmar)
+          const dv = c.datos_vehiculo || {};
+          v = { id: null, nuevo: true, patente, marca: dv.marca || '', modelo: dv.modelo || '', anio: dv.anio || null, kilometraje: dv.kilometraje || null, notas: '' };
+        }
+      }
       if (!v || (v.marca && v.modelo) || !v.patente) return;
       const r = await consultarPatente(v.patente);
       if (!confirmando || confirmando.cita.id !== c.id || r.estado !== 'ok') return;
@@ -1347,7 +1486,7 @@
       caja.innerHTML = `
         <label style="display:flex; gap:0.5rem; align-items:flex-start; margin-top:0.6rem; font-weight:500;">
           <input type="checkbox" id="cf-ficha" checked style="margin-top:0.2rem; width:auto;" />
-          <span>Completar la ficha del vehículo con el registro público:
+          <span>${v.nuevo ? 'Registrar el vehículo con los datos del registro público:' : 'Completar la ficha del vehículo con el registro público:'}
             <strong>${escapar([d.marca, d.modelo, d.anio].filter(Boolean).join(' '))}</strong>
             <small style="color:var(--color-text-muted);">${[d.kilometraje ? Number(d.kilometraje).toLocaleString('es-CL') + ' km' : '', normalizarCombustible(d.combustible), d.tipo, d.cilindrada, d.color].filter(Boolean).map(x => '· ' + escapar(x)).join(' ')}</small>
           </span>
@@ -1372,7 +1511,7 @@
 
       const horasCatalogo = c.trabajos && Number(c.trabajos.horas_estimadas) > 0 ? Number(c.trabajos.horas_estimadas) : 0;
       const horas0 = horasCatalogo || (Number(c.duracion_min) || 60) / 60;
-      const veh = c.vehiculos ? [c.vehiculos.patente, c.vehiculos.marca, c.vehiculos.modelo].filter(Boolean).join(' · ') : (c.patente_contacto || '');
+      const veh = vehiculoTextoCita(c);
       const fechaTxt = new Date(c.fecha_hora).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' });
       const tel = telefonoCita(c);
       const chips = [[0.5, '30 min'], [1, '1 h'], [1.5, '1,5 h'], [2, '2 h'], [3, '3 h'], [4, '4 h'], [6, '6 h'], [8, '8 h']];
@@ -1419,6 +1558,7 @@
           <span>Avisar al cliente por WhatsApp al confirmar</span>
         </label>
 
+        <div id="cf-registro"></div>
         <div id="cf-vehiculo"></div>
         <p class="error-message" id="cf-error"></p>
         <div class="modal-acciones">
@@ -1484,10 +1624,49 @@
         if ('bloquea' in c) payload.bloquea = !paralelo;
         const boton = document.getElementById('cf-confirmar');
         boton.disabled = true;
+        const ficha = confirmando && confirmando.ficha;
+        const usarFicha = !!(ficha && document.getElementById('cf-ficha') && document.getElementById('cf-ficha').checked);
+
+        // Recién al confirmar la persona pasa a ser cliente (y su vehículo queda registrado)
+        const avisosFinal = [];
+        let clienteId = c.cliente_id, vehiculoId = c.vehiculo_id;
+        if (!clienteId) {
+          const r = await buscarClienteDeReserva(c);
+          let cli = r.cliente;
+          if (!cli) {
+            const nuevo = await crearClienteDeReserva(c);
+            if (nuevo.error) { errorEl.textContent = nuevo.error; boton.disabled = false; return; }
+            cli = nuevo.cliente;
+          }
+          clienteId = cli.id;
+          if (cli.activo === false) {
+            const { error: eAct } = await supabaseClient.from('clientes').update({ activo: true }).eq('id', cli.id);
+            void eAct;
+          }
+          // Cliente reconocido por teléfono que no tenía RUT: se le guarda el que dejó al reservar
+          if (!cli.rut && c.rut_contacto) {
+            const { error: eRut } = await supabaseClient.from('clientes').update({ rut: c.rut_contacto }).eq('id', cli.id);
+            if (!eRut) cli.rut = c.rut_contacto;
+          }
+          if (!clientesCache.some(x => x.id === cli.id)) clientesCache.push(cli);
+          poblarClientes();
+        } else {
+          // Ficha creada por una reserva anterior a v52: al confirmar deja de estar «por revisar»
+          const { error: ePr } = await supabaseClient.from('clientes').update({ por_revisar: false }).eq('id', clienteId).eq('por_revisar', true);
+          void ePr;
+        }
+        if (!vehiculoId && c.patente_contacto) {
+          const rv = await crearVehiculoDeReserva(c, clienteId, usarFicha ? ficha : null);
+          if (rv.error) avisosFinal.push(`La reserva se confirmó, pero ${rv.error[0].toLowerCase() + rv.error.slice(1)} Regístralo en Vehículos.`);
+          else if (rv.deOtro) avisosFinal.push(`La patente ${normalizarPatente(c.patente_contacto)} ya estaba registrada a nombre de otro cliente: revisa esa ficha en Vehículos.`);
+          else if (rv.vehiculoId) vehiculoId = rv.vehiculoId;
+        }
+        if (clienteId && clienteId !== c.cliente_id) payload.cliente_id = clienteId;
+        if (vehiculoId && vehiculoId !== c.vehiculo_id) payload.vehiculo_id = vehiculoId;
+
         const { error } = await supabaseClient.from('citas').update(payload).eq('id', c.id);
         // Ficha del vehículo con los datos del registro público (si se aceptó la sugerencia)
-        const ficha = confirmando && confirmando.ficha;
-        if (!error && ficha && document.getElementById('cf-ficha') && document.getElementById('cf-ficha').checked) {
+        if (!error && usarFicha && ficha.vehiculo.id) {
           const dv = ficha.datos, v = ficha.vehiculo;
           // Solo se completa lo que la ficha tiene vacío; lo que ya estaba escrito no se pisa
           const reg = fichaDesdeRegistro(dv);
@@ -1516,11 +1695,12 @@
         const avisar = document.getElementById('cf-wa') && document.getElementById('cf-wa').checked && telefonoCita(c);
         cerrarConfirmacion();
         if (avisar) avisarWhatsAppCita(actualizada, await mensajeConfirmacionCita(actualizada));
+        if (avisosFinal.length) alert(avisosFinal.join('\n\n'));
         await cargar();
       });
 
       document.getElementById('cf-rechazar').addEventListener('click', async () => {
-        if (!confirm('¿Rechazar esta reserva? La hora quedará libre de nuevo.')) return;
+        if (!confirm('¿Rechazar esta reserva? La hora quedará libre de nuevo.' + (esReservaNueva(c) ? '\n\nNo se guardará ningún cliente ni vehículo nuevo.' : ''))) return;
         const { error } = await supabaseClient.from('citas').update({ estado: 'cancelado' }).eq('id', c.id);
         if (error) { document.getElementById('cf-error').textContent = 'No se pudo rechazar: ' + error.message; return; }
         const { error: eNotif } = await supabaseClient.from('notificaciones').update({ leida: true }).eq('ref_id', c.id);
@@ -1530,6 +1710,7 @@
       });
 
       refrescar();
+      mostrarRegistroPrevio(c);
       sugerirFichaVehiculo(c);
     }
 
@@ -1599,7 +1780,7 @@
       document.getElementById('online-body').innerHTML = `<table><tbody>${onlinePendientes.map(c => `
         <tr>
           <td><strong>${fmtFecha(c.fecha_hora)} ${fmtHora(c.fecha_hora)}</strong></td>
-          <td>${escapar(nombreCliente(c))}${c.telefono_contacto ? ` · ${escapar(c.telefono_contacto)}` : ''}</td>
+          <td>${escapar(nombreCliente(c))}${esReservaNueva(c) ? ETIQUETA_NUEVO : ''}${c.telefono_contacto ? ` · ${escapar(c.telefono_contacto)}` : ''}</td>
           <td>${escapar(c.trabajos ? c.trabajos.nombre : (c.descripcion || '–'))}</td>
           <td>${escapar(c.patente_contacto || (c.vehiculos ? c.vehiculos.patente : '–'))}</td>
           <td class="table-actions">

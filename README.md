@@ -75,6 +75,13 @@ Extras integrados:
 > combustible (opcionales). Requiere `sql/actualizacion-v51-datos-del-vehiculo.sql` (sin v51 esos datos van a
 > *Notas* y la reserva funciona igual).
 
+> **Cliente y vehículo al confirmar**: una reserva web de alguien que aún no es cliente NO crea su ficha:
+> los datos (nombre, RUT, teléfono, patente y datos del vehículo) viajan en la cita (`citas.datos_vehiculo`).
+> Al **confirmar** desde la Agenda o la campanita se registra el cliente y el vehículo (o se reutiliza la
+> ficha si ya existe por RUT, dueño del vehículo o teléfono); si la reserva se rechaza o cancela no queda nada.
+> Mientras está pendiente aparece con la etiqueta «nuevo». Requiere `sql/actualizacion-v52-cliente-al-confirmar.sql`
+> (sin v52 las fichas se crean al reservar, como antes, con la etiqueta «Por revisar»).
+
 ## Puesta en marcha (15 minutos)
 
 ### 1. Crear el proyecto en Supabase

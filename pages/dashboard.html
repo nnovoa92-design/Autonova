@@ -351,7 +351,8 @@
         const hora = `${String(horaCita.getHours()).padStart(2,'0')}:${String(horaCita.getMinutes()).padStart(2,'0')}`;
         filas.push({
           tipo: 'Cita mañana', badge: 'badge-purple',
-          cliente: c.clientes || { nombre: c.nombre_contacto, telefono: c.telefono_contacto },
+          // El teléfono que dejó la persona en esa reserva manda sobre el de la ficha
+          cliente: c.clientes ? { ...c.clientes, telefono: c.telefono_contacto || c.clientes.telefono } : { nombre: c.nombre_contacto, telefono: c.telefono_contacto },
           vehiculo: c.vehiculos,
           aviso: `Mañana ${hora}`, recordatorioId: null,
           hora, servicio: c.trabajos ? c.trabajos.nombre : (c.descripcion || ''),
