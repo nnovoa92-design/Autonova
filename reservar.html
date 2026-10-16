@@ -116,7 +116,7 @@
               <li>Escribe primero tu <strong>patente</strong> y espera unos segundos a que la reconozcamos: si la encontramos, completamos solos la marca, el modelo y el año.</li>
               <li>Si no la reconocemos, o falta algún dato, complétalo tú.</li>
             </ol>
-            <span>Todos los datos del vehículo son obligatorios (*).</span>
+            <span>Los datos marcados con * son obligatorios.</span>
           </div>
           <div class="form-row">
             <div class="form-group"><label for="r-patente">Patente *</label><input type="text" id="r-patente" placeholder="ABCD12" maxlength="7" autocomplete="off" style="text-transform:uppercase;" /></div>
@@ -127,7 +127,7 @@
           <p class="reconocer-estado" id="r-patente-estado" style="margin:-0.3rem 0 0.6rem;"></p>
           <div class="form-row">
             <div class="form-group"><label for="r-km">Kilometraje (aprox.) *</label><input type="number" id="r-km" min="0" placeholder="km" /></div>
-            <div class="form-group"><label for="r-motor">Cilindrada / motor *</label><input type="text" id="r-motor" placeholder="ej. 1.6" maxlength="40" /></div>
+            <div class="form-group"><label for="r-motor">Cilindrada / motor (opcional)</label><input type="text" id="r-motor" placeholder="ej. 1.6" maxlength="40" /></div>
             <div class="form-group"><label for="r-combustible">Combustible *</label>
               <select id="r-combustible"><option value="">–</option><option>Gasolina</option><option>Diésel</option><option>Híbrido</option><option>Eléctrico</option><option>Gas</option></select>
             </div>
@@ -498,7 +498,6 @@
         if (kmIngresado === '' || !(Number(kmIngresado) >= 0) || Number(kmIngresado) > 2000000) {
           return falta('r-km', 'Indica el kilometraje aproximado de tu vehículo (en km).');
         }
-        if (!document.getElementById('r-motor').value.trim()) return falta('r-motor', 'Indica la cilindrada o motor de tu vehículo (ej. 1.6).');
         if (!document.getElementById('r-combustible').value) return falta('r-combustible', 'Elige el combustible de tu vehículo.');
       }
 
