@@ -693,7 +693,9 @@ async function consultarPatente(patente) {
     try { j = await r.json(); } catch (e) { j = null; }
     if (r.ok && j && j.status === 'success' && j.data) {
       const d = j.data;
+      const cupoHeader = r.headers.get('ratelimit-remaining');
       const resultado = {
+        cupo: cupoHeader != null && cupoHeader !== '' ? Number(cupoHeader) : null,
         estado: 'ok',
         datos: {
           marca: tituloVehiculo(d.make),
@@ -701,6 +703,8 @@ async function consultarPatente(patente) {
           anio: Number(d.year) > 1900 ? Number(d.year) : null,
           tipo: d.type ? (TIPOS_VEHICULO[String(d.type).trim().toUpperCase()] || tituloVehiculo(d.type)) : '',
           numero_motor: d.engine ? String(d.engine).trim() : '',
+          combustible: d.gas_type ? String(d.gas_type).trim() : '',
+          kilometraje: Number(d.kilometers) > 0 ? Math.round(Number(d.kilometers)) : null,
         },
       };
       try { sessionStorage.setItem(llaveCache, JSON.stringify(resultado)); } catch (e) { /* ok */ }

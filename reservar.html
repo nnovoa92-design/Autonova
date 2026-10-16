@@ -112,6 +112,7 @@
             <div class="form-group"><label for="r-modelo">Modelo</label><input type="text" id="r-modelo" /></div>
             <div class="form-group"><label for="r-anio">Año</label><input type="number" id="r-anio" min="1950" max="2100" /></div>
           </div>
+          <p class="reconocer-estado" id="r-patente-estado" style="margin:-0.3rem 0 0.4rem;"></p>
         </div>
 
         <!-- Campo trampa: las personas no lo ven; los programas automáticos suelen completarlo -->
@@ -359,6 +360,49 @@
       rutTimer = setTimeout(evaluarRut, 450);   // el formato del RUT lo aplica layout.js al escribir
     });
     document.getElementById('r-patente').addEventListener('input', (e) => { e.target.value = normalizarPatente(e.target.value); });
+    // ---------- Datos del vehículo por patente (registro público) ----------
+    // El servidor consulta el registro con la clave guardada en Configuración (nunca llega aquí).
+    // Solo completa campos vacíos y, si no hay datos o cupo, la persona los escribe a mano.
+    let patenteSeq = 0, patenteTimer = null;
+    const setEstadoPatente = (texto, clase) => {
+      const el = document.getElementById('r-patente-estado');
+      el.textContent = texto;
+      el.className = 'reconocer-estado' + (clase ? ` ${clase}` : '');
+    };
+    async function buscarDatosPatente() {
+      const p = normalizarPatente(document.getElementById('r-patente').value);
+      const seq = ++patenteSeq;
+      if (!patenteValida(p)) { setEstadoPatente(''); return; }
+      let r = null;
+      try { r = JSON.parse(sessionStorage.getItem('pubpat:' + p) || 'null'); } catch (e) { r = null; }
+      if (!r) {
+        setEstadoPatente('Buscando los datos del vehículo…');
+        const { data, error } = await supabaseClient.rpc('reservar_patente', { p_patente: p });
+        if (seq !== patenteSeq) return;
+        if (error || !data) { setEstadoPatente(''); return; }   // sin la función (falta v50): se escribe a mano
+        r = data;
+        if (r.estado === 'ok' || r.estado === 'no_encontrado') { try { sessionStorage.setItem('pubpat:' + p, JSON.stringify(r)); } catch (e) { /* ok */ } }
+      }
+      if (seq !== patenteSeq) return;
+      if (r.estado === 'ok' && r.datos) {
+        const marca = document.getElementById('r-marca'), modelo = document.getElementById('r-modelo'), anio = document.getElementById('r-anio');
+        if (!marca.value.trim() && r.datos.marca) marca.value = tituloVehiculo(r.datos.marca);
+        if (!modelo.value.trim() && r.datos.modelo) modelo.value = tituloVehiculo(r.datos.modelo);
+        if (!anio.value && r.datos.anio) anio.value = r.datos.anio;
+        setEstadoPatente(`✅ Encontramos tu vehículo: ${[tituloVehiculo(r.datos.marca), tituloVehiculo(r.datos.modelo), r.datos.anio].filter(Boolean).join(' ')}. Revísalo antes de reservar.`, 'ok');
+      } else if (r.estado === 'no_encontrado') {
+        setEstadoPatente('No encontramos esa patente en el registro: completa marca, modelo y año si quieres.', 'aviso');
+      } else {
+        setEstadoPatente('');   // sin cupo, sin clave o sin respuesta: se escribe a mano, sin alarmar
+      }
+    }
+    document.getElementById('r-patente').addEventListener('input', () => {
+      clearTimeout(patenteTimer);
+      const p = normalizarPatente(document.getElementById('r-patente').value);
+      if (!patenteValida(p)) { patenteSeq++; setEstadoPatente(''); return; }
+      patenteTimer = setTimeout(buscarDatosPatente, p.length >= 6 ? 500 : 1800);
+    });
+
     document.getElementById('r-tel-aviso').addEventListener('change', (e) => {
       if (!e.target.matches('input[name="r-tel-modo"]')) return;
       usarOtroTel = e.target.value === 'otro';

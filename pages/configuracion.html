@@ -662,7 +662,7 @@
       const r = await consultarPatente(patente);
       okEl.textContent = '';
       if (r.estado === 'ok') {
-        okEl.textContent = `Funciona: ${patente} → ${[r.datos.marca, r.datos.modelo, r.datos.anio].filter(Boolean).join(' ')}`;
+        okEl.textContent = `Funciona: ${patente} → ${[r.datos.marca, r.datos.modelo, r.datos.anio].filter(Boolean).join(' ')}${r.cupo != null ? ` · Te quedan ${r.cupo} consulta${r.cupo === 1 ? '' : 's'} hoy.` : ''}`;
       } else {
         const msg = {
           sin_clave: 'Aún no hay una clave guardada.',
