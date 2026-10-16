@@ -18,7 +18,7 @@ estático (Netlify, Vercel, Cloudflare Pages).
 | `pages/cotizaciones.html` | Crear/editar cotizaciones eligiendo **trabajos precargados** o repuestos, descuento, IVA, impresión y conversión a OT |
 | `pages/ordenes.html` | Órdenes de trabajo con estados (recepción → diagnóstico → en proceso → listo → entregado), ítems, **registro de horas por mecánico** y descuento automático de stock |
 | `pages/clientes.html` | Clientes con sus vehículos |
-| `pages/vehiculos.html` | Vehículos (patente, marca, modelo, km, VIN) |
+| `pages/vehiculos.html` | Vehículos (patente, marca, modelo, año, km, cilindrada/motor, combustible, tipo, N° de motor, color, transmisión, VIN). Combustible, tipo, N° de motor, color y transmisión requieren `sql/actualizacion-v51-datos-del-vehiculo.sql` |
 | `pages/trabajos.html` | Catálogo de trabajos con horas estimadas; precio = horas × valor hora del taller (o precio fijo) |
 | `pages/inventario.html` | Repuestos con stock, mínimos, entradas/salidas/ajustes |
 | `pages/pagos.html` | Pagos por OT con saldo pendiente |
@@ -67,6 +67,13 @@ Extras integrados:
 > (se detectan por el `id` de la casilla o `type="tel"`; para excluir una, `data-formato="ninguno"`).
 > Los datos ya guardados se unifican con `sql/actualizacion-v42-unificar-rut-telefono.sql`
 > (deja respaldo de lo que cambia).
+
+> **Datos del vehículo por patente** (boostr.cl, plan gratuito): marca, modelo, año, tipo de vehículo,
+> N° de motor, combustible y kilometraje de la última revisión técnica. Color, chasis/VIN, cilindrada y
+> transmisión solo llegan en planes de pago; si la respuesta trae campos nuevos que no conocemos, se
+> guardan en *Notas* del vehículo. En la reserva pública el cliente puede indicar kilometraje, cilindrada y
+> combustible (opcionales). Requiere `sql/actualizacion-v51-datos-del-vehiculo.sql` (sin v51 esos datos van a
+> *Notas* y la reserva funciona igual).
 
 ## Puesta en marcha (15 minutos)
 

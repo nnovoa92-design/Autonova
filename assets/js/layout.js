@@ -665,6 +665,77 @@ function claveVence(clave) {
     return json && json.exp ? new Date(json.exp * 1000) : null;
   } catch (e) { return null; }
 }
+
+// Primer valor no vacío entre varios nombres posibles de un campo del registro de vehículos.
+function tomarCampo(obj, ...nombres) {
+  for (const n of nombres) {
+    const v = obj && obj[n];
+    if (v != null && String(v).trim() !== '') return String(v).trim();
+  }
+  return '';
+}
+
+// Cualquier dato del registro que el sistema aún no conoce, para no perder nada: { campo: valor }.
+function camposDesconocidos(d) {
+  const conocidos = new Set(['plate', 'dv', 'make', 'model', 'year', 'type', 'engine', 'gas_type', 'kilometers',
+    'color', 'colour', 'vin', 'chassis', 'chasis', 'chassis_number', 'engine_size', 'displacement', 'engine_displacement',
+    'cilindrada', 'cc', 'transmission', 'transmission_type', 'gearbox', 'version', 'trim', 'doors', 'door_count', 'num_doors',
+    'manufacturer', 'country', 'country_of_origin', 'origin', 'region', 'owner']);
+  const otros = {};
+  Object.keys(d || {}).forEach(k => {
+    const v = d[k];
+    if (!conocidos.has(k) && v != null && typeof v !== 'object' && String(v).trim() !== '') otros[k] = String(v).trim();
+  });
+  return otros;
+}
+
+// Combustible del registro (GASOLINA, DIESEL, ELECTRICO…) -> nombre normal para la ficha.
+function normalizarCombustible(texto) {
+  const t = String(texto || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  if (!t) return '';
+  if (/gasolina|bencina|nafta/.test(t)) return 'Gasolina';
+  if (/diesel|diésel|petroleo/.test(t)) return 'Diésel';
+  if (/hibrid|hybrid/.test(t)) return 'Híbrido';
+  if (/electric/.test(t)) return 'Eléctrico';
+  if (/\bgas\b|glp|gnc|gnv/.test(t)) return 'Gas';
+  return String(texto).trim().charAt(0).toUpperCase() + String(texto).trim().slice(1).toLowerCase();
+}
+
+// Qué se guarda de los datos del registro de vehículos: campos propios de la ficha y un texto con
+// lo que no tiene campo (versión, puertas, fabricante, origen y cualquier dato nuevo del registro).
+function fichaDesdeRegistro(d) {
+  d = d || {};
+  const columnas = {};
+  if (d.kilometraje) columnas.kilometraje = d.kilometraje;
+  if (d.cilindrada) columnas.motor = d.cilindrada;
+  const comb = normalizarCombustible(d.combustible);
+  if (comb) columnas.combustible = comb;
+  if (d.tipo) columnas.tipo_vehiculo = d.tipo;
+  if (d.numero_motor) columnas.numero_motor = d.numero_motor;
+  if (d.color) columnas.color = tituloVehiculo(d.color);
+  if (d.vin) columnas.vin = d.vin;
+  if (d.transmision) columnas.transmision = /auto|cvt|dct|tiptronic/i.test(d.transmision) ? 'Automática' : (/manual|mec/i.test(d.transmision) ? 'Manual' : tituloVehiculo(d.transmision));
+  const otros = [];
+  if (d.version) otros.push(`Versión: ${d.version}`);
+  if (d.puertas) otros.push(`Puertas: ${d.puertas}`);
+  if (d.fabricante) otros.push(`Fabricante: ${d.fabricante}`);
+  if (d.origen) otros.push(`Origen: ${d.origen}`);
+  Object.entries(d.otros || {}).forEach(([k, v]) => otros.push(`${k}: ${v}`));
+  return { columnas, notas: otros.join(' · ') };
+}
+
+// Si aún no se ejecutó v51, los campos nuevos no existen: se pasan a texto en Notas para no perderlos.
+const ETIQUETAS_FICHA = { combustible: 'Combustible', tipo_vehiculo: 'Tipo', numero_motor: 'N° de motor', color: 'Color', transmision: 'Transmisión' };
+function columnasConocidasHoy(columnas) {
+  const propias = {}, comoTexto = [];
+  Object.entries(columnas).forEach(([k, v]) => {
+    if (ETIQUETAS_FICHA[k]) comoTexto.push(`${ETIQUETAS_FICHA[k]}: ${v}`); else propias[k] = v;
+  });
+  return { propias, texto: comoTexto.join(' · ') };
+}
+function faltaColumnaNueva(error) {
+  return !!error && /column|42703|PGRST204|schema cache/i.test(`${error.code || ''} ${error.message || ''}`) && !/duplicate|unique/i.test(error.message || '');
+}
 const TIPOS_VEHICULO = { 'AUTOMOVIL': 'Automóvil', 'CAMION': 'Camión', 'FURGON': 'Furgón', 'MINIBUS': 'Minibús', 'TRACTOCAMION': 'Tractocamión' };
 
 // Datos públicos del vehículo por patente (boostr.cl). La clave vive en Configuración
@@ -705,6 +776,16 @@ async function consultarPatente(patente) {
           numero_motor: d.engine ? String(d.engine).trim() : '',
           combustible: d.gas_type ? String(d.gas_type).trim() : '',
           kilometraje: Number(d.kilometers) > 0 ? Math.round(Number(d.kilometers)) : null,
+          // Datos que el registro entrega en planes ampliados (los nombres pueden variar): se toman si vienen
+          color: tomarCampo(d, 'color', 'colour'),
+          vin: tomarCampo(d, 'vin', 'chassis', 'chasis', 'chassis_number'),
+          cilindrada: tomarCampo(d, 'engine_size', 'displacement', 'engine_displacement', 'cilindrada', 'cc'),
+          transmision: tomarCampo(d, 'transmission', 'transmission_type', 'gearbox'),
+          version: tomarCampo(d, 'version', 'trim'),
+          puertas: tomarCampo(d, 'doors', 'door_count', 'num_doors'),
+          fabricante: tomarCampo(d, 'manufacturer'),
+          origen: tomarCampo(d, 'country', 'country_of_origin', 'origin', 'region'),
+          otros: camposDesconocidos(d),
         },
       };
       try { sessionStorage.setItem(llaveCache, JSON.stringify(resultado)); } catch (e) { /* ok */ }

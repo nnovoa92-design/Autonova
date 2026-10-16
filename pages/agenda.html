@@ -147,6 +147,22 @@
                   <input type="number" id="nv-anio" min="1950" max="2100" />
                 </div>
               </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="nv-km">Kilometraje</label>
+                  <input type="number" id="nv-km" min="0" placeholder="km" />
+                </div>
+                <div class="form-group">
+                  <label for="nv-motor">Cilindrada / motor</label>
+                  <input type="text" id="nv-motor" placeholder="ej. 1.6" />
+                </div>
+                <div class="form-group">
+                  <label for="nv-combustible">Combustible</label>
+                  <select id="nv-combustible">
+                    <option value="">–</option><option>Gasolina</option><option>Diésel</option><option>Híbrido</option><option>Eléctrico</option><option>Gas</option>
+                  </select>
+                </div>
+              </div>
               <p class="reconocer-estado" id="nv-estado" style="margin:-0.4rem 0 0.5rem;"></p>
             </div>
           </div>
@@ -464,7 +480,7 @@
     }
 
     function limpiarNuevo() {
-      ['nuevo-nombre', 'nuevo-telefono', 'nv-patente', 'nv-marca', 'nv-modelo', 'nv-anio'].forEach(id => { document.getElementById(id).value = ''; });
+      ['nuevo-nombre', 'nuevo-telefono', 'nv-patente', 'nv-marca', 'nv-modelo', 'nv-anio', 'nv-km', 'nv-motor', 'nv-combustible'].forEach(id => { document.getElementById(id).value = ''; });
       setEstado('nv-estado', '');
       datosPatente = null;
       consultaPatenteSeq++;
@@ -618,8 +634,18 @@
         document.getElementById('nv-marca').value = d.marca || '';
         document.getElementById('nv-modelo').value = d.modelo || '';
         document.getElementById('nv-anio').value = d.anio || '';
-        datosPatente = { patente: p, numero_motor: d.numero_motor, tipo: d.tipo, combustible: d.combustible, kilometraje: d.kilometraje };
-        setEstado('nv-estado', `✅ Datos obtenidos del registro público: ${[d.marca, d.modelo, d.anio].filter(Boolean).join(' ')}. Revísalos antes de guardar.`, 'ok');
+        // Datos técnicos que entrega el registro: kilometraje (de la última revisión técnica), cilindrada y combustible
+        if (d.kilometraje) document.getElementById('nv-km').value = d.kilometraje;
+        if (d.cilindrada) document.getElementById('nv-motor').value = d.cilindrada;
+        const comb = normalizarCombustible(d.combustible);
+        if (comb) {
+          const selComb = document.getElementById('nv-combustible');
+          if (![...selComb.options].some(o => o.value === comb || o.text === comb)) selComb.add(new Option(comb, comb));
+          selComb.value = comb;
+        }
+        datosPatente = { patente: p, ...d };
+        const extraVista = [d.kilometraje ? `${Number(d.kilometraje).toLocaleString('es-CL')} km` : '', comb, d.tipo].filter(Boolean).join(' · ');
+        setEstado('nv-estado', `✅ Datos obtenidos del registro público: ${[d.marca, d.modelo, d.anio].filter(Boolean).join(' ')}${extraVista ? ' · ' + extraVista : ''}. Revísalos antes de guardar.`, 'ok');
       } else if (r.estado === 'sin_clave') {
         setEstado('nv-estado', 'Completa marca, modelo y año a mano. Para que se llenen solos, falta ingresar la clave de consulta de patentes en Configuración.', 'aviso');
       } else if (r.estado === 'no_encontrado') {
@@ -694,24 +720,34 @@
       }
 
       if (creaVehiculo) {
-        const extras = [];
-        if (datosPatente && datosPatente.patente === patente) {
-          if (datosPatente.numero_motor) extras.push(`N° de motor: ${datosPatente.numero_motor}`);
-          if (datosPatente.tipo) extras.push(`Tipo: ${tituloVehiculo(datosPatente.tipo)}`);
-          if (datosPatente.combustible) extras.push(`Combustible: ${tituloVehiculo(datosPatente.combustible)}`);
-        }
-        const { data, error } = await supabaseClient.from('vehiculos')
-          .insert({
-            cliente_id: clienteId,
-            patente,
-            marca: document.getElementById('nv-marca').value.trim() || null,
-            modelo: document.getElementById('nv-modelo').value.trim() || null,
-            anio: document.getElementById('nv-anio').value || null,
-            kilometraje: (datosPatente && datosPatente.patente === patente && datosPatente.kilometraje) ? datosPatente.kilometraje : null,
-            notas: extras.length ? extras.join(' · ') : null,
-          })
+        // Datos del registro público (si se consultó esta patente) y lo que escribió la persona en las casillas
+        const ficha = (datosPatente && datosPatente.patente === patente) ? fichaDesdeRegistro(datosPatente) : { columnas: {}, notas: '' };
+        const columnas = { ...ficha.columnas };
+        const kmEscrito = Number(document.getElementById('nv-km').value);
+        if (kmEscrito > 0) columnas.kilometraje = Math.round(kmEscrito);
+        const motorEscrito = document.getElementById('nv-motor').value.trim();
+        if (motorEscrito) columnas.motor = motorEscrito;
+        const combEscrito = document.getElementById('nv-combustible').value;
+        if (combEscrito) columnas.combustible = combEscrito;
+        const basico = {
+          cliente_id: clienteId,
+          patente,
+          marca: document.getElementById('nv-marca').value.trim() || null,
+          modelo: document.getElementById('nv-modelo').value.trim() || null,
+          anio: document.getElementById('nv-anio').value || null,
+        };
+        let { data, error } = await supabaseClient.from('vehiculos')
+          .insert({ ...basico, ...columnas, notas: ficha.notas || null })
           .select('*')
           .single();
+        if (faltaColumnaNueva(error)) {
+          // Aún no se ejecutó v51: lo que no tiene campo propio queda en Notas
+          const { propias, texto } = columnasConocidasHoy(columnas);
+          ({ data, error } = await supabaseClient.from('vehiculos')
+            .insert({ ...basico, ...propias, notas: [texto, ficha.notas].filter(Boolean).join(' · ') || null })
+            .select('*')
+            .single());
+        }
         if (error) {
           return { error: /duplicate|unique|23505/i.test(error.message || error.code || '')
             ? `La patente ${patente} ya existe en el sistema (puede estar desactivada: revísala en Vehículos).`
@@ -1313,7 +1349,7 @@
           <input type="checkbox" id="cf-ficha" checked style="margin-top:0.2rem; width:auto;" />
           <span>Completar la ficha del vehículo con el registro público:
             <strong>${escapar([d.marca, d.modelo, d.anio].filter(Boolean).join(' '))}</strong>
-            ${d.kilometraje ? `<small style="color:var(--color-text-muted);">· ${Number(d.kilometraje).toLocaleString('es-CL')} km</small>` : ''}
+            <small style="color:var(--color-text-muted);">${[d.kilometraje ? Number(d.kilometraje).toLocaleString('es-CL') + ' km' : '', normalizarCombustible(d.combustible), d.tipo, d.cilindrada, d.color].filter(Boolean).map(x => '· ' + escapar(x)).join(' ')}</small>
           </span>
         </label>`;
     }
@@ -1453,15 +1489,22 @@
         const ficha = confirmando && confirmando.ficha;
         if (!error && ficha && document.getElementById('cf-ficha') && document.getElementById('cf-ficha').checked) {
           const dv = ficha.datos, v = ficha.vehiculo;
+          // Solo se completa lo que la ficha tiene vacío; lo que ya estaba escrito no se pisa
+          const reg = fichaDesdeRegistro(dv);
           const cambios = {};
           if (!v.marca && dv.marca) cambios.marca = dv.marca;
           if (!v.modelo && dv.modelo) cambios.modelo = dv.modelo;
           if (!v.anio && dv.anio) cambios.anio = dv.anio;
-          if (!v.kilometraje && dv.kilometraje) cambios.kilometraje = dv.kilometraje;
-          const extras = [dv.numero_motor ? `N° de motor: ${dv.numero_motor}` : '', dv.tipo ? `Tipo: ${dv.tipo}` : '', dv.combustible ? `Combustible: ${tituloVehiculo(dv.combustible)}` : ''].filter(Boolean);
-          if (extras.length && !(v.notas && v.notas.includes('N° de motor'))) cambios.notas = [v.notas, extras.join(' · ')].filter(Boolean).join('\n');
+          Object.entries(reg.columnas).forEach(([k, val]) => { if (!v[k]) cambios[k] = val; });
+          if (reg.notas && !(v.notas && v.notas.includes(reg.notas))) cambios.notas = [v.notas, reg.notas].filter(Boolean).join('\n');
           if (Object.keys(cambios).length) {
-            const { error: eVeh } = await supabaseClient.from('vehiculos').update(cambios).eq('id', v.id);
+            let { error: eVeh } = await supabaseClient.from('vehiculos').update(cambios).eq('id', v.id);
+            if (faltaColumnaNueva(eVeh)) {
+              // Aún no se ejecutó v51: lo que no tiene campo propio queda en Notas
+              const { propias, texto } = columnasConocidasHoy(Object.fromEntries(Object.entries(cambios).filter(([k]) => k !== 'notas')));
+              const notas = [cambios.notas || v.notas, texto].filter(Boolean).join('\n');
+              ({ error: eVeh } = await supabaseClient.from('vehiculos').update({ ...propias, notas: notas || null }).eq('id', v.id));
+            }
             void eVeh;
           }
         }

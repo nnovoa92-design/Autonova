@@ -112,6 +112,13 @@
             <div class="form-group"><label for="r-modelo">Modelo</label><input type="text" id="r-modelo" /></div>
             <div class="form-group"><label for="r-anio">Año</label><input type="number" id="r-anio" min="1950" max="2100" /></div>
           </div>
+          <div class="form-row">
+            <div class="form-group"><label for="r-km">Kilometraje (aprox.)</label><input type="number" id="r-km" min="0" placeholder="km" /></div>
+            <div class="form-group"><label for="r-motor">Cilindrada / motor</label><input type="text" id="r-motor" placeholder="ej. 1.6" maxlength="40" /></div>
+            <div class="form-group"><label for="r-combustible">Combustible</label>
+              <select id="r-combustible"><option value="">–</option><option>Gasolina</option><option>Diésel</option><option>Híbrido</option><option>Eléctrico</option><option>Gas</option></select>
+            </div>
+          </div>
           <p class="reconocer-estado" id="r-patente-estado" style="margin:-0.3rem 0 0.4rem;"></p>
         </div>
 
@@ -468,7 +475,21 @@
           p_marca: usaVehiculoNuevo ? (document.getElementById('r-marca').value.trim() || null) : null,
           p_modelo: usaVehiculoNuevo ? (document.getElementById('r-modelo').value.trim() || null) : null,
           p_anio: usaVehiculoNuevo ? anio : null,
+          p_km: usaVehiculoNuevo ? (Number(document.getElementById('r-km').value) > 0 ? Math.round(Number(document.getElementById('r-km').value)) : null) : null,
+          p_motor: usaVehiculoNuevo ? (document.getElementById('r-motor').value.trim() || null) : null,
+          p_combustible: usaVehiculoNuevo ? (document.getElementById('r-combustible').value || null) : null,
         }));
+        // Aún sin v51 (kilometraje, cilindrada, combustible): se reserva igual con los datos de antes
+        if (error && error.code === 'PGRST202') {
+          ({ data, error } = await supabaseClient.rpc('reservar_cita_v4', {
+            ...params, p_servicio_otro: selOtro ? otroTexto : null, p_notas: notas,
+            p_rut: formatearRut(document.getElementById('r-rut').value),
+            p_vehiculo_id: reco && vehiculoElegido && vehiculoElegido !== '__nuevo__' ? vehiculoElegido : null,
+            p_marca: usaVehiculoNuevo ? (document.getElementById('r-marca').value.trim() || null) : null,
+            p_modelo: usaVehiculoNuevo ? (document.getElementById('r-modelo').value.trim() || null) : null,
+            p_anio: usaVehiculoNuevo ? anio : null,
+          }));
+        }
       }
       // Sin la versión con RUT (falta v44), se reserva como antes
       if (clasico || (error && (error.code === 'PGRST202' || /reservar_cita_v4/.test(error.message || '')))) {

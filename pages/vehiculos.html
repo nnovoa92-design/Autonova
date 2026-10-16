@@ -55,6 +55,30 @@
                 <input type="text" id="vin" />
               </div>
             </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="combustible">Combustible</label>
+                <select id="combustible">
+                  <option value="">–</option><option>Gasolina</option><option>Diésel</option><option>Híbrido</option><option>Eléctrico</option><option>Gas</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="tipo_vehiculo">Tipo de vehículo</label>
+                <input type="text" id="tipo_vehiculo" placeholder="Automóvil, camioneta, SUV…" />
+              </div>
+              <div class="form-group">
+                <label for="numero_motor">N° de motor</label>
+                <input type="text" id="numero_motor" />
+              </div>
+              <div class="form-group">
+                <label for="color">Color</label>
+                <input type="text" id="color" />
+              </div>
+              <div class="form-group">
+                <label for="transmision">Transmisión</label>
+                <select id="transmision"><option value="">–</option><option>Manual</option><option>Automática</option></select>
+              </div>
+            </div>
             <div class="form-group">
               <label for="notas">Notas</label>
               <input type="text" id="notas" />
@@ -172,7 +196,7 @@
     }
 
     function clearForm() {
-      ['vehiculo-id','patente','marca','modelo','anio','kilometraje','motor','vin','notas'].forEach(id => {
+      ['vehiculo-id','patente','marca','modelo','anio','kilometraje','motor','vin','combustible','tipo_vehiculo','numero_motor','color','transmision','notas'].forEach(id => {
         document.getElementById(id).value = '';
       });
       document.getElementById('cliente_id').value = '';
@@ -192,6 +216,12 @@
       document.getElementById('kilometraje').value = v.kilometraje ?? '';
       document.getElementById('motor').value = v.motor ?? '';
       document.getElementById('vin').value = v.vin ?? '';
+      ['combustible','tipo_vehiculo','numero_motor','color','transmision'].forEach(id => {
+        const el = document.getElementById(id);
+        const val = v[id] ?? '';
+        if (el.tagName === 'SELECT' && val && ![...el.options].some(o => o.value === val || o.text === val)) el.add(new Option(val, val));
+        el.value = val;
+      });
       document.getElementById('notas').value = v.notas ?? '';
       document.getElementById('form-title').textContent = `Editar vehículo: ${v.patente}`;
       document.getElementById('submit-btn').textContent = 'Actualizar vehículo';
@@ -294,6 +324,11 @@
         kilometraje: document.getElementById('kilometraje').value || null,
         motor: document.getElementById('motor').value || null,
         vin: document.getElementById('vin').value || null,
+        combustible: document.getElementById('combustible').value || null,
+        tipo_vehiculo: document.getElementById('tipo_vehiculo').value.trim() || null,
+        numero_motor: document.getElementById('numero_motor').value.trim() || null,
+        color: document.getElementById('color').value.trim() || null,
+        transmision: document.getElementById('transmision').value || null,
         notas: document.getElementById('notas').value || null,
       };
 
@@ -302,6 +337,19 @@
         ({ error } = await supabaseClient.from('vehiculos').update(payload).eq('id', id));
       } else {
         ({ error } = await supabaseClient.from('vehiculos').insert(payload));
+      }
+
+      // Aún sin v51 (campos nuevos de la ficha): se guarda sin ellos y se avisa
+      if (faltaColumnaNueva(error)) {
+        const nuevos = ['combustible', 'tipo_vehiculo', 'numero_motor', 'color', 'transmision'];
+        const perdidos = nuevos.filter(k => payload[k]);
+        const base = { ...payload };
+        nuevos.forEach(k => delete base[k]);
+        if (id) ({ error } = await supabaseClient.from('vehiculos').update(base).eq('id', id));
+        else ({ error } = await supabaseClient.from('vehiculos').insert(base));
+        if (!error && perdidos.length) {
+          alert('El vehículo se guardó, pero estos datos no: ' + perdidos.join(', ') + '.\nFalta ejecutar sql/actualizacion-v51-datos-del-vehiculo.sql en Supabase.');
+        }
       }
 
       if (error) {
