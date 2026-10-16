@@ -24,6 +24,10 @@
     .dia-card h4 { margin: 0 0 0.5rem; font-size: 0.95rem; }
     .dia-card.sin-horas { background: #f6f6f7; }
     .sin-horas-txt { color: var(--color-text-muted); font-weight: 700; font-size: 0.8rem; letter-spacing: 0.05em; }
+    .leyenda-vehiculo { background: #fff8e6; border: 1px solid #ecd9a0; border-radius: var(--radius); padding: 0.6rem 0.85rem; margin-bottom: 0.75rem; font-size: 0.88rem; color: #5b4a12; }
+    .leyenda-vehiculo ol { margin: 0.3rem 0; padding-left: 1.25rem; }
+    .leyenda-vehiculo li { margin: 0.15rem 0; }
+    .campo-falta { border-color: var(--color-danger) !important; }
   </style>
 </head>
 <body class="portal-page">
@@ -106,20 +110,28 @@
 
         <!-- Vehículo (cliente nuevo, u «otro vehículo» de un cliente conocido) -->
         <div id="g-vehiculo" class="vehiculo-nuevo-bloque" hidden>
-          <div class="form-row">
-            <div class="form-group"><label for="r-patente">Patente</label><input type="text" id="r-patente" placeholder="ABCD12" maxlength="7" autocomplete="off" style="text-transform:uppercase;" /></div>
-            <div class="form-group"><label for="r-marca">Marca</label><input type="text" id="r-marca" /></div>
-            <div class="form-group"><label for="r-modelo">Modelo</label><input type="text" id="r-modelo" /></div>
-            <div class="form-group"><label for="r-anio">Año</label><input type="number" id="r-anio" min="1950" max="2100" /></div>
+          <div class="leyenda-vehiculo">
+            <strong>Datos de tu vehículo</strong>
+            <ol>
+              <li>Escribe primero tu <strong>patente</strong> y espera unos segundos a que la reconozcamos: si la encontramos, completamos solos la marca, el modelo y el año.</li>
+              <li>Si no la reconocemos, o falta algún dato, complétalo tú.</li>
+            </ol>
+            <span>Todos los datos del vehículo son obligatorios (*).</span>
           </div>
           <div class="form-row">
-            <div class="form-group"><label for="r-km">Kilometraje (aprox.)</label><input type="number" id="r-km" min="0" placeholder="km" /></div>
-            <div class="form-group"><label for="r-motor">Cilindrada / motor</label><input type="text" id="r-motor" placeholder="ej. 1.6" maxlength="40" /></div>
-            <div class="form-group"><label for="r-combustible">Combustible</label>
+            <div class="form-group"><label for="r-patente">Patente *</label><input type="text" id="r-patente" placeholder="ABCD12" maxlength="7" autocomplete="off" style="text-transform:uppercase;" /></div>
+            <div class="form-group"><label for="r-marca">Marca *</label><input type="text" id="r-marca" /></div>
+            <div class="form-group"><label for="r-modelo">Modelo *</label><input type="text" id="r-modelo" /></div>
+            <div class="form-group"><label for="r-anio">Año *</label><input type="number" id="r-anio" min="1950" max="2100" /></div>
+          </div>
+          <p class="reconocer-estado" id="r-patente-estado" style="margin:-0.3rem 0 0.6rem;"></p>
+          <div class="form-row">
+            <div class="form-group"><label for="r-km">Kilometraje (aprox.) *</label><input type="number" id="r-km" min="0" placeholder="km" /></div>
+            <div class="form-group"><label for="r-motor">Cilindrada / motor *</label><input type="text" id="r-motor" placeholder="ej. 1.6" maxlength="40" /></div>
+            <div class="form-group"><label for="r-combustible">Combustible *</label>
               <select id="r-combustible"><option value="">–</option><option>Gasolina</option><option>Diésel</option><option>Híbrido</option><option>Eléctrico</option><option>Gas</option></select>
             </div>
           </div>
-          <p class="reconocer-estado" id="r-patente-estado" style="margin:-0.3rem 0 0.4rem;"></p>
         </div>
 
         <!-- Campo trampa: las personas no lo ven; los programas automáticos suelen completarlo -->
@@ -162,10 +174,19 @@
 
     function mostrarPaso(id) { document.getElementById(id).hidden = false; }
 
-    // Los valores se informan SIN IVA (neto)
-    const etiquetaTrabajo = (t) => `${t.nombre}${
-      t.precio_desde != null ? ` — desde ${fmtMoneda(t.precio_desde)} + IVA`
-      : t.precio_fijo != null ? ` — ${fmtMoneda(t.precio_fijo)} + IVA` : ''}`;
+    // El catálogo se muestra SIN precios: el valor del servicio se informa recién con la reserva hecha
+    // (pantalla de confirmación), para no publicar los precios a cualquier visitante.
+    const etiquetaTrabajo = (t) => t.nombre;
+    // Valor (neto, sin IVA) del servicio reservado. Viene en la respuesta de la reserva (v53); si el servidor
+    // aún no se actualizó, se usa lo que traía la lista.
+    function textoValorServicio(respuesta, servicio) {
+      const r = respuesta || {}, s = servicio || {};
+      const desde = r.precio_desde != null ? r.precio_desde : s.precio_desde;
+      const fijo = r.precio_fijo != null ? r.precio_fijo : s.precio_fijo;
+      if (desde != null) return `desde ${fmtMoneda(desde)} + IVA`;
+      if (fijo != null) return `${fmtMoneda(fijo)} + IVA`;
+      return '';
+    }
     const OPCION_OTRO = { id: '__otro__', label: 'Otro (no está en la lista)…' };
 
     // Buscador de servicios: se escribe y la lista se va acotando (todas las palabras, sin
@@ -371,22 +392,29 @@
     // El servidor consulta el registro con la clave guardada en Configuración (nunca llega aquí).
     // Solo completa campos vacíos y, si no hay datos o cupo, la persona los escribe a mano.
     let patenteSeq = 0, patenteTimer = null;
+    let patenteBuscando = 0;   // desde cuándo se espera la respuesta del registro (0 = nada pendiente)
     const setEstadoPatente = (texto, clase) => {
       const el = document.getElementById('r-patente-estado');
       el.textContent = texto;
       el.className = 'reconocer-estado' + (clase ? ` ${clase}` : '');
     };
+    const MSG_PATENTE_MANUAL = 'No pudimos reconocer tu patente: completa tú la marca, el modelo y el año.';
     async function buscarDatosPatente() {
-      const p = normalizarPatente(document.getElementById('r-patente').value);
       const seq = ++patenteSeq;
+      patenteBuscando = patenteBuscando || Date.now();
+      try { await consultarDatosPatente(seq); }
+      finally { if (seq === patenteSeq) patenteBuscando = 0; }
+    }
+    async function consultarDatosPatente(seq) {
+      const p = normalizarPatente(document.getElementById('r-patente').value);
       if (!patenteValida(p)) { setEstadoPatente(''); return; }
       let r = null;
       try { r = JSON.parse(sessionStorage.getItem('pubpat:' + p) || 'null'); } catch (e) { r = null; }
       if (!r) {
-        setEstadoPatente('Buscando los datos del vehículo…');
+        setEstadoPatente('Buscando los datos del vehículo… espera unos segundos.');
         const { data, error } = await supabaseClient.rpc('reservar_patente', { p_patente: p });
         if (seq !== patenteSeq) return;
-        if (error || !data) { setEstadoPatente(''); return; }   // sin la función (falta v50): se escribe a mano
+        if (error || !data) { setEstadoPatente(MSG_PATENTE_MANUAL, 'aviso'); return; }   // sin la función (falta v50): se escribe a mano
         r = data;
         if (r.estado === 'ok' || r.estado === 'no_encontrado') { try { sessionStorage.setItem('pubpat:' + p, JSON.stringify(r)); } catch (e) { /* ok */ } }
       }
@@ -396,17 +424,16 @@
         if (!marca.value.trim() && r.datos.marca) marca.value = tituloVehiculo(r.datos.marca);
         if (!modelo.value.trim() && r.datos.modelo) modelo.value = tituloVehiculo(r.datos.modelo);
         if (!anio.value && r.datos.anio) anio.value = r.datos.anio;
-        setEstadoPatente(`✅ Encontramos tu vehículo: ${[tituloVehiculo(r.datos.marca), tituloVehiculo(r.datos.modelo), r.datos.anio].filter(Boolean).join(' ')}. Revísalo antes de reservar.`, 'ok');
-      } else if (r.estado === 'no_encontrado') {
-        setEstadoPatente('No encontramos esa patente en el registro: completa marca, modelo y año si quieres.', 'aviso');
+        setEstadoPatente(`✅ Reconocimos tu vehículo: ${[tituloVehiculo(r.datos.marca), tituloVehiculo(r.datos.modelo), r.datos.anio].filter(Boolean).join(' ')}. Revisa que esté bien y completa los datos que faltan.`, 'ok');
       } else {
-        setEstadoPatente('');   // sin cupo, sin clave o sin respuesta: se escribe a mano, sin alarmar
+        setEstadoPatente(MSG_PATENTE_MANUAL, 'aviso');   // no está en el registro, sin cupo o sin respuesta: se escribe a mano
       }
     }
     document.getElementById('r-patente').addEventListener('input', () => {
       clearTimeout(patenteTimer);
       const p = normalizarPatente(document.getElementById('r-patente').value);
-      if (!patenteValida(p)) { patenteSeq++; setEstadoPatente(''); return; }
+      if (!patenteValida(p)) { patenteSeq++; patenteBuscando = 0; setEstadoPatente(''); return; }
+      patenteBuscando = patenteBuscando || Date.now();
       patenteTimer = setTimeout(buscarDatosPatente, p.length >= 6 ? 500 : 1800);
     });
 
@@ -444,15 +471,35 @@
       }
       const patente = normalizarPatente(document.getElementById('r-patente').value);
       const usaVehiculoNuevo = !reco || vehiculoElegido === '__nuevo__';
-      if (usaVehiculoNuevo && patente && !patenteValida(patente)) {
-        errorEl.textContent = 'La patente no tiene un formato válido (ej. ABCD12 o AB1234).';
-        document.getElementById('r-patente').focus();
-        return;
-      }
-      if (reco && vehiculoElegido === '__nuevo__' && !patente) {
-        errorEl.textContent = 'Ingresa la patente del vehículo que traes.';
-        document.getElementById('r-patente').focus();
-        return;
+      document.querySelectorAll('#g-vehiculo .campo-falta').forEach(el => el.classList.remove('campo-falta'));
+      if (reco && !vehiculoElegido) { errorEl.textContent = 'Elige el vehículo que traes.'; return; }
+      // Todos los datos del vehículo son obligatorios (patente primero: de ella salen marca, modelo y año)
+      if (usaVehiculoNuevo) {
+        const falta = (id, mensaje) => {
+          errorEl.textContent = mensaje;
+          const el = document.getElementById(id);
+          el.classList.add('campo-falta');
+          el.focus();
+        };
+        if (!patente) return falta('r-patente', 'Escribe la patente de tu vehículo: de ella reconocemos los demás datos.');
+        if (!patenteValida(patente)) return falta('r-patente', 'La patente no tiene un formato válido (ej. ABCD12 o AB1234).');
+        if (patenteBuscando && Date.now() - patenteBuscando < 9000) {
+          errorEl.textContent = 'Estamos reconociendo tu patente: espera unos segundos y vuelve a pulsar «Confirmar reserva».';
+          return;
+        }
+        if (!document.getElementById('r-marca').value.trim()) return falta('r-marca', 'Indica la marca de tu vehículo.');
+        if (!document.getElementById('r-modelo').value.trim()) return falta('r-modelo', 'Indica el modelo de tu vehículo.');
+        const anioIngresado = document.getElementById('r-anio').value.trim();
+        const anioNum = Number(anioIngresado);
+        if (!anioIngresado || !Number.isInteger(anioNum) || anioNum < 1950 || anioNum > new Date().getFullYear() + 1) {
+          return falta('r-anio', 'Indica el año de tu vehículo (ej. 2015).');
+        }
+        const kmIngresado = document.getElementById('r-km').value.trim();
+        if (kmIngresado === '' || !(Number(kmIngresado) >= 0) || Number(kmIngresado) > 2000000) {
+          return falta('r-km', 'Indica el kilometraje aproximado de tu vehículo (en km).');
+        }
+        if (!document.getElementById('r-motor').value.trim()) return falta('r-motor', 'Indica la cilindrada o motor de tu vehículo (ej. 1.6).');
+        if (!document.getElementById('r-combustible').value) return falta('r-combustible', 'Elige el combustible de tu vehículo.');
       }
 
       const btn = document.getElementById('reservar-btn');
@@ -475,7 +522,7 @@
           p_marca: usaVehiculoNuevo ? (document.getElementById('r-marca').value.trim() || null) : null,
           p_modelo: usaVehiculoNuevo ? (document.getElementById('r-modelo').value.trim() || null) : null,
           p_anio: usaVehiculoNuevo ? anio : null,
-          p_km: usaVehiculoNuevo ? (Number(document.getElementById('r-km').value) > 0 ? Math.round(Number(document.getElementById('r-km').value)) : null) : null,
+          p_km: usaVehiculoNuevo ? Math.round(Number(document.getElementById('r-km').value)) : null,
           p_motor: usaVehiculoNuevo ? (document.getElementById('r-motor').value.trim() || null) : null,
           p_combustible: usaVehiculoNuevo ? (document.getElementById('r-combustible').value || null) : null,
         }));
@@ -506,8 +553,12 @@
         return;
       }
       const nombreMostrado = reco ? reconocido.nombre : nombre;
+      // El valor del servicio se muestra recién ahora, con la reserva hecha
+      const valorServicio = selOtro ? '' : textoValorServicio(data, selTrabajo);
+      const filaValor = valorServicio ? `
+        <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>Valor del servicio</span><strong style="text-align:right;">${htmlSeguro(valorServicio)}</strong></div>` : '';
       document.getElementById('confirm-detalle').innerHTML = `
-        <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>Servicio</span><strong style="text-align:right;">${htmlSeguro(selOtro ? `Otro: ${otroTexto}` : selTrabajo.nombre)}</strong></div>
+        <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>Servicio</span><strong style="text-align:right;">${htmlSeguro(selOtro ? `Otro: ${otroTexto}` : selTrabajo.nombre)}</strong></div>${filaValor}
         <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>Día</span><strong>${textoDia(selYmd, { weekday: 'long', day: 'numeric', month: 'long' })}</strong></div>
         <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>Hora</span><strong>${selSlot} hrs</strong></div>
         <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>A nombre de</span><strong>${htmlSeguro(nombreMostrado)}</strong></div>`;

@@ -82,6 +82,13 @@ Extras integrados:
 > Mientras está pendiente aparece con la etiqueta «nuevo». Requiere `sql/actualizacion-v52-cliente-al-confirmar.sql`
 > (sin v52 las fichas se crean al reservar, como antes, con la etiqueta «Por revisar»).
 
+> **Reserva pública sin precios y con datos obligatorios**: `reservar.html` ya no muestra el catálogo con valores:
+> el buscador lista solo nombres y el **valor del servicio se informa recién al terminar la reserva**
+> (pantalla de confirmación). Para que tampoco se pueda leer llamando a la función pública, `sql/actualizacion-v53-precios-solo-tras-reservar.sql`
+> hace que `reservar_info()` entregue solo id y nombre, y que `reservar_cita_v4` devuelva el valor del servicio reservado.
+> Los datos del vehículo (patente, marca, modelo, año, kilometraje, cilindrada y combustible) son obligatorios; una leyenda indica
+> escribir primero la patente y esperar a que se reconozca.
+
 ## Puesta en marcha (15 minutos)
 
 ### 1. Crear el proyecto en Supabase
