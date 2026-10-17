@@ -89,6 +89,14 @@ Extras integrados:
 > Los datos del vehículo (patente, marca, modelo, año, kilometraje y combustible) son obligatorios (la cilindrada es opcional); una leyenda indica
 > escribir primero la patente y esperar a que se reconozca.
 
+> **Correo del cliente y confirmación por correo**: la reserva pública pide el **correo** (obligatorio). Al confirmar la
+> reserva en la Agenda, el correo se guarda en la ficha del cliente y se le envía la confirmación (el mismo texto del
+> WhatsApp más el horario reservado). El envío es **automático desde el Gmail del taller**: en Configuración →
+> «Correo de confirmaciones» se genera una clave, se copia un pequeño script, se pega en script.google.com y se publica
+> como aplicación web (gratis, sin dominio; unos 100 correos diarios); la URL y la clave se guardan en `taller_config`
+> (solo personal del taller). Sin eso configurado, desde la cita se usa «Avisar por correo», que abre Gmail con el mensaje
+> listo. Requiere `sql/actualizacion-v55-correo-del-cliente.sql` (sin v55 el correo viaja dentro del comentario de la reserva).
+
 ## Puesta en marcha (15 minutos)
 
 ### 1. Crear el proyecto en Supabase

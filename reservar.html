@@ -107,6 +107,12 @@
           <div class="form-group" id="g-nombre" hidden><label for="r-nombre">Nombre *</label><input type="text" id="r-nombre" autocomplete="name" /></div>
           <div class="form-group" id="g-tel" hidden><label for="r-tel">Teléfono / WhatsApp *</label><input type="tel" id="r-tel" placeholder="+56 9 1234 5678" autocomplete="tel" /></div>
         </div>
+        <!-- Correo: a esta dirección llega la confirmación cuando el taller confirma la hora -->
+        <div class="form-group" id="g-correo" hidden>
+          <label for="r-correo">Correo electrónico *</label>
+          <input type="email" id="r-correo" autocomplete="email" inputmode="email" placeholder="tucorreo@ejemplo.cl" maxlength="120" />
+          <p class="reconocer-estado">Aquí te enviaremos la confirmación de tu hora cuando el taller la confirme.</p>
+        </div>
 
         <!-- Vehículo (cliente nuevo, u «otro vehículo» de un cliente conocido) -->
         <div id="g-vehiculo" class="vehiculo-nuevo-bloque" hidden>
@@ -150,7 +156,7 @@
       <div style="font-size:3rem;">✅</div>
       <h2>¡Reserva registrada!</h2>
       <div id="confirm-detalle" style="text-align:left; max-width:400px; margin:1rem auto;"></div>
-      <p style="color:var(--color-text-muted);">El taller confirmará tu hora a la brevedad. Te contactaremos si hay algún cambio.</p>
+      <p style="color:var(--color-text-muted);">El taller confirmará tu hora a la brevedad y te enviará la confirmación a tu correo. Te contactaremos si hay algún cambio.</p>
     </div>
   </div>
 
@@ -314,6 +320,7 @@
       }
       mostrar('g-vehiculo', nuevo || clasico || (reco && vehiculoElegido === '__nuevo__'));
       mostrar('g-notas', reco || nuevo || clasico);
+      mostrar('g-correo', reco || nuevo || clasico);
       mostrar('reservar-btn', reco || nuevo || clasico);
       document.getElementById('g-rut').hidden = clasico;
       if (reco) renderVehiculosReconocido();
@@ -462,6 +469,9 @@
       const tel = usaTelRegistrado ? '' : document.getElementById('r-tel').value.trim();
       if (!nombre || (!tel && !usaTelRegistrado)) { errorEl.textContent = reco ? 'Completa tu teléfono.' : 'Completa nombre y teléfono.'; return; }
       if (tel && !telefonoValidoCL(tel)) { errorEl.textContent = 'Revisa tu teléfono (ej. +56 9 1234 5678).'; return; }
+      const correo = document.getElementById('r-correo').value.trim().toLowerCase();
+      if (!correo) { errorEl.textContent = 'Escribe tu correo electrónico: ahí te enviamos la confirmación.'; document.getElementById('r-correo').focus(); return; }
+      if (!correoValido(correo)) { errorEl.textContent = 'Revisa tu correo electrónico (ej. nombre@correo.cl).'; document.getElementById('r-correo').focus(); return; }
       if ((!selTrabajo && !selOtro) || !selYmd || !selSlot) { errorEl.textContent = 'Elige servicio, día y hora.'; return; }
       const otroTexto = document.getElementById('r-otro').value.trim();
       if (selOtro && otroTexto.length < 3) {
@@ -513,36 +523,39 @@
       const notas = document.getElementById('r-notas').value.trim() || null;
       const anio = Number(document.getElementById('r-anio').value) || null;
       let data = null, error = null;
+      // Si el servidor aún no tiene el correo (falta v55), el correo viaja dentro del comentario para no perderlo
+      const notasCorreo = [notas, `Correo: ${correo}`].filter(Boolean).join(' · ');
       if (!clasico) {
-        ({ data, error } = await supabaseClient.rpc('reservar_cita_v4', {
+        const base = {
           ...params, p_servicio_otro: selOtro ? otroTexto : null, p_notas: notas,
           p_rut: formatearRut(document.getElementById('r-rut').value),
           p_vehiculo_id: reco && vehiculoElegido && vehiculoElegido !== '__nuevo__' ? vehiculoElegido : null,
           p_marca: usaVehiculoNuevo ? (document.getElementById('r-marca').value.trim() || null) : null,
           p_modelo: usaVehiculoNuevo ? (document.getElementById('r-modelo').value.trim() || null) : null,
           p_anio: usaVehiculoNuevo ? anio : null,
+        };
+        const tecnicos = {
           p_km: usaVehiculoNuevo ? Math.round(Number(document.getElementById('r-km').value)) : null,
           p_motor: usaVehiculoNuevo ? (document.getElementById('r-motor').value.trim() || null) : null,
           p_combustible: usaVehiculoNuevo ? (document.getElementById('r-combustible').value || null) : null,
-        }));
-        // Aún sin v51 (kilometraje, cilindrada, combustible): se reserva igual con los datos de antes
-        if (error && error.code === 'PGRST202') {
-          ({ data, error } = await supabaseClient.rpc('reservar_cita_v4', {
-            ...params, p_servicio_otro: selOtro ? otroTexto : null, p_notas: notas,
-            p_rut: formatearRut(document.getElementById('r-rut').value),
-            p_vehiculo_id: reco && vehiculoElegido && vehiculoElegido !== '__nuevo__' ? vehiculoElegido : null,
-            p_marca: usaVehiculoNuevo ? (document.getElementById('r-marca').value.trim() || null) : null,
-            p_modelo: usaVehiculoNuevo ? (document.getElementById('r-modelo').value.trim() || null) : null,
-            p_anio: usaVehiculoNuevo ? anio : null,
-          }));
+        };
+        // De la versión más nueva a la más antigua: así la reserva funciona aunque falte ejecutar algún SQL (v55, v51)
+        const intentos = [
+          { ...base, ...tecnicos, p_email: correo },
+          { ...base, ...tecnicos, p_notas: notasCorreo },
+          { ...base, p_notas: notasCorreo },
+        ];
+        for (const args of intentos) {
+          ({ data, error } = await supabaseClient.rpc('reservar_cita_v4', args));
+          if (!(error && error.code === 'PGRST202')) break;
         }
       }
       // Sin la versión con RUT (falta v44), se reserva como antes
       if (clasico || (error && (error.code === 'PGRST202' || /reservar_cita_v4/.test(error.message || '')))) {
-        ({ data, error } = await supabaseClient.rpc('reservar_cita_v3', { ...params, p_servicio_otro: selOtro ? otroTexto : null, p_notas: notas }));
+        ({ data, error } = await supabaseClient.rpc('reservar_cita_v3', { ...params, p_servicio_otro: selOtro ? otroTexto : null, p_notas: notasCorreo }));
         // Si el servidor aún no tiene la versión con «Otro» (falta ejecutar v35), un servicio del listado se reserva igual
         if (error && !selOtro && (error.code === 'PGRST202' || /reservar_cita_v3/.test(error.message || ''))) {
-          ({ data, error } = await supabaseClient.rpc('reservar_cita_v2', { ...params, p_notas: notas }));
+          ({ data, error } = await supabaseClient.rpc('reservar_cita_v2', { ...params, p_notas: notasCorreo }));
         }
       }
       btn.disabled = false; btn.textContent = 'Confirmar reserva';
@@ -564,7 +577,8 @@
         <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>Servicio</span><strong style="text-align:right;">${htmlSeguro(selOtro ? `Otro: ${otroTexto}` : selTrabajo.nombre)}</strong></div>${filaValor}${filaDescripcion}
         <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>Día</span><strong>${textoDia(selYmd, { weekday: 'long', day: 'numeric', month: 'long' })}</strong></div>
         <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>Hora</span><strong>${selSlot} hrs</strong></div>
-        <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>A nombre de</span><strong>${htmlSeguro(nombreMostrado)}</strong></div>`;
+        <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>A nombre de</span><strong>${htmlSeguro(nombreMostrado)}</strong></div>
+        <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>Confirmación a</span><strong style="text-align:right; word-break:break-all;">${htmlSeguro(correo)}</strong></div>`;
       document.getElementById('wizard').style.display = 'none';
       document.getElementById('confirmacion').style.display = 'block';
       document.getElementById('confirmacion').scrollIntoView({ behavior: 'smooth' });

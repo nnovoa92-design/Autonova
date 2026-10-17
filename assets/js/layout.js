@@ -435,6 +435,55 @@ function linkWhatsApp(telefono, mensaje) {
   return `https://wa.me/${digits}?text=${encodeURIComponent(mensaje)}`;
 }
 
+// ---------- Correo electrónico ----------
+function correoValido(valor) {
+  return /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]{2,}$/.test(String(valor || '').trim());
+}
+
+// Envía un correo con el «script de correo» del taller: un Google Apps Script publicado con su cuenta de Gmail
+// (Configuración → Correo de confirmaciones). Devuelve { estado }:
+//   'enviado' · 'sin_configurar' · 'error' (+ mensaje: el script rechazó el envío) ·
+//   'incierto' (+ mensaje: no se pudo leer la respuesta, el correo puede haber salido: revisar «Enviados»).
+async function enviarCorreo({ para, asunto, texto }) {
+  const cfg = await getTallerConfig();
+  const url = cfg && cfg.correo_script_url, clave = cfg && cfg.correo_script_clave;
+  if (!url || !clave) return { estado: 'sin_configurar' };
+  if (!correoValido(para)) return { estado: 'error', mensaje: 'El correo del cliente no es válido.' };
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // sin «preflight»: Apps Script no lo responde
+      body: JSON.stringify({ clave, para: String(para).trim(), asunto, texto, nombre: (cfg && cfg.nombre) || 'Autonova' }),
+    });
+    let j = null;
+    try { j = await r.json(); } catch (e) { j = null; }
+    if (j && j.ok) return { estado: 'enviado' };
+    if (j && j.error) return { estado: 'error', mensaje: j.error };
+    return { estado: 'incierto', mensaje: `respuesta inesperada (HTTP ${r.status})` };
+  } catch (e) {
+    return { estado: 'incierto', mensaje: e && e.message ? e.message : 'sin respuesta' };
+  }
+}
+
+// Aviso flotante breve (esquina inferior derecha). tipo: 'ok' | 'aviso' | 'error'. Se cierra tocándolo.
+function mostrarToast(texto, tipo = 'ok', ms = 7000) {
+  const colores = { ok: ['#eef7ee', '#1b6e3c', '#14532d'], aviso: ['#fff8e6', '#c98a0b', '#5b4a12'], error: ['#fff4f2', '#c0392b', '#7a1f14'] }[tipo] || ['#eef7ee', '#1b6e3c', '#14532d'];
+  let caja = document.getElementById('toast-autonova');
+  if (!caja) {
+    caja = document.createElement('div');
+    caja.id = 'toast-autonova';
+    caja.setAttribute('role', 'status');
+    caja.addEventListener('click', () => { caja.style.display = 'none'; });
+    (document.body || document.documentElement).appendChild(caja);
+  }
+  caja.style.cssText = `position:fixed; right:1rem; bottom:1rem; z-index:410; max-width:min(380px, calc(100vw - 2rem)); background:${colores[0]};` +
+    `border:1px solid ${colores[1]}; border-left:5px solid ${colores[1]}; border-radius:8px; padding:0.7rem 0.9rem; color:${colores[2]};` +
+    'box-shadow:0 8px 24px rgba(0,0,0,0.22); font-size:0.88rem; cursor:pointer; display:block;';
+  caja.textContent = texto;
+  clearTimeout(mostrarToast.temporizador);
+  mostrarToast.temporizador = setTimeout(() => { caja.style.display = 'none'; }, ms);
+}
+
 // ---------- RUT, teléfono y patente (Chile) ----------
 // Los campos se van formateando solos mientras se escribe: RUT con puntos y guion,
 // teléfono con +56 y patente en mayúsculas.

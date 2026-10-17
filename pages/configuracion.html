@@ -206,6 +206,44 @@
           <p id="patentes-ok" style="color:#1b6e3c; font-size:0.85rem;"></p>
         </div>
 
+        <div class="card" id="correo-card">
+          <h2 style="margin-top:0;">Correo de confirmaciones</h2>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
+            Al confirmar una reserva, el cliente recibe un correo con su día, hora y el horario reservado, enviado
+            <strong>desde tu propio Gmail</strong> (gratis, sin dominio ni servicios de pago). Se configura una sola vez:
+          </p>
+          <ol style="color:var(--color-text-muted); font-size:0.85rem; padding-left:1.2rem; margin:0.25rem 0 0.75rem;">
+            <li>Pulsa <strong>Generar clave</strong> (o usa la que ya tengas) y luego <strong>Copiar script</strong>.</li>
+            <li>Entra a <a href="https://script.google.com" target="_blank" rel="noopener">script.google.com</a> con la cuenta de Gmail desde la que quieres enviar los correos → <strong>Nuevo proyecto</strong> → borra lo que aparece, pega el script y pulsa el disquete 💾.</li>
+            <li>Arriba a la derecha: <strong>Implementar → Nueva implementación → ⚙ Aplicación web</strong>. En «Ejecutar como» deja <em>Yo</em> y en «Quién tiene acceso» elige <em>Cualquier persona</em>. Pulsa Implementar y acepta los permisos (si Google avisa que la app no está verificada: <em>Configuración avanzada → Ir a … → Permitir</em>; es tu propio script).</li>
+            <li>Copia la <strong>URL de la aplicación web</strong>, pégala abajo y pulsa <strong>Guardar</strong>. Después usa <strong>Enviar correo de prueba</strong>.</li>
+          </ol>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="correo_script_clave">Clave del script</label>
+              <input type="text" id="correo_script_clave" autocomplete="off" placeholder="Pulsa «Generar clave»" />
+            </div>
+            <div class="form-group" style="flex:2;">
+              <label for="correo_script_url">URL de la aplicación web</label>
+              <input type="url" id="correo_script_url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec" />
+            </div>
+          </div>
+          <label for="correo_script_codigo" style="font-size:0.85rem;">Script para pegar en Google (ya lleva tu clave):</label>
+          <textarea id="correo_script_codigo" rows="9" readonly style="font-family:monospace; font-size:0.78rem;"></textarea>
+          <div style="margin-top:0.5rem;">
+            <button type="button" id="generar-clave-correo-btn" class="btn-secondary">Generar clave</button>
+            <button type="button" id="copiar-script-correo-btn" class="btn-secondary">Copiar script</button>
+            <button type="button" id="guardar-correo-btn">Guardar</button>
+            <button type="button" id="probar-correo-btn" class="btn-secondary">Enviar correo de prueba</button>
+          </div>
+          <p class="error-message" id="correo-error"></p>
+          <p id="correo-ok" style="color:#1b6e3c; font-size:0.85rem;"></p>
+          <p style="color:var(--color-text-muted); font-size:0.8rem;">
+            Sin esto configurado todo sigue funcionando: el correo del cliente se guarda en su ficha y desde la cita puedes
+            pulsar «Avisar por correo» para abrir tu Gmail con el mensaje listo. Gmail permite unos 100 correos al día con este método.
+          </p>
+        </div>
+
         <div class="card">
           <h2 style="margin-top:0;">Horario de atención</h2>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
@@ -675,6 +713,87 @@
       }
     });
 
+    // ---------- Correo de confirmaciones (Google Apps Script con el Gmail del taller) ----------
+    const CODIGO_SCRIPT_CORREO = String.raw`// Script de correo de Autonova. Se pega en script.google.com con la cuenta de Gmail del taller.
+const CLAVE = '__CLAVE__';
+
+function doPost(e) {
+  try {
+    const d = JSON.parse(e.postData.contents);
+    if (d.clave !== CLAVE) return responder({ ok: false, error: 'Clave incorrecta' });
+    const para = String(d.para || '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(para)) return responder({ ok: false, error: 'Correo inválido' });
+    MailApp.sendEmail({
+      to: para,
+      subject: String(d.asunto || 'Confirmación de tu hora').slice(0, 200),
+      body: String(d.texto || '').slice(0, 5000),
+      name: String(d.nombre || 'Taller').slice(0, 80)
+    });
+    return responder({ ok: true });
+  } catch (err) {
+    return responder({ ok: false, error: String(err) });
+  }
+}
+
+function responder(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+`;
+    const refrescarScriptCorreo = () => {
+      const clave = document.getElementById('correo_script_clave').value.trim();
+      document.getElementById('correo_script_codigo').value = CODIGO_SCRIPT_CORREO.replace('__CLAVE__', clave || 'PRIMERO-GENERA-LA-CLAVE');
+    };
+    document.getElementById('correo_script_clave').addEventListener('input', refrescarScriptCorreo);
+    document.getElementById('generar-clave-correo-btn').addEventListener('click', () => {
+      if (document.getElementById('correo_script_clave').value.trim() &&
+          !confirm('Ya hay una clave. Si generas otra, tendrás que pegar de nuevo el script en Google y guardar. ¿Generar una nueva?')) return;
+      const bytes = crypto.getRandomValues(new Uint8Array(18));
+      document.getElementById('correo_script_clave').value = Array.from(bytes, b => b.toString(36).padStart(2, '0')).join('').slice(0, 28);
+      refrescarScriptCorreo();
+    });
+    document.getElementById('copiar-script-correo-btn').addEventListener('click', async () => {
+      const errorEl = document.getElementById('correo-error'), okEl = document.getElementById('correo-ok');
+      errorEl.textContent = ''; okEl.textContent = '';
+      if (!document.getElementById('correo_script_clave').value.trim()) { errorEl.textContent = 'Primero pulsa «Generar clave»: el script la lleva dentro.'; return; }
+      const area = document.getElementById('correo_script_codigo');
+      try { await navigator.clipboard.writeText(area.value); }
+      catch (e) { area.focus(); area.select(); document.execCommand('copy'); }
+      okEl.textContent = 'Script copiado. Pégalo en script.google.com (paso 2).';
+    });
+    document.getElementById('guardar-correo-btn').addEventListener('click', async () => {
+      const errorEl = document.getElementById('correo-error'), okEl = document.getElementById('correo-ok');
+      errorEl.textContent = ''; okEl.textContent = '';
+      const clave = document.getElementById('correo_script_clave').value.trim();
+      const url = document.getElementById('correo_script_url').value.trim();
+      if (url && !/^https:\/\/script\.google\.com\/.+/.test(url)) { errorEl.textContent = 'La URL debe ser la «URL de la aplicación web» que entrega Google (empieza con https://script.google.com/).'; return; }
+      if (url && !clave) { errorEl.textContent = 'Falta la clave del script: pulsa «Generar clave» y pega el script actualizado en Google.'; return; }
+      const { error } = await supabaseClient.from('taller_config').update({ correo_script_url: url || null, correo_script_clave: (url ? clave : null) || null }).eq('id', 1);
+      if (error) {
+        errorEl.textContent = /correo_script/.test(error.message || '')
+          ? 'Falta ejecutar sql/actualizacion-v55-correo-del-cliente.sql en el SQL Editor de Supabase.'
+          : `Error: ${error.message}`;
+        return;
+      }
+      tallerConfigCache = null;
+      okEl.textContent = url ? 'Guardado. Pulsa «Enviar correo de prueba» para comprobarlo.' : 'Envío automático desactivado: desde cada cita podrás abrir Gmail con el mensaje listo.';
+    });
+    document.getElementById('probar-correo-btn').addEventListener('click', async () => {
+      const errorEl = document.getElementById('correo-error'), okEl = document.getElementById('correo-ok');
+      errorEl.textContent = ''; okEl.textContent = '';
+      tallerConfigCache = null;
+      const { data: { session } } = await supabaseClient.auth.getSession();
+      const para = (prompt('¿A qué correo envío la prueba? (ej. el tuyo)', (session && session.user && session.user.email) || '') || '').trim();
+      if (!para) return;
+      if (!correoValido(para)) { errorEl.textContent = 'Ese correo no es válido.'; return; }
+      okEl.textContent = 'Enviando…';
+      const r = await enviarCorreo({ para, asunto: 'Prueba de correo de Autonova', texto: 'Si recibes este mensaje, el envío de confirmaciones por correo está funcionando.\n\nAutonova' });
+      okEl.textContent = '';
+      if (r.estado === 'enviado') okEl.textContent = `Listo: se envió un correo de prueba a ${para}. Revisa la bandeja (y spam).`;
+      else if (r.estado === 'sin_configurar') errorEl.textContent = 'Aún no hay URL y clave guardadas: completa los pasos y pulsa «Guardar».';
+      else if (r.estado === 'error') errorEl.textContent = `El script respondió: ${r.mensaje}. Si dice «Clave incorrecta», pega de nuevo el script con la clave actual y vuelve a implementar.`;
+      else errorEl.textContent = `No pude confirmar el envío (${r.mensaje}). Revisa que la implementación tenga acceso «Cualquier persona» y que la URL termine en /exec; mira también «Enviados» en tu Gmail.`;
+    });
+
     document.getElementById('guardar-horario-btn').addEventListener('click', async () => {
       const errorEl = document.getElementById('horario-error');
       const okEl = document.getElementById('horario-ok');
@@ -779,6 +898,9 @@
 
       document.getElementById('slot_min').value = String(data.slot_min || 60);
       if (data.api_patentes_key) { document.getElementById('api_patentes_key').value = data.api_patentes_key; mostrarVenceClave(); }
+      if (data.correo_script_clave) document.getElementById('correo_script_clave').value = data.correo_script_clave;
+      if (data.correo_script_url) document.getElementById('correo_script_url').value = data.correo_script_url;
+      refrescarScriptCorreo();
       cargarHorario().catch(e => console.error('Error en cargarHorario:', e));
       cargarBloqueos().catch(e => console.error('Error en cargarBloqueos:', e));
 

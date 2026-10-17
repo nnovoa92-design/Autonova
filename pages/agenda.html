@@ -889,6 +889,13 @@
       return c.telefono_contacto || (c.clientes && c.clientes.telefono) || '';
     }
 
+    // Correo de la reserva: el que dejó la persona en ESTA cita manda sobre el de la ficha del cliente.
+    function correoCita(c) {
+      return String(c.email_contacto || (c.clientes && c.clientes.email) || '').trim();
+    }
+    // ¿Está configurado el envío automático de correos (Configuración → Correo de confirmaciones)?
+    const envioCorreoListo = () => !!(tallerHorarios && tallerHorarios.correo_script_url && tallerHorarios.correo_script_clave);
+
     // Reserva web de alguien que aún no es cliente: su ficha (y la del vehículo) se crean al confirmar.
     const esReservaNueva = (c) => c.estado === 'pendiente' && !c.cliente_id;
     const ETIQUETA_NUEVO = ' <span class="badge badge-yellow" title="Aún no es cliente: se registra al confirmar la reserva">nuevo</span>';
@@ -1005,6 +1012,33 @@
       });
     }
 
+    // Correo de confirmación: el mismo texto que el WhatsApp (plantilla de Configuración) más el bloque de horas
+    // reservado para el vehículo y los datos del taller.
+    async function correoConfirmacionCita(c) {
+      const cuerpo = await mensajeConfirmacionCita(c);
+      const fin = new Date(new Date(c.fecha_hora).getTime() + (Number(c.duracion_min) || 60) * 60000);
+      const bloque = c.estado === 'confirmado' ? `\n\nHorario reservado para su vehículo: de ${fmtHora(c.fecha_hora)} a ${fmtHora(fin.toISOString())}.` : '';
+      const pie = [tallerHorarios.nombre, tallerHorarios.direccion, tallerHorarios.telefono].filter(Boolean).join(' · ');
+      return {
+        asunto: `Su hora en ${tallerHorarios.nombre || 'el taller'} está confirmada: ${fmtFecha(c.fecha_hora)} ${fmtHora(c.fecha_hora)}`,
+        texto: `${cuerpo}${bloque}${pie ? `\n\n${pie}` : ''}`,
+      };
+    }
+
+    // Avisa por correo. Con el envío automático configurado lo manda solo; si no, y solo cuando lo pide el usuario
+    // con un botón (abrirGmail), abre Gmail con el correo redactado para que él pulse «Enviar».
+    async function avisarCorreoCita(c, correo, { abrirGmail = false } = {}) {
+      const para = String(correo || correoCita(c)).trim();
+      if (!correoValido(para)) { alert('Esta cita no tiene un correo válido.'); return { estado: 'sin_correo' }; }
+      const { asunto, texto } = await correoConfirmacionCita(c);
+      const r = await enviarCorreo({ para, asunto, texto });
+      if (r.estado === 'enviado') mostrarToast(`✉ Correo enviado a ${para}`, 'ok');
+      else if (r.estado === 'error') mostrarToast(`No se pudo enviar el correo a ${para}: ${r.mensaje}`, 'error', 12000);
+      else if (r.estado === 'incierto') mostrarToast(`No pude confirmar si el correo a ${para} salió (${r.mensaje}). Revisa «Enviados» en tu Gmail antes de reenviarlo.`, 'aviso', 15000);
+      else if (r.estado === 'sin_configurar' && abrirGmail) abrirEnlace(linkGmail(para, asunto, texto));
+      return r;
+    }
+
     // Mensaje de recordatorio (día anterior): transparente con precio y tiempo
     // estimados, dejando claro que no se cobra nada extra sin avisar antes.
     // Plantilla editable en Configuración.
@@ -1041,6 +1075,7 @@
         btns += `<button type="button" class="btn-danger btn-mini act" data-id="${c.id}" data-e="cancelado">Cancelar</button>`;
       }
       btns += `<button type="button" class="btn-secondary btn-mini avisar-wa" data-id="${c.id}">Avisar por WhatsApp</button>`;
+      if (c.estado === 'confirmado' && correoCita(c)) btns += `<button type="button" class="btn-secondary btn-mini avisar-correo" data-id="${c.id}">Avisar por correo</button>`;
       btns += `<button type="button" class="btn-secondary btn-mini editar" data-id="${c.id}">Editar</button>`;
       btns += `<button type="button" class="btn-danger btn-mini eliminar" data-id="${c.id}">Eliminar</button>`;
       return btns;
@@ -1381,10 +1416,10 @@
       return { cliente: null, por: null };
     }
 
-    async function crearClienteDeReserva(c) {
+    async function crearClienteDeReserva(c, correo) {
       const nombre = (c.nombre_contacto || '').trim();
       if (!nombre) return { error: 'La reserva no trae el nombre de la persona: completa sus datos antes de confirmar.' };
-      const fila = { nombre, rut: c.rut_contacto || null, telefono: c.telefono_contacto || null };
+      const fila = { nombre, rut: c.rut_contacto || null, telefono: c.telefono_contacto || null, email: correo || null };
       const { data, error } = await supabaseClient.from('clientes').insert(fila).select(COLS_CLIENTE).single();
       if (errorDuplicado(error) && fila.rut) {
         // El mismo RUT ya existe (p. ej. desactivado): se usa esa ficha
@@ -1442,7 +1477,7 @@
         if (r.cliente) {
           lineas.push(`👤 Ya es cliente: <strong>${escapar(r.cliente.nombre)}</strong> <small style="color:var(--color-text-muted);">(lo reconocí por ${r.por}).</small>`);
         } else {
-          lineas.push(`👤 <strong>Cliente nuevo</strong>: al confirmar se registra como cliente con estos datos (${escapar([c.nombre_contacto, c.rut_contacto, c.telefono_contacto].filter(Boolean).join(' · '))}).`);
+          lineas.push(`👤 <strong>Cliente nuevo</strong>: al confirmar se registra como cliente con estos datos (${escapar([c.nombre_contacto, c.rut_contacto, c.telefono_contacto, correoCita(c)].filter(Boolean).join(' · '))}).`);
         }
       }
       if (!c.vehiculo_id && c.patente_contacto) {
@@ -1497,7 +1532,7 @@
       let c = [...citasDia, ...onlinePendientes].find(x => x.id === id);
       if (!c) {
         const { data } = await supabaseClient.from('citas')
-          .select('*, clientes(nombre, telefono), vehiculos(patente, marca, modelo), trabajos(nombre, horas_estimadas, precio_fijo)')
+          .select('*, clientes(nombre, telefono, email), vehiculos(patente, marca, modelo), trabajos(nombre, horas_estimadas, precio_fijo)')
           .eq('id', id).maybeSingle();
         c = data;
       }
@@ -1556,6 +1591,16 @@
         <label style="display:${tel ? 'flex' : 'none'}; gap:0.5rem; align-items:flex-start; margin-top:0.4rem; font-weight:500;">
           <input type="checkbox" id="cf-wa" checked style="margin-top:0.2rem; width:auto;" />
           <span>Avisar al cliente por WhatsApp al confirmar</span>
+        </label>
+        <div class="form-group" style="margin-top:0.6rem; margin-bottom:0.2rem;">
+          <label for="cf-email">Correo del cliente</label>
+          <input type="email" id="cf-email" value="${escapar(correoCita(c))}" placeholder="cliente@correo.cl" maxlength="120" />
+        </div>
+        <label style="display:flex; gap:0.5rem; align-items:flex-start; margin-top:0.2rem; font-weight:500;">
+          <input type="checkbox" id="cf-correo" ${envioCorreoListo() && correoCita(c) ? 'checked' : ''} ${envioCorreoListo() ? '' : 'disabled'} style="margin-top:0.2rem; width:auto;" />
+          <span>Enviar la confirmación por correo (con el horario reservado)
+            ${envioCorreoListo() ? '' : '<small style="display:block; color:var(--color-text-muted); font-weight:400;">El envío automático aún no está configurado (Configuración → Correo de confirmaciones). Igual se guarda el correo en la ficha y luego puedes usar «Avisar por correo» en la cita.</small>'}
+          </span>
         </label>
 
         <div id="cf-registro"></div>
@@ -1620,8 +1665,22 @@
           errorEl.textContent = 'Para permitir vehículos al mismo tiempo falta ejecutar sql/actualizacion-v48-confirmar-reserva-duracion.sql en Supabase.';
           return;
         }
+        // Correo del cliente: se guarda en su ficha y, si se pide, se le envía la confirmación
+        const correoIngresado = document.getElementById('cf-email').value.trim().toLowerCase();
+        const enviarMail = !!(document.getElementById('cf-correo') && document.getElementById('cf-correo').checked);
+        if (correoIngresado && !correoValido(correoIngresado)) {
+          errorEl.textContent = 'El correo del cliente no es válido: corrígelo o déjalo vacío.';
+          document.getElementById('cf-email').focus();
+          return;
+        }
+        if (enviarMail && !correoIngresado) {
+          errorEl.textContent = 'Escribe el correo del cliente o desmarca el envío por correo.';
+          document.getElementById('cf-email').focus();
+          return;
+        }
         const payload = { estado: 'confirmado', duracion_min: minutos, personal_id: document.getElementById('cf-mec').value || null };
         if ('bloquea' in c) payload.bloquea = !paralelo;
+        if ('email_contacto' in c && correoIngresado !== String(c.email_contacto || '')) payload.email_contacto = correoIngresado || null;
         const boton = document.getElementById('cf-confirmar');
         boton.disabled = true;
         const ficha = confirmando && confirmando.ficha;
@@ -1634,7 +1693,7 @@
           const r = await buscarClienteDeReserva(c);
           let cli = r.cliente;
           if (!cli) {
-            const nuevo = await crearClienteDeReserva(c);
+            const nuevo = await crearClienteDeReserva(c, correoIngresado);
             if (nuevo.error) { errorEl.textContent = nuevo.error; boton.disabled = false; return; }
             cli = nuevo.cliente;
           }
@@ -1648,12 +1707,21 @@
             const { error: eRut } = await supabaseClient.from('clientes').update({ rut: c.rut_contacto }).eq('id', cli.id);
             if (!eRut) cli.rut = c.rut_contacto;
           }
+          // Ficha existente sin correo: se le guarda el que dejó al reservar (o el que se corrigió aquí)
+          if (!cli.email && correoIngresado) {
+            const { error: eMail } = await supabaseClient.from('clientes').update({ email: correoIngresado }).eq('id', cli.id);
+            if (!eMail) cli.email = correoIngresado;
+          }
           if (!clientesCache.some(x => x.id === cli.id)) clientesCache.push(cli);
           poblarClientes();
         } else {
           // Ficha creada por una reserva anterior a v52: al confirmar deja de estar «por revisar»
           const { error: ePr } = await supabaseClient.from('clientes').update({ por_revisar: false }).eq('id', clienteId).eq('por_revisar', true);
           void ePr;
+          if (correoIngresado && !(c.clientes && c.clientes.email)) {
+            const { error: eMail } = await supabaseClient.from('clientes').update({ email: correoIngresado }).eq('id', clienteId);
+            void eMail;
+          }
         }
         if (!vehiculoId && c.patente_contacto) {
           const rv = await crearVehiculoDeReserva(c, clienteId, usarFicha ? ficha : null);
@@ -1695,6 +1763,7 @@
         const avisar = document.getElementById('cf-wa') && document.getElementById('cf-wa').checked && telefonoCita(c);
         cerrarConfirmacion();
         if (avisar) avisarWhatsAppCita(actualizada, await mensajeConfirmacionCita(actualizada));
+        if (enviarMail) avisarCorreoCita(actualizada, correoIngresado).catch(e => mostrarToast('No se pudo enviar el correo: ' + (e && e.message ? e.message : 'error'), 'error', 12000));   // sin esperar: la agenda se refresca de inmediato
         if (avisosFinal.length) alert(avisosFinal.join('\n\n'));
         await cargar();
       });
@@ -1729,6 +1798,10 @@
       cont.querySelectorAll('.avisar-wa').forEach(b => b.addEventListener('click', async () => {
         const c = [...citasDia, ...onlinePendientes].find(x => x.id === b.dataset.id);
         if (c) avisarWhatsAppCita(c, await mensajeConfirmacionCita(c));
+      }));
+      cont.querySelectorAll('.avisar-correo').forEach(b => b.addEventListener('click', async () => {
+        const c = [...citasDia, ...onlinePendientes].find(x => x.id === b.dataset.id);
+        if (c) await avisarCorreoCita(c, null, { abrirGmail: true });
       }));
       cont.querySelectorAll('.editar').forEach(b => b.addEventListener('click', () => {
         const c = [...citasDia, ...onlinePendientes].find(x => x.id === b.dataset.id);
@@ -1770,7 +1843,7 @@
     async function cargarOnline() {
       const { data } = await supabaseClient
         .from('citas')
-        .select('*, clientes(nombre, telefono), vehiculos(patente), trabajos(nombre, horas_estimadas, precio_fijo)')
+        .select('*, clientes(nombre, telefono, email), vehiculos(patente), trabajos(nombre, horas_estimadas, precio_fijo)')
         .eq('origen', 'online').eq('estado', 'pendiente')
         .order('fecha_hora');
       onlinePendientes = data || [];
@@ -1805,7 +1878,7 @@
       const limites = limitesDiaChile(dia);
       const { data } = await supabaseClient
         .from('citas')
-        .select('*, clientes(nombre, telefono), vehiculos(patente), trabajos(nombre, horas_estimadas, precio_fijo)')
+        .select('*, clientes(nombre, telefono, email), vehiculos(patente), trabajos(nombre, horas_estimadas, precio_fijo)')
         .gte('fecha_hora', limites.desde).lte('fecha_hora', limites.hasta)
         .in('estado', ['pendiente', 'confirmado'])
         .order('fecha_hora');
@@ -1837,7 +1910,7 @@
       const hasta = new Date(dia + 'T23:59:59').toISOString();
       const { data, error } = await supabaseClient
         .from('citas')
-        .select('*, clientes(nombre, telefono), vehiculos(patente, marca, modelo), trabajos(nombre, horas_estimadas, precio_fijo)')
+        .select('*, clientes(nombre, telefono, email), vehiculos(patente, marca, modelo), trabajos(nombre, horas_estimadas, precio_fijo)')
         .gte('fecha_hora', desde).lte('fecha_hora', hasta)
         .order('fecha_hora');
       citasDia = data || [];
@@ -1860,7 +1933,7 @@
       document.getElementById('dia-titulo').textContent = `${textoCorto(lunes)} – ${textoCorto(domingo)}`;
       const { data, error } = await supabaseClient
         .from('citas')
-        .select('*, clientes(nombre, telefono), vehiculos(patente, marca, modelo), trabajos(nombre, horas_estimadas, precio_fijo)')
+        .select('*, clientes(nombre, telefono, email), vehiculos(patente, marca, modelo), trabajos(nombre, horas_estimadas, precio_fijo)')
         .gte('fecha_hora', new Date(`${lunes}T00:00:00`).toISOString())
         .lte('fecha_hora', new Date(`${domingo}T23:59:59`).toISOString())
         .order('fecha_hora');
