@@ -365,6 +365,7 @@ th {
 .badge-yellow { background: #fef3c7; color: #92600a; }
 .badge-red    { background: #fde2e0; color: #a93b33; }
 .badge-purple { background: #ede4fb; color: #6b3fa0; }
+.badge-orange { background: #ffedd5; color: #9a3412; }
 
 .badge-stock-bajo { background: #fde2e0; color: #a93b33; }
 
@@ -887,3 +888,15 @@ th {
 
 /* Acción sugerida dentro de un aviso de la campanita (ej. confirmar una reserva) */
 .campanita-accion { margin-top: 0.3rem; font-size: 0.8rem; font-weight: 700; color: var(--color-primary); }
+
+/* Líneas de cotización / OT / diagnóstico en las pantallas del cliente: en el celular cada línea se muestra
+   como una tarjeta (tipo y descripción arriba; horas, cantidad, precio y total debajo, con su título). */
+@media (max-width: 640px) {
+  .tabla-lineas thead { display: none; }
+  .tabla-lineas, .tabla-lineas tbody { display: block; width: 100%; min-width: 0; }   /* anula el ancho mínimo general de las tablas */
+  .tabla-lineas tr { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.2rem 0.5rem; padding: 0.65rem 0.15rem; border-bottom: 1px solid #eee; }
+  .tabla-lineas td { padding: 0 !important; border: 0 !important; text-align: left !important; white-space: normal !important; font-size: 0.88rem; }
+  .tabla-lineas td:first-child { grid-column: 1 / -1; margin-bottom: 0.15rem; font-size: 0.92rem; }
+  .tabla-lineas td[data-label]::before { content: attr(data-label); display: block; font-size: 0.64rem; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+  .tabla-lineas td:last-child { text-align: right !important; }
+}

@@ -175,7 +175,7 @@
           <p class="error-message" id="item-error"></p>
           <table>
             <thead>
-              <tr><th>Tipo</th><th>Descripción</th><th>Cant. / Horas</th><th>Precio unit.</th><th>Total</th><th></th></tr>
+              <tr><th>Tipo</th><th>Descripción</th><th>Horas de trabajo</th><th>Cantidad</th><th>Precio unit.</th><th>Total</th><th></th></tr>
             </thead>
             <tbody id="items-body"></tbody>
           </table>
@@ -1194,14 +1194,15 @@
       const tbody = document.getElementById('items-body');
       tbody.innerHTML = items.length ? items.map(i => `
         <tr>
-          <td>${badgeItem(i.tipo)}</td>
+          <td>${badgeItemDe(i)}</td>
           <td>${i.descripcion}</td>
-          <td>${Number(i.cantidad).toLocaleString('es-CL')}</td>
-          <td>${fmtMoneda(i.precio_unitario)}</td>
+          <td style="text-align:center;">${lineaVista(i).horas != null ? fmtNumItem(lineaVista(i).horas) + ' h' : '–'}</td>
+          <td>${fmtNumItem(lineaVista(i).cantidad)}</td>
+          <td>${fmtMoneda(i.precio_unitario)}${lineaVista(i).porHora ? ' <small style="color:var(--color-text-muted);">por hora</small>' : ''}</td>
           <td>${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td>
           <td><button type="button" class="btn-danger quitar-item-btn" data-id="${i.id}" style="padding:0.2rem 0.5rem;">✕</button></td>
         </tr>`).join('')
-        : '<tr><td colspan="6">Sin ítems.</td></tr>';
+        : '<tr><td colspan="7">Sin ítems.</td></tr>';
 
       tbody.querySelectorAll('.quitar-item-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -1267,8 +1268,8 @@
 
       const totalHoras = horas.reduce((s, h) => s + Number(h.horas), 0);
       const horasCotizadas = (ordenActual.orden_items || [])
-        .filter(i => i.tipo === 'mano_obra')
-        .reduce((s, i) => s + Number(i.cantidad), 0);
+        .filter(i => i.tipo === 'mano_obra')   // horas de trabajo × veces (líneas antiguas sin detalle: la cantidad guardada)
+        .reduce((s, i) => { const v = lineaVista(i); return s + (v.horas != null ? v.horas * v.cantidad : Number(i.cantidad)); }, 0);
       document.getElementById('horas-resumen').textContent =
         `Total trabajado: ${totalHoras.toLocaleString('es-CL')} h · Cotizado: ${horasCotizadas.toLocaleString('es-CL')} h`;
     }
@@ -1375,17 +1376,15 @@
           if (!opcion) return;
         }
         const sufijo = n > 1 ? ` (x${n})` : '';
-        const moPrecio = opcion ? Number(opcion.precio) : (t.precio_fijo != null ? Number(t.precio_fijo) : Number(config.valor_hora));
         const horasPorTrabajo = (opcion || t.precio_fijo != null) ? null : Math.max(0, Number(document.getElementById('item-horas').value) || 0);
-        const horas = horasPorTrabajo != null ? horasPorTrabajo : Number(t.horas_estimadas || 0);
-        const moCantidad = ((opcion || t.precio_fijo != null) ? 1 : horas) * n;
         const nombreLinea = opcion ? `${t.nombre} — ${opcion.nombre}` : t.nombre;
         const base = (ordenActual.orden_items || []).length;
-        const lineas = [{ orden_id: ordenActual.id, tipo: 'mano_obra', trabajo_id: t.id, repuesto_id: null, descripcion: nombreLinea + sufijo, cantidad: moCantidad, precio_unitario: moPrecio, orden: base + 1 }];
+        // cantidad × precio_unitario = total; horas / por_hora detallan la mano de obra para el cliente
+        const lineas = [{ orden_id: ordenActual.id, tipo: 'mano_obra', trabajo_id: t.id, repuesto_id: null, descripcion: nombreLinea + sufijo, ...datosManoObra(t, n, config.valor_hora, { opcion, horasPorTrabajo }), orden: base + 1 }];
         (t.insumos || []).forEach((ins, k) => {
           lineas.push({ orden_id: ordenActual.id, tipo: ins.categoria || 'otro', trabajo_id: null, repuesto_id: null, descripcion: ins.descripcion, cantidad: n, precio_unitario: matchInventario(ins.descripcion), orden: base + 2 + k });
         });
-        const { error } = await supabaseClient.from('orden_items').insert(lineas);
+        const { error } = await insertarItems('orden_items', lineas);
         if (error) { errorEl.textContent = `Error: ${error.message}`; return; }
         document.getElementById('item-preview').textContent = '';
         await abrirDetalle(ordenActual.id);
@@ -1703,8 +1702,8 @@
         </div>` : ''}` : ''}
         ${o.pertenencias_declaradas ? `<p style="font-size:0.85rem;"><strong>Pertenencias declaradas:</strong> ${o.pertenencias_declaradas}</p>` : ''}
         <table style="width:100%; border-collapse:collapse;">
-          <thead><tr style="border-bottom:1px solid #000;"><th style="text-align:left;padding:4px;">Descripción</th><th style="text-align:right;padding:4px;">Cant.</th><th style="text-align:right;padding:4px;">P. unit.</th><th style="text-align:right;padding:4px;">Total</th></tr></thead>
-          <tbody>${items.map(i => `<tr style="border-bottom:1px solid #ccc;"><td style="padding:4px;">${i.descripcion}</td><td style="text-align:right;padding:4px;">${Number(i.cantidad).toLocaleString('es-CL')}</td><td style="text-align:right;padding:4px;">${fmtMoneda(i.precio_unitario)}</td><td style="text-align:right;padding:4px;">${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td></tr>`).join('')}</tbody>
+          <thead><tr style="border-bottom:1px solid #000;"><th style="text-align:left;padding:4px;">Descripción</th><th style="text-align:center;padding:4px;">Horas de trabajo</th><th style="text-align:center;padding:4px;">Cant.</th><th style="text-align:right;padding:4px;">P. unit.</th><th style="text-align:right;padding:4px;">Total</th></tr></thead>
+          <tbody>${items.map(i => `<tr style="border-bottom:1px solid #ccc;"><td style="padding:4px;">${badgeItemDe(i)}<div style="margin-top:2px;">${htmlSeguro(i.descripcion)}</div></td>${celdasLinea(i, 'padding:4px; ')}</tr>`).join('')}</tbody>
         </table>
         <div style="margin-top:1rem; margin-left:auto; max-width:300px;">
           ${t.descuento > 0 ? `<div style="display:flex;justify-content:space-between;color:#666;"><span>Subtotal</span><span>${fmtMoneda(t.subtotal)}</span></div>
@@ -1798,8 +1797,8 @@
 
         <h3>Ítems de la orden</h3>
         <table style="width:100%; border-collapse:collapse;">
-          <thead><tr style="border-bottom:1px solid #000;"><th style="text-align:left;padding:4px;">Descripción</th><th style="text-align:right;padding:4px;">Cant.</th><th style="text-align:right;padding:4px;">P. unit.</th><th style="text-align:right;padding:4px;">Total</th></tr></thead>
-          <tbody>${items.map(i => `<tr style="border-bottom:1px solid #ccc;"><td style="padding:4px;">${i.descripcion}</td><td style="text-align:right;padding:4px;">${Number(i.cantidad).toLocaleString('es-CL')}</td><td style="text-align:right;padding:4px;">${fmtMoneda(i.precio_unitario)}</td><td style="text-align:right;padding:4px;">${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td></tr>`).join('')}</tbody>
+          <thead><tr style="border-bottom:1px solid #000;"><th style="text-align:left;padding:4px;">Descripción</th><th style="text-align:center;padding:4px;">Horas de trabajo</th><th style="text-align:center;padding:4px;">Cant.</th><th style="text-align:right;padding:4px;">P. unit.</th><th style="text-align:right;padding:4px;">Total</th></tr></thead>
+          <tbody>${items.map(i => `<tr style="border-bottom:1px solid #ccc;"><td style="padding:4px;">${badgeItemDe(i)}<div style="margin-top:2px;">${htmlSeguro(i.descripcion)}</div></td>${celdasLinea(i, 'padding:4px; ')}</tr>`).join('')}</tbody>
         </table>
         <p style="text-align:right; margin-top:0.5rem;">
           ${t.descuento > 0 ? `Subtotal: ${fmtMoneda(t.subtotal)} · ${etiquetaDescuento(t.descuentoSobre, t.descuentoPct, t.baseDescuento)}: -${fmtMoneda(t.descuento)} · ` : ''}Neto: ${fmtMoneda(t.neto)} · IVA: ${fmtMoneda(t.iva)} · Total: ${fmtMoneda(t.total)}

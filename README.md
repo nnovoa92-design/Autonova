@@ -97,6 +97,15 @@ Extras integrados:
 > (solo personal del taller). Sin eso configurado, desde la cita se usa «Avisar por correo», que abre Gmail con el mensaje
 > listo. Requiere `sql/actualizacion-v55-correo-del-cliente.sql` (sin v55 el correo viaja dentro del comentario de la reserva).
 
+> **Tipo, horas de trabajo y cantidad en columnas separadas**: en las pantallas del cliente (link de cotización, seguimiento
+> de OT, informe de diagnóstico) y en los informes impresos, cada línea muestra su **tipo con color** (Mano de obra, Repuesto,
+> Insumo, Trabajo externo…), las **horas de trabajo** (solo mano de obra), la **cantidad**, el precio unitario (con «/h» si es
+> valor hora) y el total; en el celular cada línea se ve como una tarjeta. Las tablas internas de cotización, OT y diagnóstico
+> usan las mismas columnas. Las líneas de mano de obra del catálogo guardan `horas` (por trabajo) y `por_hora` (el precio
+> unitario es el valor de la hora); el total sigue siendo cantidad × precio unitario. Requiere
+> `sql/actualizacion-v56-columnas-horas-cantidad.sql`, que además rellena las líneas antiguas cuando puede deducirlo del catálogo.
+> Sin v56 todo funciona como antes (sin horas en las columnas).
+
 ## Puesta en marcha (15 minutos)
 
 ### 1. Crear el proyecto en Supabase

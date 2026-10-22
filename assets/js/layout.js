@@ -47,6 +47,8 @@ const TIPO_ITEM = {
   repuesto:        { label: 'Repuesto',         badge: 'badge-purple' },
   insumo_taller:   { label: 'Insumo taller',    badge: 'badge-yellow' },
   insumo_vehiculo: { label: 'Insumo vehículo',  badge: 'badge-green' },
+  trabajo:         { label: 'Trabajo externo',  badge: 'badge-orange' },   // «Otro» clasificado como trabajo externo
+  insumo:          { label: 'Insumo',           badge: 'badge-yellow' },   // «Otro» clasificado como insumo
   otro:            { label: 'Otro',             badge: 'badge-gray' },
 };
 
@@ -105,6 +107,97 @@ function normalizarDescuento(d) {
 function esManoDeObra(item) {
   const sub = (item.tipo === 'otro' && item.tipo_otro) ? item.tipo_otro : item.tipo;
   return sub === 'mano_obra';
+}
+
+// ---------- Líneas de cotización / OT / diagnóstico: tipo, horas de trabajo y cantidad ----------
+// Cada línea cumple siempre total = cantidad × precio_unitario (así se calcula todo). Para que el cliente entienda
+// la mano de obra, las líneas del catálogo guardan además:
+//   · horas     = horas de trabajo POR TRABAJO
+//   · por_hora  = true si precio_unitario es el valor de la HORA (cantidad = horas × veces);
+//                 false si es el precio de cada trabajo (cantidad = veces)
+// Las líneas antiguas sin ese detalle se muestran como siempre (sin horas).
+
+// Insignia de color con el tipo de la línea (el subtipo elegido en «Otro» manda sobre el genérico).
+function badgeItemDe(item) {
+  return badgeItem((item.tipo === 'otro' && item.tipo_otro) ? item.tipo_otro : item.tipo);
+}
+
+const fmtNumItem = (n) => Number(n).toLocaleString('es-CL', { maximumFractionDigits: 2 });
+
+// { horas, cantidad, precio, porHora, total }: lo que se muestra en las columnas separadas.
+function lineaVista(item) {
+  const cantidad = Number(item.cantidad) || 0;
+  const precio = Number(item.precio_unitario) || 0;
+  let horas = null, veces = cantidad, porHora = false;
+  if (esManoDeObra(item) && item.horas != null && item.horas !== '' && Number(item.horas) >= 0) {
+    horas = Number(item.horas);
+    if (item.por_hora && horas > 0) { porHora = true; veces = Math.round((cantidad / horas) * 100) / 100; }
+  }
+  return { horas, cantidad: veces, precio, porHora, total: cantidad * precio };
+}
+
+// Celdas de una fila (HTML): horas de trabajo · cantidad · precio unitario · total. `estilo` se aplica a cada celda.
+function celdasLinea(item, estilo = '') {
+  const v = lineaVista(item);
+  const td = (etiqueta, extra, html) => `<td data-label="${etiqueta}" style="${estilo}${extra}">${html}</td>`;
+  return td('Horas de trabajo', 'text-align:center; white-space:nowrap;', v.horas != null ? `${fmtNumItem(v.horas)} h` : '–')
+    + td('Cantidad', 'text-align:center;', fmtNumItem(v.cantidad))
+    + td('Precio unit.', 'text-align:right; white-space:nowrap;', `${fmtMoneda(v.precio)}${v.porHora ? '<small style="color:#6b7280;">/h</small>' : ''}`)
+    + td('Total', 'text-align:right; white-space:nowrap;', `<strong>${fmtMoneda(v.total)}</strong>`);
+}
+
+// Edición en línea (tablas de cotización y diagnóstico): mantiene total = cantidad × precio_unitario coherente
+// con las columnas «Horas de trabajo» y «Cantidad».
+function cambiarCantidadLinea(item, veces) {
+  const v = lineaVista(item);
+  veces = Number(veces) || 0;
+  item.cantidad = v.porHora ? veces * v.horas : veces;
+}
+function cambiarHorasLinea(item, horas) {
+  horas = Math.max(0, Number(horas) || 0);
+  const v = lineaVista(item);
+  item.horas = horas;
+  if (item.por_hora) item.cantidad = (v.porHora ? v.cantidad : 1) * horas;
+}
+
+// Celdas editables «Horas de trabajo» y «Cantidad» de la tabla de edición.
+function celdasHorasCantidadEditor(item, idx) {
+  const v = lineaVista(item);
+  return `<td style="text-align:center;">${v.horas != null
+      ? `<input type="number" class="cell-horas" data-idx="${idx}" value="${v.horas}" min="0" step="0.25" />`
+      : '<span style="color:var(--color-text-muted);">–</span>'}</td>
+    <td><input type="number" class="cell-cant" data-idx="${idx}" value="${v.cantidad}" min="0" step="0.25" /></td>`;
+}
+
+// Campos de detalle (horas / por_hora) de una línea, para copiarlos al guardar o al pasar de un documento a otro.
+function detalleItem(item) {
+  return { horas: item.horas ?? null, por_hora: item.por_hora ?? null };
+}
+
+// Datos de una línea de mano de obra del catálogo.
+//   t: trabajo · n: veces · opcion: opción elegida (combo) o null · horasPorTrabajo: solo si se cobra por hora
+// Devuelve { cantidad, precio_unitario, horas, por_hora } (total = cantidad × precio_unitario, como siempre).
+function datosManoObra(t, n, valorHora, { opcion = null, horasPorTrabajo = null } = {}) {
+  n = Math.max(1, Number(n) || 1);
+  const cobraPorHora = !opcion && t.precio_fijo == null;
+  if (cobraPorHora) {
+    const h = horasPorTrabajo != null ? Number(horasPorTrabajo) : Number(t.horas_estimadas || 0);
+    return { cantidad: h * n, precio_unitario: Number(valorHora), horas: h, por_hora: true };
+  }
+  const precio = opcion ? Number(opcion.precio) : Number(t.precio_fijo);
+  const h = opcion && opcion.horas != null && opcion.horas !== '' ? Number(opcion.horas) : Number(t.horas_estimadas || 0);
+  return { cantidad: n, precio_unitario: precio, horas: h > 0 ? h : null, por_hora: false };
+}
+
+// Inserta líneas en cotizacion_items / orden_items / diagnostico_items. Si aún no se ejecutó v56 (columnas
+// horas y por_hora), las guarda igual sin ese detalle para no impedir el guardado.
+async function insertarItems(tabla, filas) {
+  let r = await supabaseClient.from(tabla).insert(filas);
+  if (r.error && /horas|por_hora|schema cache|PGRST204|42703/i.test(`${r.error.code || ''} ${r.error.message || ''}`)) {
+    const sinDetalle = filas.map(({ horas, por_hora, ...resto }) => resto);
+    r = await supabaseClient.from(tabla).insert(sinDetalle);
+  }
+  return r;
 }
 
 // Descuento de un documento sobre sus ítems ({ cantidad, precio_unitario, tipo, tipo_otro }).

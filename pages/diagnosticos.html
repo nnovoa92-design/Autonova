@@ -190,14 +190,15 @@
                 <th style="width:44px;">N°</th>
                 <th>Tipo</th>
                 <th>Descripción</th>
-                <th style="width:110px;">Cant./Horas</th>
+                <th style="width:100px;">Horas de trabajo</th>
+                <th style="width:100px;">Cantidad</th>
                 <th style="width:140px;">Precio unit.</th>
                 <th style="width:120px;">Total</th>
                 <th></th>
               </tr>
             </thead>
             <tbody id="items-body">
-              <tr><td colspan="7">Sin trabajos recomendados todavía.</td></tr>
+              <tr><td colspan="8">Sin trabajos recomendados todavía.</td></tr>
             </tbody>
           </table>
           <h3 style="margin-top:1.5rem;">6. Resumen de valores</h3>
@@ -392,7 +393,7 @@
     function lineaDiagnostico(horas, valorHora) {
       horas = horasCobradas(horas); valorHora = Number(valorHora) || 0;
       if (!(horas > 0 && valorHora > 0)) return null;
-      return { tipo: 'mano_obra', tipo_otro: null, trabajo_id: null, repuesto_id: null, descripcion: `Diagnóstico (${fmtHoras(horas)} h de taller)`, cantidad: horas, precio_unitario: valorHora };
+      return { tipo: 'mano_obra', tipo_otro: null, trabajo_id: null, repuesto_id: null, descripcion: `Diagnóstico (${fmtHoras(horas)} h de taller)`, cantidad: horas, precio_unitario: valorHora, horas, por_hora: true };
     }
     function montoDiagnostico(d) {
       const l = lineaDiagnostico(d.horas_diagnostico, d.valor_hora_diagnostico);
@@ -732,11 +733,9 @@
         if (!opcion) return;
       }
       const sufijo = n > 1 ? ` (x${n})` : '';
-      const moPrecio = opcion ? Number(opcion.precio) : (t.precio_fijo != null ? Number(t.precio_fijo) : Number(config.valor_hora));
-      const horas = horasPorTrabajo != null ? Number(horasPorTrabajo) : Number(t.horas_estimadas || 0);
-      const moCantidad = (opcion || t.precio_fijo != null ? 1 : horas) * n;
       const nombreLinea = opcion ? `${t.nombre} — ${opcion.nombre}` : t.nombre;
-      itemsActuales.push({ tipo: 'mano_obra', trabajo_id: t.id, repuesto_id: null, descripcion: nombreLinea + sufijo, cantidad: moCantidad, precio_unitario: moPrecio });
+      // cantidad × precio_unitario = total; horas / por_hora detallan la mano de obra para el cliente
+      itemsActuales.push({ tipo: 'mano_obra', trabajo_id: t.id, repuesto_id: null, descripcion: nombreLinea + sufijo, ...datosManoObra(t, n, config.valor_hora, { opcion, horasPorTrabajo }) });
       (t.insumos || []).forEach(ins => {
         const m = matchInventario(ins.descripcion);
         itemsActuales.push({ tipo: ins.categoria || 'otro', trabajo_id: null, repuesto_id: m.repuesto_id, descripcion: ins.descripcion, cantidad: n, precio_unitario: m.precio });
@@ -840,26 +839,27 @@
       const bloqueado = lineasBloqueadas();
       const tbody = document.getElementById('items-body');
       if (!itemsActuales.length) {
-        tbody.innerHTML = '<tr><td colspan="7">Sin trabajos recomendados todavía.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8">Sin trabajos recomendados todavía.</td></tr>';
         renderTotales();
         return;
       }
       tbody.innerHTML = itemsActuales.map((i, idx) => bloqueado ? `
         <tr>
           <td class="fila-num-cell">${idx + 1}</td>
-          <td>${badgeItem(i.tipo_otro && i.tipo === 'otro' ? i.tipo_otro : i.tipo)}</td>
+          <td>${badgeItemDe(i)}</td>
           <td>${esc(i.descripcion)}</td>
-          <td>${Number(i.cantidad).toLocaleString('es-CL')}</td>
-          <td>${fmtMoneda(i.precio_unitario)}</td>
+          <td style="text-align:center;">${lineaVista(i).horas != null ? fmtNumItem(lineaVista(i).horas) + ' h' : '–'}</td>
+          <td>${fmtNumItem(lineaVista(i).cantidad)}</td>
+          <td>${fmtMoneda(i.precio_unitario)}${lineaVista(i).porHora ? ' <small style="color:var(--color-text-muted);">por hora</small>' : ''}</td>
           <td>${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td>
           <td></td>
         </tr>` : `
         <tr>
           <td class="fila-num-cell">${idx + 1}</td>
-          <td>${badgeItem(i.tipo_otro && i.tipo === 'otro' ? i.tipo_otro : i.tipo)}</td>
+          <td>${badgeItemDe(i)}</td>
           <td><input type="text" class="cell-desc" data-idx="${idx}" value="${esc(i.descripcion)}" style="min-width:150px;" /></td>
-          <td><input type="number" class="cell-cant" data-idx="${idx}" value="${i.cantidad}" min="0" step="0.25" /></td>
-          <td><input type="number" class="cell-precio" data-idx="${idx}" value="${i.precio_unitario}" min="0" step="1" /></td>
+          ${celdasHorasCantidadEditor(i, idx)}
+          <td><input type="number" class="cell-precio" data-idx="${idx}" value="${i.precio_unitario}" min="0" step="1" />${lineaVista(i).porHora ? '<small style="color:var(--color-text-muted);">por hora</small>' : ''}</td>
           <td class="cell-total" data-idx="${idx}">${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td>
           <td><button type="button" class="btn-danger quitar-btn" data-idx="${idx}" style="padding:0.2rem 0.5rem;">✕</button></td>
         </tr>`).join('');
@@ -874,7 +874,9 @@
         tbody.querySelectorAll('.cell-desc').forEach(inp =>
           inp.addEventListener('input', () => { itemsActuales[inp.dataset.idx].descripcion = inp.value; }));
         tbody.querySelectorAll('.cell-cant').forEach(inp =>
-          inp.addEventListener('input', () => { itemsActuales[inp.dataset.idx].cantidad = Number(inp.value) || 0; recalcRow(inp.dataset.idx); }));
+          inp.addEventListener('input', () => { cambiarCantidadLinea(itemsActuales[inp.dataset.idx], inp.value); recalcRow(inp.dataset.idx); }));
+        tbody.querySelectorAll('.cell-horas').forEach(inp =>
+          inp.addEventListener('input', () => { cambiarHorasLinea(itemsActuales[inp.dataset.idx], inp.value); recalcRow(inp.dataset.idx); }));
         tbody.querySelectorAll('.cell-precio').forEach(inp =>
           inp.addEventListener('input', () => { itemsActuales[inp.dataset.idx].precio_unitario = Number(inp.value) || 0; recalcRow(inp.dataset.idx); }));
         tbody.querySelectorAll('.quitar-btn').forEach(btn =>
@@ -1124,7 +1126,7 @@
         const del = await supabaseClient.from('diagnostico_items').delete().eq('diagnostico_id', diagActual.id);
         if (del.error) { errorEl.textContent = `Error en trabajos: ${del.error.message}`; return null; }
         if (itemsActuales.length) {
-          const { error: errItems } = await supabaseClient.from('diagnostico_items').insert(itemsActuales.map((i, idx) => ({
+          const { error: errItems } = await insertarItems('diagnostico_items', itemsActuales.map((i, idx) => ({
             diagnostico_id: diagActual.id,
             tipo: i.tipo,
             tipo_otro: i.tipo_otro || null,
@@ -1133,6 +1135,7 @@
             descripcion: i.descripcion,
             cantidad: i.cantidad,
             precio_unitario: i.precio_unitario,
+            ...detalleItem(i),
             orden: idx + 1,
           })));
           if (errItems) { errorEl.textContent = `Error en trabajos: ${errItems.message}`; return null; }
@@ -1256,10 +1259,8 @@
         </div>` : '';
 
       const filasTrabajos = items.map((i, it) => `<tr style="border-bottom:1px solid #ccc;">
-          <td style="padding:4px;">${it + 1}. ${esc(i.descripcion)}</td>
-          <td style="text-align:right; padding:4px;">${Number(i.cantidad).toLocaleString('es-CL')}</td>
-          <td style="text-align:right; padding:4px;">${fmtMoneda(i.precio_unitario)}</td>
-          <td style="text-align:right; padding:4px;">${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td>
+          <td style="padding:4px;">${badgeItemDe(i)}<div style="margin-top:2px;">${it + 1}. ${esc(i.descripcion)}</div></td>
+          ${celdasLinea(i, 'padding:4px; ')}
         </tr>`).join('');
 
       return `
@@ -1302,7 +1303,7 @@
         ${items.length ? `
         <h3 style="margin-top:1.25rem;">${convertido ? 'Detalle de trabajos' : 'Trabajos recomendados (valor estimado)'}</h3>
         <table style="width:100%; border-collapse:collapse;">
-          <thead><tr style="border-bottom:1px solid #000;"><th style="text-align:left; padding:4px;">Descripción</th><th style="text-align:right; padding:4px;">Cant.</th><th style="text-align:right; padding:4px;">P. unit.</th><th style="text-align:right; padding:4px;">Total</th></tr></thead>
+          <thead><tr style="border-bottom:1px solid #000;"><th style="text-align:left; padding:4px;">Descripción</th><th style="text-align:center; padding:4px;">Horas de trabajo</th><th style="text-align:center; padding:4px;">Cant.</th><th style="text-align:right; padding:4px;">P. unit.</th><th style="text-align:right; padding:4px;">Total</th></tr></thead>
           <tbody>${filasTrabajos}</tbody>
         </table>` : ''}
 
@@ -1492,10 +1493,10 @@
 
       const items = ordenar(cot.cotizacion_items).map((i, idx) => ({
         orden_id: orden.id, tipo: i.tipo, tipo_otro: i.tipo_otro || null, trabajo_id: i.trabajo_id, repuesto_id: i.repuesto_id,
-        descripcion: i.descripcion, cantidad: i.cantidad, precio_unitario: i.precio_unitario, orden: idx + 1,
+        descripcion: i.descripcion, cantidad: i.cantidad, precio_unitario: i.precio_unitario, ...detalleItem(i), orden: idx + 1,
       }));
       if (items.length) {
-        const { error: e2 } = await supabaseClient.from('orden_items').insert(items);
+        const { error: e2 } = await insertarItems('orden_items', items);
         if (e2) throw new Error(e2.message);
       }
       await supabaseClient.from('ordenes_historial').insert({ orden_id: orden.id, estado_anterior: null, estado_nuevo: 'recepcion' });
@@ -1536,9 +1537,9 @@
         }).select('id, numero').single();
         if (e1) throw new Error(e1.message);
 
-        const { error: e2 } = await supabaseClient.from('cotizacion_items').insert(items.map((i, idx) => ({
+        const { error: e2 } = await insertarItems('cotizacion_items', items.map((i, idx) => ({
           cotizacion_id: cot.id, tipo: i.tipo, tipo_otro: i.tipo_otro || null, trabajo_id: i.trabajo_id, repuesto_id: i.repuesto_id,
-          descripcion: i.descripcion, cantidad: i.cantidad, precio_unitario: i.precio_unitario, orden: idx + 1,
+          descripcion: i.descripcion, cantidad: i.cantidad, precio_unitario: i.precio_unitario, ...detalleItem(i), orden: idx + 1,
         })));
         if (e2) throw new Error(e2.message);
 

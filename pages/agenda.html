@@ -1829,9 +1829,7 @@
         const t = trabajosCache.find(x => x.id === c.trabajo_id);
         if (t) {
           const config = await getTallerConfig();
-          const precio = t.precio_fijo != null ? Number(t.precio_fijo) : Number(config.valor_hora);
-          const cant   = t.precio_fijo != null ? 1 : Number(t.horas_estimadas || 1);
-          await supabaseClient.from('orden_items').insert({ orden_id: orden.id, tipo: 'mano_obra', trabajo_id: t.id, descripcion: t.nombre, cantidad: cant, precio_unitario: precio, orden: 1 });
+          await insertarItems('orden_items', [{ orden_id: orden.id, tipo: 'mano_obra', trabajo_id: t.id, descripcion: t.nombre, ...datosManoObra(t, 1, config.valor_hora, { horasPorTrabajo: t.precio_fijo != null ? null : Number(t.horas_estimadas || 1) }), orden: 1 }]);
         }
       }
       await supabaseClient.from('citas').update({ estado: 'completado', orden_id: orden.id }).eq('id', citaId);

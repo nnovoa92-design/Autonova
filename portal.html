@@ -107,16 +107,17 @@
           </div>`).join('')}` : ''}
         ${(d.items || []).length ? `
         <h3>Trabajos y repuestos</h3>
-        <table>
-          <thead><tr><th>Descripción</th><th>Cant.</th><th>Total</th></tr></thead>
+        <div style="overflow-x:auto;">
+        <table class="tabla-lineas" style="font-size:0.9rem;">
+          <thead><tr><th>Descripción</th><th style="text-align:center;">Horas de trabajo</th><th style="text-align:center;">Cant.</th><th style="text-align:right;">P. unitario</th><th style="text-align:right;">Total</th></tr></thead>
           <tbody>
             ${d.items.map(i => `<tr>
-              <td>${i.descripcion}</td>
-              <td>${Number(i.cantidad).toLocaleString('es-CL')}</td>
-              <td>${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td>
+              <td>${badgeItemDe(i)}<div style="margin-top:0.25rem;">${htmlSeguro(i.descripcion)}</div></td>
+              ${celdasLinea(i)}
             </tr>`).join('')}
           </tbody>
         </table>
+        </div>
         <div class="totales">
           ${descuento > 0 ? `<div class="fila" style="color:var(--color-text-muted);"><span>Subtotal</span><span>${fmtMoneda(subtotal)}</span></div>
           <div class="fila" style="color:var(--color-text-muted);"><span>${etiquetaDescuento(dsc.sobre, dsc.pct, dsc.base)}${dsc.sobre !== 'total' ? '<br><small>Aplica solo a la mano de obra; no incluye repuestos ni insumos.</small>' : ''}</span><span>-${fmtMoneda(descuento)}</span></div>` : ''}

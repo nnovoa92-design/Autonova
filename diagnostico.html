@@ -18,9 +18,6 @@
     .acciones-cliente { display: flex; gap: 0.6rem; flex-wrap: wrap; justify-content: center; }
     .acciones-cliente a, .acciones-cliente button { text-decoration: none; display: inline-block; padding: 0.55rem 1.1rem; border-radius: 4px; font-size: 0.92rem; cursor: pointer; border: none; }
     .tabla-trabajos td, .tabla-trabajos th { padding: 0.55rem 0.5rem; }
-    @media (max-width: 560px) {
-      .tabla-trabajos th:nth-child(3), .tabla-trabajos td:nth-child(3) { display: none; }
-    }
     @media print {
       .no-print { display: none !important; }
       .rev-item { break-inside: avoid; }
@@ -267,24 +264,25 @@
 
           ${items.length ? `
           <h3 style="margin:1.5rem 0 0.6rem;">${d.cotizacion ? 'Detalle de trabajos' : (lineaDiag && hayTrabajos ? 'Valor del diagnóstico y trabajos recomendados' : lineaDiag ? 'Valor del diagnóstico' : 'Trabajos recomendados')}</h3>
-          <table class="tabla-trabajos" style="width:100%; border-collapse:collapse; margin-bottom:1rem;">
+          <div style="overflow-x:auto; margin-bottom:1rem;">
+          <table class="tabla-trabajos tabla-lineas" style="width:100%; border-collapse:collapse; font-size:0.92rem;">
             <thead>
               <tr style="border-bottom:2px solid var(--color-primary);">
                 <th style="text-align:left;">Descripción</th>
-                <th style="text-align:center; width:70px;">Cant.</th>
-                <th style="text-align:right; width:100px;">P. unitario</th>
-                <th style="text-align:right; width:100px;">Total</th>
+                <th style="text-align:center; width:70px;">Horas de trabajo</th>
+                <th style="text-align:center; width:60px;">Cant.</th>
+                <th style="text-align:right; width:96px;">P. unitario</th>
+                <th style="text-align:right; width:96px;">Total</th>
               </tr>
             </thead>
             <tbody>
               ${items.map((i, idx) => `<tr style="border-bottom:${idx === items.length - 1 ? '2px solid var(--color-primary)' : '1px solid #eee'};">
-                <td>${esc(descripcionItem(i))}</td>
-                <td style="text-align:center;">${Number(i.cantidad).toLocaleString('es-CL')}</td>
-                <td style="text-align:right; white-space:nowrap;">${fmtMoneda(i.precio_unitario)}</td>
-                <td style="text-align:right; white-space:nowrap;"><strong>${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</strong></td>
+                <td>${badgeItemDe(i)}<div style="margin-top:0.25rem;">${esc(descripcionItem(i))}</div></td>
+                ${celdasLinea(i)}
               </tr>`).join('')}
             </tbody>
           </table>
+          </div>
 
           <div style="max-width:320px; margin-left:auto;">
             ${(lineaDiag && hayTrabajos) ? `

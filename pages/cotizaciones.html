@@ -141,14 +141,15 @@
               <tr>
                 <th>Tipo</th>
                 <th>Descripción</th>
-                <th style="width:110px;">Cant./Horas</th>
+                <th style="width:100px;">Horas de trabajo</th>
+                <th style="width:100px;">Cantidad</th>
                 <th style="width:140px;">Precio unit.</th>
                 <th style="width:120px;">Total</th>
                 <th></th>
               </tr>
             </thead>
             <tbody id="items-body">
-              <tr><td colspan="6">Sin ítems. Agrega trabajos del catálogo o repuestos.</td></tr>
+              <tr><td colspan="7">Sin ítems. Agrega trabajos del catálogo o repuestos.</td></tr>
             </tbody>
           </table>
 
@@ -235,11 +236,9 @@
         if (!opcion) return;
       }
       const sufijo = n > 1 ? ` (x${n})` : '';
-      const moPrecio = opcion ? Number(opcion.precio) : (t.precio_fijo != null ? Number(t.precio_fijo) : Number(config.valor_hora));
-      const horas = horasPorTrabajo != null ? Number(horasPorTrabajo) : Number(t.horas_estimadas || 0);
-      const moCantidad = (opcion || t.precio_fijo != null ? 1 : horas) * n;
       const nombreLinea = opcion ? `${t.nombre} — ${opcion.nombre}` : t.nombre;
-      itemsActuales.push({ tipo: 'mano_obra', trabajo_id: t.id, repuesto_id: null, descripcion: nombreLinea + sufijo, cantidad: moCantidad, precio_unitario: moPrecio });
+      // cantidad × precio_unitario = total; horas / por_hora detallan la mano de obra para el cliente
+      itemsActuales.push({ tipo: 'mano_obra', trabajo_id: t.id, repuesto_id: null, descripcion: nombreLinea + sufijo, ...datosManoObra(t, n, config.valor_hora, { opcion, horasPorTrabajo }) });
       // La descripción larga del trabajo (qué incluye, etc.) siempre queda
       // registrada en Notas, para que el cliente vea el detalle de la
       // mano de obra y no solo el nombre corto del ítem en la tabla.
@@ -553,16 +552,16 @@
     function renderItems() {
       const tbody = document.getElementById('items-body');
       if (!itemsActuales.length) {
-        tbody.innerHTML = '<tr><td colspan="6">Sin ítems. Agrega trabajos del catálogo o repuestos.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7">Sin ítems. Agrega trabajos del catálogo o repuestos.</td></tr>';
         renderTotales();
         return;
       }
       tbody.innerHTML = itemsActuales.map((i, idx) => `
         <tr>
-          <td>${badgeItem(i.tipo_otro && i.tipo === 'otro' ? i.tipo_otro : i.tipo)}</td>
+          <td>${badgeItemDe(i)}</td>
           <td><input type="text" class="cell-desc" data-idx="${idx}" value="${(i.descripcion || '').replace(/"/g, '&quot;')}" style="min-width:150px;" /></td>
-          <td><input type="number" class="cell-cant" data-idx="${idx}" value="${i.cantidad}" min="0" step="0.25" /></td>
-          <td><input type="number" class="cell-precio" data-idx="${idx}" value="${i.precio_unitario}" min="0" step="1" /></td>
+          ${celdasHorasCantidadEditor(i, idx)}
+          <td><input type="number" class="cell-precio" data-idx="${idx}" value="${i.precio_unitario}" min="0" step="1" />${lineaVista(i).porHora ? '<small style="color:var(--color-text-muted);">por hora</small>' : ''}</td>
           <td class="cell-total" data-idx="${idx}">${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td>
           <td><button type="button" class="btn-danger quitar-btn" data-idx="${idx}" style="padding:0.2rem 0.5rem;">✕</button></td>
         </tr>`).join('');
@@ -577,7 +576,9 @@
       tbody.querySelectorAll('.cell-desc').forEach(inp =>
         inp.addEventListener('input', () => { itemsActuales[inp.dataset.idx].descripcion = inp.value; }));
       tbody.querySelectorAll('.cell-cant').forEach(inp =>
-        inp.addEventListener('input', () => { itemsActuales[inp.dataset.idx].cantidad = Number(inp.value) || 0; recalcRow(inp.dataset.idx); }));
+        inp.addEventListener('input', () => { cambiarCantidadLinea(itemsActuales[inp.dataset.idx], inp.value); recalcRow(inp.dataset.idx); }));
+      tbody.querySelectorAll('.cell-horas').forEach(inp =>
+        inp.addEventListener('input', () => { cambiarHorasLinea(itemsActuales[inp.dataset.idx], inp.value); recalcRow(inp.dataset.idx); }));
       tbody.querySelectorAll('.cell-precio').forEach(inp =>
         inp.addEventListener('input', () => { itemsActuales[inp.dataset.idx].precio_unitario = Number(inp.value) || 0; recalcRow(inp.dataset.idx); }));
       tbody.querySelectorAll('.quitar-btn').forEach(btn =>
@@ -640,9 +641,10 @@
         descripcion: i.descripcion,
         cantidad: i.cantidad,
         precio_unitario: i.precio_unitario,
+        ...detalleItem(i),
         orden: idx + 1,
       }));
-      const { error: itemsError } = await supabaseClient.from('cotizacion_items').insert(items);
+      const { error: itemsError } = await insertarItems('cotizacion_items', items);
       if (itemsError) { errorEl.textContent = `Error en ítems: ${itemsError.message}`; return; }
 
       cerrarEditor();
@@ -806,9 +808,10 @@
         descripcion: i.descripcion,
         cantidad: i.cantidad,
         precio_unitario: i.precio_unitario,
+        ...detalleItem(i),
         orden: idx + 1,
       }));
-      if (items.length) await supabaseClient.from('orden_items').insert(items);
+      if (items.length) await insertarItems('orden_items', items);
       await supabaseClient.from('cotizaciones').update({ estado: 'convertida' }).eq('id', c.id);
 
       alert(`Orden ${fmtNumero('OT', orden.numero)} creada.`);
@@ -896,11 +899,12 @@
           <strong>Cliente:</strong> ${cliente.nombre ?? '–'} ${cliente.rut ? `· RUT ${cliente.rut}` : ''}<br>
           ${vehiculo ? `<strong>Vehículo:</strong> ${vehiculo.patente} · ${[vehiculo.marca, vehiculo.modelo, vehiculo.anio].filter(Boolean).join(' ')}` : ''}
         </p>
-        <table style="width:100%; border-collapse:collapse;">
+        <table style="width:100%; border-collapse:collapse; font-size:0.92rem;">
           <thead>
             <tr style="border-bottom:1px solid #000;">
               <th style="text-align:left; padding:4px;">Descripción</th>
-              <th style="text-align:right; padding:4px;">Cant.</th>
+              <th style="text-align:center; padding:4px;">Horas de trabajo</th>
+              <th style="text-align:center; padding:4px;">Cant.</th>
               <th style="text-align:right; padding:4px;">P. unitario</th>
               <th style="text-align:right; padding:4px;">Total</th>
             </tr>
@@ -908,10 +912,8 @@
           <tbody>
             ${items.map(i => `
               <tr style="border-bottom:1px solid #ccc;">
-                <td style="padding:4px;">${i.descripcion}</td>
-                <td style="text-align:right; padding:4px;">${Number(i.cantidad).toLocaleString('es-CL')}</td>
-                <td style="text-align:right; padding:4px;">${fmtMoneda(i.precio_unitario)}</td>
-                <td style="text-align:right; padding:4px;">${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td>
+                <td style="padding:4px;">${badgeItemDe(i)}<div style="margin-top:2px;">${htmlSeguro(i.descripcion)}</div></td>
+                ${celdasLinea(i, 'padding:4px; ')}
               </tr>`).join('')}
           </tbody>
         </table>

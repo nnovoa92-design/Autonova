@@ -121,24 +121,25 @@
             </p>
           </div>
 
-          <table style="width:100%; border-collapse:collapse; margin-bottom:1.5rem;">
+          <div style="overflow-x:auto; margin-bottom:1.5rem;">
+          <table class="tabla-lineas" style="width:100%; border-collapse:collapse; font-size:0.92rem;">
             <thead>
               <tr style="border-bottom:2px solid var(--color-primary);">
                 <th style="text-align:left; padding:0.5rem 0.5rem 0.75rem;">Descripción</th>
-                <th style="text-align:center; padding:0.5rem 0.5rem 0.75rem; width:80px;">Cant.</th>
-                <th style="text-align:right; padding:0.5rem 0.5rem 0.75rem; width:110px;">P. unitario</th>
-                <th style="text-align:right; padding:0.5rem 0.5rem 0.75rem; width:110px;">Total</th>
+                <th style="text-align:center; padding:0.5rem 0.5rem 0.75rem; width:72px;">Horas de trabajo</th>
+                <th style="text-align:center; padding:0.5rem 0.5rem 0.75rem; width:64px;">Cant.</th>
+                <th style="text-align:right; padding:0.5rem 0.5rem 0.75rem; width:100px;">P. unitario</th>
+                <th style="text-align:right; padding:0.5rem 0.5rem 0.75rem; width:100px;">Total</th>
               </tr>
             </thead>
             <tbody>
               ${(d.items || []).map((i, idx) => `<tr style="border-bottom:1px solid #eee; ${idx === d.items.length - 1 ? 'border-bottom:2px solid var(--color-primary);' : ''}">
-                <td style="padding:0.6rem 0.5rem;">${i.descripcion}</td>
-                <td style="text-align:center; padding:0.6rem 0.5rem;">${Number(i.cantidad).toLocaleString('es-CL')}</td>
-                <td style="text-align:right; padding:0.6rem 0.5rem;">${fmtMoneda(i.precio_unitario)}</td>
-                <td style="text-align:right; padding:0.6rem 0.5rem;"><strong>${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</strong></td>
+                <td style="padding:0.6rem 0.5rem;">${badgeItemDe(i)}<div style="margin-top:0.25rem;">${htmlSeguro(i.descripcion)}</div></td>
+                ${celdasLinea(i, 'padding:0.6rem 0.5rem; ')}
               </tr>`).join('')}
             </tbody>
           </table>
+          </div>
 
           <div style="max-width:300px; margin-left:auto; margin-right:0;">
             ${t.descuento > 0 ? `<div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px solid #eee;"><span>${etiquetaDescuento(t.descuentoSobre, t.descuentoPct, t.baseDescuento)}${t.descuentoSobre !== 'total' ? '<br><small style="color:#777;">Aplica solo a la mano de obra; no incluye repuestos ni insumos.</small>' : ''}</span><span style="color:#c33;">-${fmtMoneda(t.descuento)}</span></div>` : ''}
