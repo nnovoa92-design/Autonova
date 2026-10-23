@@ -1049,64 +1049,69 @@ function detectarDispositivo() {
   return `${so} · ${navegador}`;
 }
 
-// Abre una ventana nueva con el documento a imprimir ya armado (sin el
-// resto de la app alrededor) y dispara la impresión ahí. Reemplaza el
-// método anterior (@media print sobre la misma página / html2canvas
-// contra un contenedor oculto), que no siempre alcanzaba a renderizar
-// imágenes como firmas o fotos antes de imprimir.
+// Muestra el documento a imprimir (cotización, OT, diagnóstico, inspección, libro contable) a pantalla completa
+// dentro de la MISMA página, con una barra «← Volver» / «🖨 Imprimir / Guardar PDF». Al imprimir solo sale el
+// documento. Antes se abría una ventana emergente en blanco: en el celular y en la app instalada en la pantalla
+// de inicio esas ventanas a menudo no dejaban imprimir ni guardar el PDF (y los bloqueadores las impedían).
+// El botón se habilita cuando cargaron las imágenes (logo, firmas, fotos), para que salgan en el PDF.
 function abrirVentanaImpresion(html, titulo) {
-  const w = window.open('', '_blank');
-  if (!w) {
-    alert('Tu navegador bloqueó la ventana de impresión. Permite ventanas emergentes para este sitio e intenta de nuevo.');
-    return;
-  }
-  // Barra superior con Volver / Imprimir: no se imprime, y deja una salida
-  // clara de la ventana (Esc también la cierra) en vez de un documento
-  // "a pelo" sin forma de volver a la app.
-  const estiloBoton = 'font:600 0.9rem system-ui,sans-serif; padding:0.45rem 1rem; border-radius:6px; cursor:pointer;';
-  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8" />
-<title>${titulo || 'Documento'}</title>
-<base href="${window.location.href}" />
-<style>@media print { .barra-impresion { display: none !important; } }</style>
-<script>document.addEventListener('keydown', function (e) { if (e.key === 'Escape') window.close(); });</script>
-</head><body style="margin:0;">
-<div class="barra-impresion" style="position:sticky; top:0; z-index:10; display:flex; align-items:center; justify-content:space-between; gap:0.75rem; padding:0.6rem 1rem; background:#15181e; color:#fff; font-family:system-ui,sans-serif;">
-  <button type="button" onclick="window.close()" style="${estiloBoton} background:transparent; color:#fff; border:1px solid #fff;">← Volver</button>
-  <span style="font-size:0.85rem; opacity:0.8;">${titulo || 'Documento'}</span>
-  <button type="button" onclick="window.print()" style="${estiloBoton} background:#fff; color:#15181e; border:1px solid #fff;">🖨 Imprimir / Guardar PDF</button>
-</div>
-<div class="print-area" id="print-area" style="display:block; max-width:900px; margin:0 auto;">${html}</div>
-</body></html>`);
-  w.document.close();
+  cerrarVistaImpresion();
+  const nombre = titulo || 'Documento';
+  const cont = document.createElement('div');
+  cont.id = 'vista-impresion';
+  cont.setAttribute('role', 'dialog');
+  cont.setAttribute('aria-label', nombre);
+  cont.innerHTML = `
+    <div class="barra-impresion">
+      <button type="button" class="vi-volver">← Volver</button>
+      <span class="vi-titulo">${htmlSeguro(nombre)}</span>
+      <button type="button" class="vi-imprimir" disabled>Preparando…</button>
+    </div>
+    <p class="vi-ayuda">En el celular: pulsa «Imprimir / Guardar PDF» y elige <strong>Guardar como PDF</strong>; luego puedes enviarlo por WhatsApp o correo.</p>
+    <div class="print-area" id="print-area">${html}</div>`;
+  document.body.appendChild(cont);
+  document.body.classList.add('con-vista-impresion');
+  // El nombre sugerido del PDF es el título de la página
+  cont.dataset.tituloAnterior = document.title;
+  document.title = nombre;
+  cont.scrollTop = 0;
 
-  // readyState/load de una ventana armada con document.write() no son
-  // confiables (suelen marcar "complete" antes de que la hoja de estilo
-  // externa termine de cargar) — se espera explícitamente el <link> y
-  // las imágenes antes de imprimir, o el documento sale sin estilos.
-  const cssLink = w.document.createElement('link');
-  cssLink.rel = 'stylesheet';
-  cssLink.href = `${window.location.origin}/assets/css/style.css`;
-  const esperarCss = new Promise(resolve => {
-    cssLink.addEventListener('load', resolve, { once: true });
-    cssLink.addEventListener('error', resolve, { once: true });
+  const boton = cont.querySelector('.vi-imprimir');
+  boton.addEventListener('click', () => window.print());
+  cont.querySelector('.vi-volver').addEventListener('click', cerrarVistaImpresion);
+  esperarImagenesImpresion(cont).then(() => {
+    if (!document.body.contains(cont)) return;
+    boton.disabled = false;
+    boton.textContent = '🖨 Imprimir / Guardar PDF';
+    boton.focus();
   });
-  w.document.head.appendChild(cssLink);
-
-  esperarCss
-    .then(() => esperarImagenesImpresion(w))
-    .then(() => { w.focus(); w.print(); });
 }
 
-function esperarImagenesImpresion(w) {
-  const imgs = Array.from(w.document.images);
+function cerrarVistaImpresion() {
+  const cont = document.getElementById('vista-impresion');
+  if (!cont) return;
+  if (cont.dataset.tituloAnterior) document.title = cont.dataset.tituloAnterior;
+  cont.remove();
+  document.body.classList.remove('con-vista-impresion');
+}
+
+// Esc cierra la vista del documento
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.getElementById('vista-impresion')) cerrarVistaImpresion();
+});
+
+// Espera a que carguen las imágenes del documento (con un tope de 8 s para no quedar esperando una que falla)
+function esperarImagenesImpresion(contenedor) {
+  const imgs = Array.from(contenedor.querySelectorAll('img'));
   if (!imgs.length) return Promise.resolve();
-  return Promise.all(imgs.map(img => {
+  const todas = Promise.all(imgs.map(img => {
     if (img.complete) return Promise.resolve();
     return new Promise(resolve => {
       img.addEventListener('load', resolve, { once: true });
       img.addEventListener('error', resolve, { once: true });
     });
   }));
+  return Promise.race([todas, new Promise(resolve => setTimeout(resolve, 8000))]);
 }
 
 // ---------- Bloqueos de agenda (compartido por Agenda y Configuración) ----------

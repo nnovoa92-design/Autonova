@@ -818,7 +818,12 @@ th {
 
 @media print {
   body { margin: 0; padding: 0; }
-  body > * { display: none !important; }
+  /* Con la vista del documento abierta, solo se imprime el documento (las páginas del cliente, como el
+     informe de diagnóstico, imprimen su propio contenido y no deben quedar en blanco) */
+  body.con-vista-impresion > *:not(#vista-impresion) { display: none !important; }
+  body.con-vista-impresion { overflow: visible !important; }
+  #vista-impresion { position: static !important; overflow: visible !important; background: #fff; }
+  #vista-impresion .barra-impresion, #vista-impresion .vi-ayuda { display: none !important; }
   .print-area {
     display: block !important;
     margin: 0;
@@ -900,3 +905,17 @@ th {
   .tabla-lineas td[data-label]::before { content: attr(data-label); display: block; font-size: 0.64rem; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
   .tabla-lineas td:last-child { text-align: right !important; }
 }
+
+/* Vista del documento a imprimir / guardar como PDF (misma página, a pantalla completa) */
+#vista-impresion { position: fixed; inset: 0; z-index: 2000; background: #fff; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+body.con-vista-impresion { overflow: hidden; }
+#vista-impresion .barra-impresion { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.6rem 1rem; background: #15181e; color: #fff; font-family: system-ui, sans-serif; }
+#vista-impresion .barra-impresion button { font: 600 0.9rem system-ui, sans-serif; padding: 0.45rem 1rem; border-radius: 6px; cursor: pointer; width: auto; }
+#vista-impresion .vi-volver { background: transparent; color: #fff; border: 1px solid #fff; }
+#vista-impresion .vi-imprimir { background: #fff; color: #15181e; border: 1px solid #fff; }
+#vista-impresion .vi-imprimir:disabled { opacity: 0.6; cursor: wait; }
+#vista-impresion .vi-titulo { font-size: 0.85rem; opacity: 0.8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#vista-impresion .vi-ayuda { max-width: 900px; margin: 0.5rem auto 0; padding: 0 1rem; font-size: 0.8rem; color: var(--color-text-muted); }
+#vista-impresion .print-area { display: block; max-width: 900px; margin: 0 auto; overflow-x: auto; }   /* en el celular las tablas anchas se desplazan de lado */
+@media (min-width: 900px) and (hover: hover) { #vista-impresion .vi-ayuda { display: none; } }
+@media (max-width: 480px) { #vista-impresion .vi-titulo { display: none; } }
