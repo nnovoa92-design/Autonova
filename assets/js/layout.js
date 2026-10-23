@@ -1118,12 +1118,22 @@ async function generarPdfDocumento(cont, nombre) {
   const hoja = document.createElement('div');
   hoja.className = 'print-area pdf-hoja';
   hoja.innerHTML = cont.querySelector('#print-area').innerHTML;
+  // Nitidez: el doble de resolución, salvo en documentos largos (fotos, expedientes): los celulares no aceptan
+  // imágenes de más de ~16 megapíxeles y el PDF saldría en blanco
+  const medida = hoja.cloneNode(true);
+  medida.style.cssText = 'position:absolute; left:-10000px; top:0; width:760px;';
+  document.body.appendChild(medida);
+  await esperarImagenesImpresion(medida);
+  const alto = Math.max(medida.scrollHeight, 400);
+  medida.remove();
+  const escala = Math.max(0.75, Math.min(2, Math.sqrt(12e6 / (760 * alto))));
   const blob = await html2pdf().set({
     margin: [8, 6, 10, 6],
     filename: `${nombre}.pdf`,
     image: { type: 'jpeg', quality: 0.92 },
-    // windowWidth = ancho de la hoja: se ve igual en el celular que en el computador
-    html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false, windowWidth: 820 },
+    // windowWidth = ancho de la hoja: se ve igual en el celular que en el computador.
+    // scrollX/scrollY = 0: si la página de atrás estaba desplazada hacia abajo, el PDF salía en blanco.
+    html2canvas: { scale: escala, useCORS: true, backgroundColor: '#ffffff', logging: false, windowWidth: 820, scrollX: 0, scrollY: 0 },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
     pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', 'img', '.print-brand', '.print-header'] },
   }).from(hoja).outputPdf('blob');
