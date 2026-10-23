@@ -106,6 +106,14 @@ Extras integrados:
 > `sql/actualizacion-v56-columnas-horas-cantidad.sql`, que además rellena las líneas antiguas cuando puede deducirlo del catálogo.
 > Sin v56 todo funciona como antes (sin horas en las columnas).
 
+> **Atención a domicilio**: en la reserva online el cliente elige **En el taller** o **A domicilio** (pide la dirección).
+> Una cita a domicilio (modalidad «terreno») bloquea además el **traslado**: por defecto 1 hora antes y 1 hora después
+> (`citas.margen_antes_min` / `margen_despues_min`); las horas libres de la reserva y los choques de la Agenda ya lo
+> consideran, y la Agenda muestra esas horas como «🚗 Traslado». El **valor** sale del servicio del catálogo elegido en
+> Configuración → «Atención a domicilio» (por defecto «Trabajo a Domicilio»): se informa al cliente con la reserva hecha,
+> aparece al confirmar, en el mensaje de confirmación y como línea al crear la OT. Requiere
+> `sql/actualizacion-v57-atencion-a-domicilio.sql` (sin v57 la reserva a domicilio llega igual, con la dirección en el comentario).
+
 ## Puesta en marcha (15 minutos)
 
 ### 1. Crear el proyecto en Supabase

@@ -206,6 +206,29 @@
           <p id="patentes-ok" style="color:#1b6e3c; font-size:0.85rem;"></p>
         </div>
 
+        <div class="card" id="domicilio-card">
+          <h2 style="margin-top:0;">Atención a domicilio</h2>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
+            En la reserva online el cliente elige <strong>En el taller</strong> o <strong>A domicilio</strong>. Una cita a domicilio
+            bloquea además el traslado antes y después de la hora elegida, y su valor sale del servicio del catálogo que elijas aquí
+            (se informa al cliente con la reserva hecha, se muestra al confirmarla y se agrega a la OT).
+          </p>
+          <div class="form-row">
+            <div class="form-group" style="flex:2;">
+              <label for="trabajo_domicilio_id">Servicio del catálogo que se cobra a domicilio</label>
+              <select id="trabajo_domicilio_id"><option value="">— Sin valor a domicilio —</option></select>
+              <small id="domicilio-valor" style="display:block; margin-top:0.25rem; color:var(--color-text-muted);"></small>
+            </div>
+            <div class="form-group" style="max-width:220px;">
+              <label for="domicilio_margen_min">Traslado a bloquear (minutos antes y después)</label>
+              <input type="number" id="domicilio_margen_min" min="0" max="240" step="15" value="60" />
+            </div>
+          </div>
+          <button type="button" id="guardar-domicilio-btn">Guardar</button>
+          <p class="error-message" id="domicilio-error"></p>
+          <p id="domicilio-ok" style="color:#1b6e3c; font-size:0.85rem;"></p>
+        </div>
+
         <div class="card" id="correo-card">
           <h2 style="margin-top:0;">Correo de confirmaciones</h2>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
@@ -713,6 +736,44 @@
       }
     });
 
+    // ---------- Atención a domicilio: servicio del catálogo y traslado bloqueado ----------
+    let trabajosDomicilio = [];
+    function mostrarValorDomicilio() {
+      const t = trabajosDomicilio.find(x => x.id === document.getElementById('trabajo_domicilio_id').value);
+      const v = t ? precioNetoTrabajo(t, document.getElementById('valor_hora').value) : null;
+      document.getElementById('domicilio-valor').textContent = t
+        ? (v != null ? `Valor a domicilio: ${opcionesDeTrabajo(t).length ? 'desde ' : ''}${fmtMoneda(v)} + IVA (neto, según el catálogo).` : 'Ese servicio no tiene valor en el catálogo: complétalo en Catálogo.')
+        : 'Sin servicio elegido: la reserva a domicilio funciona igual, pero sin valor de domicilio.';
+    }
+    async function cargarDomicilio(cfg) {
+      const { data } = await supabaseClient.from('trabajos').select('id, nombre, precio_fijo, horas_estimadas, opciones').eq('activo', true).order('nombre');
+      trabajosDomicilio = data || [];
+      const sel = document.getElementById('trabajo_domicilio_id');
+      sel.innerHTML = '<option value="">— Sin valor a domicilio —</option>' + trabajosDomicilio.map(t => `<option value="${t.id}">${htmlSeguro(t.nombre)}</option>`).join('');
+      sel.value = (cfg && cfg.trabajo_domicilio_id) || '';
+      if (cfg && cfg.domicilio_margen_min != null) document.getElementById('domicilio_margen_min').value = cfg.domicilio_margen_min;
+      mostrarValorDomicilio();
+    }
+    document.getElementById('trabajo_domicilio_id').addEventListener('change', mostrarValorDomicilio);
+    document.getElementById('guardar-domicilio-btn').addEventListener('click', async () => {
+      const errorEl = document.getElementById('domicilio-error'), okEl = document.getElementById('domicilio-ok');
+      errorEl.textContent = ''; okEl.textContent = '';
+      const margen = Math.round(Number(document.getElementById('domicilio_margen_min').value));
+      if (!(margen >= 0 && margen <= 240)) { errorEl.textContent = 'El traslado debe estar entre 0 y 240 minutos.'; return; }
+      const { error } = await supabaseClient.from('taller_config').update({
+        trabajo_domicilio_id: document.getElementById('trabajo_domicilio_id').value || null,
+        domicilio_margen_min: margen,
+      }).eq('id', 1);
+      if (error) {
+        errorEl.textContent = /trabajo_domicilio_id|domicilio_margen_min/.test(error.message || '')
+          ? 'Falta ejecutar sql/actualizacion-v57-atencion-a-domicilio.sql en el SQL Editor de Supabase.'
+          : `Error: ${error.message}`;
+        return;
+      }
+      tallerConfigCache = null;
+      okEl.textContent = `Guardado. Las citas a domicilio bloquearán ${margen} min antes y ${margen} min después.`;
+    });
+
     // ---------- Correo de confirmaciones (Google Apps Script con el Gmail del taller) ----------
     const CODIGO_SCRIPT_CORREO = String.raw`// Script de correo de Autonova. Se pega en script.google.com con la cuenta de Gmail del taller.
 const CLAVE = '__CLAVE__';
@@ -901,6 +962,7 @@ function responder(obj) {
       if (data.correo_script_clave) document.getElementById('correo_script_clave').value = data.correo_script_clave;
       if (data.correo_script_url) document.getElementById('correo_script_url').value = data.correo_script_url;
       refrescarScriptCorreo();
+      cargarDomicilio(data).catch(e => console.error('Error en cargarDomicilio:', e));
       cargarHorario().catch(e => console.error('Error en cargarHorario:', e));
       cargarBloqueos().catch(e => console.error('Error en cargarBloqueos:', e));
 

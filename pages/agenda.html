@@ -215,7 +215,7 @@
               <select id="modalidad">
                 <option value="taller">En el taller (cliente llega)</option>
                 <option value="retiro">Retiro a domicilio</option>
-                <option value="terreno">Trabajo en terreno</option>
+                <option value="terreno">A domicilio (vamos donde el cliente)</option>
               </select>
             </div>
             <div class="form-group" id="grupo-direccion" style="flex:2; display:none;">
@@ -299,6 +299,33 @@
       const fin = new Date(new Date(c.fecha_hora).getTime() + (Number(c.duracion_min) || 60) * 60000);
       return `${String(fin.getHours()).padStart(2,'0')}:${String(fin.getMinutes()).padStart(2,'0')}`;
     }
+
+    // ---------- Atención a domicilio (modalidad «terreno»): traslado bloqueado antes y después ----------
+    function margenesCita(c) {
+      return { antes: Math.max(0, Number(c && c.margen_antes_min) || 0), despues: Math.max(0, Number(c && c.margen_despues_min) || 0) };
+    }
+    // Hora hasta la que la cita ocupa la agenda contando el traslado de vuelta
+    function fmtHoraTraslado(c) {
+      const fin = new Date(new Date(c.fecha_hora).getTime() + ((Number(c.duracion_min) || 60) + margenesCita(c).despues) * 60000);
+      return `${String(fin.getHours()).padStart(2,'0')}:${String(fin.getMinutes()).padStart(2,'0')}`;
+    }
+    // Minutos de traslado de una cita a domicilio (Configuración → Atención a domicilio; 60 por defecto)
+    function margenDomicilio() {
+      const m = tallerHorarios && tallerHorarios.domicilio_margen_min;
+      return m != null && m !== '' ? Math.max(0, Number(m) || 0) : 60;
+    }
+    // Servicio del catálogo que se cobra por la atención a domicilio, y su valor neto
+    function trabajoDomicilio() {
+      const id = tallerHorarios && tallerHorarios.trabajo_domicilio_id;
+      return id ? (trabajosCache.find(t => t.id === id) || null) : null;
+    }
+    function valorDomicilio() {
+      const t = trabajoDomicilio();
+      if (!t) return null;
+      const monto = precioNetoTrabajo(t, tallerHorarios && tallerHorarios.valor_hora);
+      return monto != null ? { monto, desde: opcionesDeTrabajo(t).length > 0, nombre: t.nombre } : null;
+    }
+    const textoValorDomicilio = (v) => v ? `${v.desde ? 'desde ' : ''}${fmtMoneda(v.monto)} + IVA` : 'sin valor en el catálogo';
 
     // ---------- Horario semanal y bloqueos (Configuración → Horario de atención) ----------
     const NOMBRE_DIA = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -837,9 +864,13 @@
         const minutos = Number(document.getElementById('duracion').value) || 60;
         const inicio = new Date(`${fecha}T${hora}:00`);
         const original = idEdit ? [...citasDia, ...onlinePendientes].find(x => x.id === idEdit) : null;
-        const cambio = !original || new Date(original.fecha_hora).getTime() !== inicio.getTime() || (Number(original.duracion_min) || 60) !== minutos;
+        // A domicilio se bloquea también el traslado (antes y después)
+        const modForm = document.getElementById('modalidad').value || 'taller';
+        const margenForm = modForm === 'terreno' ? { antes: margenDomicilio(), despues: margenDomicilio() } : { antes: 0, despues: 0 };
+        const cambio = !original || new Date(original.fecha_hora).getTime() !== inicio.getTime() || (Number(original.duracion_min) || 60) !== minutos
+          || (original.modalidad || 'taller') !== modForm;
         if (cambio) {
-          const choques = await buscarChoques(inicio.toISOString(), minutos, idEdit || null);
+          const choques = await buscarChoques(inicio.toISOString(), minutos, idEdit || null, margenForm);
           if (choques.length && !confirm(`Esta cita se junta con:\n\n${choques.map(descChoque).join('\n')}\n\n¿Sobreagendar igual?`)) return;
         }
       }
@@ -866,11 +897,20 @@
         modalidad: document.getElementById('modalidad').value || 'taller',
         direccion: document.getElementById('direccion').value || null,
         notas: document.getElementById('notas').value || null,
+        // A domicilio: traslado bloqueado antes y después (Configuración → Atención a domicilio)
+        margen_antes_min: document.getElementById('modalidad').value === 'terreno' ? margenDomicilio() : 0,
+        margen_despues_min: document.getElementById('modalidad').value === 'terreno' ? margenDomicilio() : 0,
       };
       const id = document.getElementById('cita-id').value;
       let error;
       if (id) ({ error } = await supabaseClient.from('citas').update(payload).eq('id', id));
       else     ({ error } = await supabaseClient.from('citas').insert({ ...payload, estado: 'confirmado', origen: 'interno' }));
+      if (error && /margen_/.test(error.message || '')) {
+        // Aún no se ejecutó v57: se guarda sin el traslado
+        delete payload.margen_antes_min; delete payload.margen_despues_min;
+        if (id) ({ error } = await supabaseClient.from('citas').update(payload).eq('id', id));
+        else     ({ error } = await supabaseClient.from('citas').insert({ ...payload, estado: 'confirmado', origen: 'interno' }));
+      }
       if (error) { errorEl.textContent = `Error: ${error.message} (revisa que estén ejecutados todos los sql/actualizacion-v*.sql en Supabase)`; return; }
       document.getElementById('form-card').style.display = 'none';
       document.getElementById('dia-actual').value = fecha;
@@ -926,6 +966,16 @@
           : `• Presupuesto de su cotización: ${fmtMoneda(precio.monto)} + IVA. ${aviso}`;
       }
       return '• Le confirmaremos el valor una vez evaluado el vehículo. Nunca le cobramos algo sin avisarle antes.';
+    }
+
+    // A domicilio se agrega el valor de la atención a domicilio (catálogo)
+    function lineaPrecioCita(c, precio) {
+      let texto = lineaPrecio(precio);
+      if (c.modalidad === 'terreno') {
+        const v = valorDomicilio();
+        if (v) texto += `\n• Atención a domicilio: ${textoValorDomicilio(v)}.`;
+      }
+      return texto;
     }
 
     function lineaTiempo(tiempo) {
@@ -1006,7 +1056,7 @@
         fecha: fmtFecha(c.fecha_hora),
         hora: fmtHora(c.fecha_hora),
         servicio: servicioCita(c) || 'Servicio agendado',
-        precio_linea: lineaPrecio(precio),
+        precio_linea: lineaPrecioCita(c, precio),
         tiempo_linea: lineaTiempo(tiempo),
         modalidad_linea: lineaModalidad(c.modalidad, c.direccion),
       });
@@ -1050,7 +1100,7 @@
         taller: tallerHorarios.nombre,
         hora: fmtHora(c.fecha_hora),
         servicio: servicioCita(c) || 'Servicio agendado',
-        precio_linea: lineaPrecio(precio),
+        precio_linea: lineaPrecioCita(c, precio),
         tiempo_linea: lineaTiempo(tiempo),
         modalidad_linea: lineaModalidad(c.modalidad, c.direccion),
       });
@@ -1087,6 +1137,7 @@
       const mec  = personalCache.find(p => p.id === c.personal_id);
       const online = (c.origen === 'online' ? ' <span class="badge badge-purple">web</span>' : '')
         + (esReservaNueva(c) ? ETIQUETA_NUEVO : '')
+        + (c.modalidad === 'terreno' ? ` <span class="badge badge-orange" title="${escapar([c.direccion, (margenesCita(c).antes || margenesCita(c).despues) ? 'bloquea el traslado ' + margenesCita(c).antes + ' min antes y ' + margenesCita(c).despues + ' min después' : ''].filter(Boolean).join(' · '))}">🚗 a domicilio</span>` : (c.modalidad === 'retiro' ? ' <span class="badge badge-gray">retiro</span>' : ''))
         + (c.bloquea === false ? ' <span class="badge badge-gray" title="No bloquea las horas: permite otro vehículo al mismo tiempo">paralelo</span>' : '');
       return `<div class="cita-card">
         <div class="cita-info">
@@ -1094,6 +1145,7 @@
           <strong>${escapar(nombreCliente(c))}</strong>
           ${veh  ? `<span style="color:var(--color-text-muted);">· ${escapar(veh)}</span>`        : ''}
           ${trab ? `<span style="color:var(--color-text-muted);">· ${escapar(trab)}</span>`       : ''}
+          ${c.modalidad === 'terreno' && c.direccion ? `<span style="color:var(--color-text-muted);">· 📍 ${escapar(c.direccion)}</span>` : ''}
           ${mec  ? `<span style="color:var(--color-text-muted);">· ${escapar(mec.nombre)}</span>` : ''}
           ${c.telefono_contacto ? `<span style="color:var(--color-text-muted); font-size:0.82rem;">${escapar(c.telefono_contacto)}</span>` : ''}
         </div>
@@ -1101,8 +1153,8 @@
       </div>`;
     }
 
-    function slotRow(slot, citas, continua, bloqueo) {
-      const ocupado = citas.length || (continua && continua.length);
+    function slotRow(slot, citas, continua, bloqueo, traslado = []) {
+      const ocupado = citas.length || (continua && continua.length) || traslado.length;
       if (!ocupado && bloqueo) {
         const etiqueta = bloqueo.tipo === 'pausa' ? '☕ Pausa' : `🔒 Bloqueado${bloqueo.motivo ? ' — ' + escapar(bloqueo.motivo) : ''}`;
         return `<div class="horario-slot">
@@ -1127,10 +1179,12 @@
       const citasHtml = citas.map(renderCitaCard).join('');
       const continuaHtml = (continua || []).map(c =>
         `<div class="cita-continua">↳ ${escapar(nombreCliente(c))} (ocupado hasta las ${fmtHoraFin(c)})</div>`).join('');
+      const trasladoHtml = traslado.map(t =>
+        `<div class="cita-continua">🚗 Traslado ${t.tipo === 'antes' ? 'hacia' : 'de vuelta de'} la atención a domicilio de ${escapar(nombreCliente(t.c))}</div>`).join('');
       return `<div class="horario-slot">
         <div class="slot-hora">${slot}</div>
         <div class="slot-content">
-          ${citasHtml}${continuaHtml}
+          ${citasHtml}${continuaHtml}${trasladoHtml}
           <button type="button" class="btn-secondary btn-mini agregar-mas-btn" data-slot="${slot}">+ Agregar</button>
         </div>
       </div>`;
@@ -1181,6 +1235,21 @@
         }
       });
 
+      // Traslado de las citas a domicilio: los bloques de antes y de después también quedan ocupados
+      const traslados = {};
+      citasDia.forEach(c => {
+        if (c.estado === 'cancelado' || c.bloquea === false) return;
+        const m = margenesCita(c);
+        if (!m.antes && !m.despues) return;
+        const ini = minDeHHMM(fmtHora(c.fecha_hora));
+        const fin = ini + (Number(c.duracion_min) || 60);
+        slots.forEach(k => {
+          const s = minDeHHMM(k), e = s + slotMinDia;
+          const tipo = (m.antes && e <= ini && e > ini - m.antes) ? 'antes' : ((m.despues && s >= fin && s < fin + m.despues) ? 'despues' : null);
+          if (tipo) (traslados[k] = traslados[k] || []).push({ c, tipo });
+        });
+      });
+
       // Citas registradas fuera del horario calculado
       const slotSet = new Set(slots);
       const fuera = citasDia.filter(c => !slotSet.has(fmtHora(c.fecha_hora)));
@@ -1191,7 +1260,7 @@
           Revisa <a href="configuracion.html">Configuración → Horario de atención</a>.</div>`;
       } else {
         for (const slot of slots) {
-          html += slotRow(slot, citasPorSlot[slot] || [], continuaciones[slot] || [], motivoSlot(dia, slot));
+          html += slotRow(slot, citasPorSlot[slot] || [], continuaciones[slot] || [], motivoSlot(dia, slot), traslados[slot] || []);
         }
       }
 
@@ -1273,7 +1342,14 @@
             const ini = minDeHHMM(fmtHora(c.fecha_hora));
             return horaMin > ini && horaMin < ini + (Number(c.duracion_min) || 60);
           });
-          const ocupada = citasAqui.length || continuan.length;
+          // Traslado de las citas a domicilio (antes y después) también ocupa la celda
+          const trasl = d.citas.filter(c => {
+            const m = margenesCita(c);
+            if ((!m.antes && !m.despues) || c.bloquea === false) return false;
+            const ini = minDeHHMM(fmtHora(c.fecha_hora)), fin = ini + (Number(c.duracion_min) || 60);
+            return (horaMin < ini && horaMin >= ini - m.antes) || (horaMin >= fin && horaMin < fin + m.despues);
+          });
+          const ocupada = citasAqui.length || continuan.length || trasl.length;
           const bloq = enSlot && !d.bloqueoDia ? motivoSlot(f, hora) : null;
 
           let clase = 'sem-celda';
@@ -1285,7 +1361,8 @@
               <strong>${fmtHora(c.fecha_hora)}</strong> ${escapar(nombreCliente(c))}
               ${servicioCita(c) ? `<small>${escapar(servicioCita(c))}</small>` : ''}
             </div>`).join('');
-          const conts = continuan.map(c => `<div class="sem-nota">↳ ${escapar(nombreCliente(c))}</div>`).join('');
+          const conts = continuan.map(c => `<div class="sem-nota">↳ ${escapar(nombreCliente(c))}</div>`).join('')
+            + trasl.map(c => `<div class="sem-nota">🚗 traslado · ${escapar(nombreCliente(c))}</div>`).join('');
           const nota = (!ocupada && bloq)
             ? `<div class="sem-nota"><span>${bloq.tipo === 'pausa' ? '☕ Pausa' : '🔒 ' + escapar(bloq.motivo || 'Bloqueado')}</span>${bloq.tipo === 'bloqueo' ? `<button type="button" class="quitar-bloqueo" data-id="${bloq.id}" title="Quitar bloqueo">✕</button>` : ''}</div>`
             : '';
@@ -1334,28 +1411,33 @@
     // «permitir otros vehículos al mismo tiempo» para que esta cita no bloquee.
     let confirmando = null;     // { cita, choques, timer }
 
+    // Una cita ocupa su duración más su traslado (a domicilio: margen antes y después)
     function citaChocaCon(inicioMs, finMs, otra) {
-      const oIni = new Date(otra.fecha_hora).getTime();
-      const oFin = oIni + (Number(otra.duracion_min) || 60) * 60000;
+      const m = margenesCita(otra);
+      const oIni = new Date(otra.fecha_hora).getTime() - m.antes * 60000;
+      const oFin = new Date(otra.fecha_hora).getTime() + ((Number(otra.duracion_min) || 60) + m.despues) * 60000;
       return inicioMs < oFin && oIni < finMs;
     }
 
-    // Citas vivas del mismo día que se cruzan con [inicio, inicio + minutos), sin contar `ignorarId`
-    async function buscarChoques(fechaHora, minutos, ignorarId) {
+    // Citas vivas del mismo día que se cruzan con [inicio, inicio + minutos) —más el traslado propio `margen`
+    // ({ antes, despues } en minutos)—, sin contar `ignorarId`
+    async function buscarChoques(fechaHora, minutos, ignorarId, margen = { antes: 0, despues: 0 }) {
       const lim = limitesDiaChile(ymdChile(fechaHora));
       const { data } = await supabaseClient.from('citas')
         .select('*, clientes(nombre), vehiculos(patente), trabajos(nombre)')
         .gte('fecha_hora', lim.desde).lte('fecha_hora', lim.hasta)
         .neq('estado', 'cancelado');
-      const ini = new Date(fechaHora).getTime();
-      const fin = ini + minutos * 60000;
+      const ini = new Date(fechaHora).getTime() - (Number(margen.antes) || 0) * 60000;
+      const fin = new Date(fechaHora).getTime() + (minutos + (Number(margen.despues) || 0)) * 60000;
       return (data || []).filter(o => o.id !== ignorarId && o.bloquea !== false && citaChocaCon(ini, fin, o));
     }
 
     function descChoque(o) {
       const veh = o.vehiculos ? o.vehiculos.patente : (o.patente_contacto || '');
       const est = (ESTADOS_CITA[o.estado] || {}).label || o.estado;
-      return `${fmtHora(o.fecha_hora)}–${fmtHoraFin(o)} · ${nombreCliente(o)}${veh ? ' · ' + veh : ''} (${est})`;
+      const m = margenesCita(o);
+      const traslado = (m.antes || m.despues) ? ` + traslado (${fmtHora(new Date(new Date(o.fecha_hora).getTime() - m.antes * 60000).toISOString())}–${fmtHoraTraslado(o)})` : '';
+      return `${fmtHora(o.fecha_hora)}–${fmtHoraFin(o)}${traslado} · ${nombreCliente(o)}${veh ? ' · ' + veh : ''} (${est})`;
     }
 
     function cerrarConfirmacion() {
@@ -1561,6 +1643,9 @@
             ${veh ? `<span>🚗 ${escapar(veh)}</span>` : ''}
           </div>
           <div class="ficha-datos"><span>🔧 ${escapar(servicioCita(c) || 'Servicio por definir')}${horasCatalogo ? ` (referencia del catálogo: ${fmtDuracion(horasCatalogo)})` : ''}</span></div>
+          ${c.modalidad === 'terreno' ? `<div class="ficha-datos"><span>🚗 <strong>A domicilio</strong>${c.direccion ? ' · ' + escapar(c.direccion) : ''}</span></div>
+          ${(margenesCita(c).antes || margenesCita(c).despues) ? `<div class="ficha-datos"><span>⏱ Se bloquea también el traslado: ${margenesCita(c).antes} min antes y ${margenesCita(c).despues} min después</span></div>` : ''}
+          <div class="ficha-datos"><span>💲 Atención a domicilio (catálogo${trabajoDomicilio() ? ': ' + escapar(trabajoDomicilio().nombre) : ''}): ${escapar(textoValorDomicilio(valorDomicilio()))}</span></div>` : ''}
           ${c.notas ? `<div class="ficha-datos"><span>💬 ${escapar(c.notas)}</span></div>` : ''}
         </div>
 
@@ -1621,8 +1706,10 @@
         const caja = document.getElementById('cf-choques');
         if (!(minutos > 0)) { resumen.textContent = 'Indica cuánto dura el trabajo.'; caja.innerHTML = ''; return; }
         const fin = new Date(new Date(c.fecha_hora).getTime() + minutos * 60000);
-        resumen.textContent = `Ocupará de ${fmtHora(c.fecha_hora)} a ${fmtHora(fin.toISOString())} (${fmtDuracion(minutos / 60)}).`;
-        const choques = await buscarChoques(c.fecha_hora, minutos, c.id);
+        const mc = margenesCita(c);
+        resumen.textContent = `Ocupará de ${fmtHora(c.fecha_hora)} a ${fmtHora(fin.toISOString())} (${fmtDuracion(minutos / 60)})`
+          + ((mc.antes || mc.despues) ? `; con el traslado, de ${fmtHora(new Date(new Date(c.fecha_hora).getTime() - mc.antes * 60000).toISOString())} a ${fmtHora(new Date(fin.getTime() + mc.despues * 60000).toISOString())}.` : '.');
+        const choques = await buscarChoques(c.fecha_hora, minutos, c.id, margenesCita(c));
         if (!confirmando || confirmando.cita.id !== c.id) return;
         confirmando.choques = choques;
         const avisos = avisosHorarioConfirmacion(c, minutos);
@@ -1654,7 +1741,7 @@
         const minutos = minutosActuales();
         if (!(minutos > 0)) { errorEl.textContent = 'Indica cuánto dura el trabajo.'; return; }
         const paralelo = document.getElementById('cf-paralelo').checked;
-        const choques = await buscarChoques(c.fecha_hora, minutos, c.id);
+        const choques = await buscarChoques(c.fecha_hora, minutos, c.id, margenesCita(c));
         if (choques.length && !paralelo && !document.getElementById('cf-sobre').checked) {
           confirmando.choques = choques;
           await refrescar();
@@ -1830,6 +1917,17 @@
         if (t) {
           const config = await getTallerConfig();
           await insertarItems('orden_items', [{ orden_id: orden.id, tipo: 'mano_obra', trabajo_id: t.id, descripcion: t.nombre, ...datosManoObra(t, 1, config.valor_hora, { horasPorTrabajo: t.precio_fijo != null ? null : Number(t.horas_estimadas || 1) }), orden: 1 }]);
+        }
+      }
+      // Atención a domicilio: su valor sale del catálogo (Configuración → Atención a domicilio)
+      if (c.modalidad === 'terreno') {
+        const td = trabajoDomicilio();
+        let opcion = null;
+        if (td && opcionesDeTrabajo(td).length) opcion = await elegirOpcionTrabajo(td);
+        if (td && (opcion || !opcionesDeTrabajo(td).length)) {
+          const config = await getTallerConfig();
+          const nombreLinea = opcion ? `${td.nombre} — ${opcion.nombre}` : td.nombre;
+          await insertarItems('orden_items', [{ orden_id: orden.id, tipo: 'mano_obra', trabajo_id: td.id, descripcion: nombreLinea, ...datosManoObra(td, 1, config.valor_hora, { opcion }), orden: 2 }]);
         }
       }
       await supabaseClient.from('citas').update({ estado: 'completado', orden_id: orden.id }).eq('id', citaId);

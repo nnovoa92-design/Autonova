@@ -28,6 +28,12 @@
     .leyenda-vehiculo ol { margin: 0.3rem 0; padding-left: 1.25rem; }
     .leyenda-vehiculo li { margin: 0.15rem 0; }
     .campo-falta { border-color: var(--color-danger) !important; }
+    .modalidad-opciones { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+    .modalidad-op { display: flex; gap: 0.5rem; align-items: flex-start; border: 1px solid var(--color-border); border-radius: var(--radius); padding: 0.6rem 0.7rem; cursor: pointer; background: #fff; }
+    .modalidad-op input { width: auto; margin-top: 0.2rem; }
+    .modalidad-op small { display: block; color: var(--color-text-muted); font-size: 0.8rem; margin-top: 0.15rem; }
+    .modalidad-op.elegido { border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary) inset; }
+    @media (max-width: 520px) { .modalidad-opciones { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body class="portal-page">
@@ -63,7 +69,25 @@
 
       <!-- Paso 2: día y hora (toda la semana) -->
       <div class="paso" id="p-fecha" hidden>
-        <h3>2. Elige día y hora</h3>
+        <h3>2. ¿Dónde y cuándo?</h3>
+        <!-- Modalidad: en el taller o a domicilio (a domicilio las horas libres consideran el traslado) -->
+        <div id="modalidad-box">
+          <div class="modalidad-opciones">
+            <label class="modalidad-op elegido" id="lab-mod-taller">
+              <input type="radio" name="r-modalidad" value="taller" checked />
+              <span><strong>🏠 En el taller</strong><small id="mod-taller-texto">Traes tu vehículo al taller.</small></span>
+            </label>
+            <label class="modalidad-op" id="lab-mod-domicilio">
+              <input type="radio" name="r-modalidad" value="domicilio" />
+              <span><strong>🚗 A domicilio</strong><small>Vamos a tu dirección. Tiene un valor adicional por la atención a domicilio: te lo informamos al reservar.</small></span>
+            </label>
+          </div>
+          <div class="form-group" id="g-direccion" hidden style="margin-top:0.6rem;">
+            <label for="r-direccion">Dirección donde atenderemos tu vehículo *</label>
+            <input type="text" id="r-direccion" maxlength="200" placeholder="Calle, número y comuna" autocomplete="street-address" />
+          </div>
+        </div>
+        <p style="margin:0.75rem 0 0.4rem; font-weight:600;">Elige día y hora:</p>
         <div class="semana-nav">
           <button type="button" id="sem-prev" class="btn-secondary btn-mini">← Anterior</button>
           <strong id="sem-titulo"></strong>
@@ -167,6 +191,7 @@
     const SEMANAS_MAX = 8;   // hasta cuántas semanas hacia adelante se puede reservar
     let INFO = null;
     let selTrabajo = null, selOtro = false, selYmd = null, selSlot = null;
+    let modalidad = 'taller';   // 'taller' | 'domicilio' (a domicilio las horas libres consideran el traslado)
     let semanaDesde = null, hoy = null, semanaCargada = false;
 
     // Fecha de hoy en Chile (YYYY-MM-DD): hoyChile() viene de layout.js (no depende de la zona horaria del dispositivo).
@@ -238,7 +263,9 @@
 
     // Toda la semana: cada día con sus horas libres, o "SIN HORAS DISPONIBLES"
     // si está cerrado, bloqueado o ya no queda ninguna hora.
+    let semanaSeq = 0;   // si se pide otra semana o se cambia la modalidad, la respuesta antigua se descarta
     async function cargarSemana() {
+      const seq = ++semanaSeq;
       const cont = document.getElementById('semana');
       const fin = sumarDias(semanaDesde, 6);
       document.getElementById('sem-titulo').textContent =
@@ -247,7 +274,10 @@
       document.getElementById('sem-next').disabled = sumarDias(semanaDesde, 7) > sumarDias(hoy, SEMANAS_MAX * 7 - 1);
 
       cont.innerHTML = '<p style="color:var(--color-text-muted);">Consultando disponibilidad...</p>';
-      const { data, error } = await supabaseClient.rpc('reservar_semana', { p_desde: semanaDesde, p_dias: 7 });
+      let { data, error } = await supabaseClient.rpc('reservar_semana', { p_desde: semanaDesde, p_dias: 7, p_modalidad: modalidad });
+      // Servidor sin v57 (sin modalidad): las horas se consultan como antes
+      if (error && error.code === 'PGRST202') ({ data, error } = await supabaseClient.rpc('reservar_semana', { p_desde: semanaDesde, p_dias: 7 }));
+      if (seq !== semanaSeq) return;
       if (error || !Array.isArray(data)) {
         cont.innerHTML = '<p class="error-message">No se pudo consultar la disponibilidad. Intenta de nuevo o contacta al taller.</p>';
         return;
@@ -282,6 +312,18 @@
       document.getElementById('p-datos').hidden = true;
       cargarSemana();
     }
+    // En el taller / a domicilio: cambia las horas libres (a domicilio se bloquea también el traslado)
+    document.getElementById('modalidad-box').addEventListener('change', (e) => {
+      if (!e.target.matches('input[name="r-modalidad"]')) return;
+      modalidad = e.target.value === 'domicilio' ? 'domicilio' : 'taller';
+      document.getElementById('lab-mod-taller').classList.toggle('elegido', modalidad === 'taller');
+      document.getElementById('lab-mod-domicilio').classList.toggle('elegido', modalidad === 'domicilio');
+      document.getElementById('g-direccion').hidden = modalidad !== 'domicilio';
+      selYmd = null; selSlot = null;
+      document.getElementById('p-datos').hidden = true;
+      if (semanaCargada) cargarSemana();
+      if (modalidad === 'domicilio') document.getElementById('r-direccion').focus();
+    });
     document.getElementById('sem-prev').addEventListener('click', () => cambiarSemana(-7));
     document.getElementById('sem-next').addEventListener('click', () => cambiarSemana(7));
 
@@ -472,6 +514,12 @@
       const correo = document.getElementById('r-correo').value.trim().toLowerCase();
       if (!correo) { errorEl.textContent = 'Escribe tu correo electrónico: ahí te enviamos la confirmación.'; document.getElementById('r-correo').focus(); return; }
       if (!correoValido(correo)) { errorEl.textContent = 'Revisa tu correo electrónico (ej. nombre@correo.cl).'; document.getElementById('r-correo').focus(); return; }
+      const direccion = modalidad === 'domicilio' ? document.getElementById('r-direccion').value.trim() : '';
+      if (modalidad === 'domicilio' && direccion.length < 5) {
+        errorEl.textContent = 'Indica la dirección donde atenderemos tu vehículo (calle, número y comuna).';
+        document.getElementById('r-direccion').focus();
+        return;
+      }
       if ((!selTrabajo && !selOtro) || !selYmd || !selSlot) { errorEl.textContent = 'Elige servicio, día y hora.'; return; }
       const otroTexto = document.getElementById('r-otro').value.trim();
       if (selOtro && otroTexto.length < 3) {
@@ -524,7 +572,10 @@
       const anio = Number(document.getElementById('r-anio').value) || null;
       let data = null, error = null;
       // Si el servidor aún no tiene el correo (falta v55), el correo viaja dentro del comentario para no perderlo
-      const notasCorreo = [notas, `Correo: ${correo}`].filter(Boolean).join(' · ');
+      // Si el servidor aún no tiene el correo (v55) o la atención a domicilio (v57), esos datos viajan en el comentario
+      const notaDomicilio = modalidad === 'domicilio' ? `A domicilio: ${direccion}` : '';
+      const notasCon = (...partes) => [notas, ...partes].filter(Boolean).join(' · ') || null;
+      const notasCorreo = notasCon(`Correo: ${correo}`, notaDomicilio);
       if (!clasico) {
         const base = {
           ...params, p_servicio_otro: selOtro ? otroTexto : null, p_notas: notas,
@@ -539,9 +590,10 @@
           p_motor: usaVehiculoNuevo ? (document.getElementById('r-motor').value.trim() || null) : null,
           p_combustible: usaVehiculoNuevo ? (document.getElementById('r-combustible').value || null) : null,
         };
-        // De la versión más nueva a la más antigua: así la reserva funciona aunque falte ejecutar algún SQL (v55, v51)
+        // De la versión más nueva a la más antigua: así la reserva funciona aunque falte ejecutar algún SQL (v57, v55, v51)
         const intentos = [
-          { ...base, ...tecnicos, p_email: correo },
+          { ...base, ...tecnicos, p_email: correo, p_modalidad: modalidad, p_direccion: direccion || null },
+          { ...base, ...tecnicos, p_email: correo, p_notas: notasCon(notaDomicilio) },
           { ...base, ...tecnicos, p_notas: notasCorreo },
           { ...base, p_notas: notasCorreo },
         ];
@@ -573,10 +625,17 @@
       const descripcionServicio = selOtro ? '' : String((data && data.descripcion) || '').trim();
       const filaDescripcion = descripcionServicio ? `
         <div style="margin:0.25rem 0 0.5rem; padding:0.5rem 0.75rem; background:#f6f6f7; border-radius:var(--radius); font-size:0.88rem; color:var(--color-text-muted); white-space:pre-line;">${htmlSeguro(descripcionServicio)}</div>` : '';
+      // Atención a domicilio: dirección y valor del catálogo (llega con la reserva hecha, v57)
+      const dom = data && data.domicilio;
+      const valorDomicilio = dom && dom.valor != null ? `${dom.desde ? 'desde ' : ''}${fmtMoneda(dom.valor)} + IVA` : 'te lo informamos al confirmar';
+      const filaAtencion = modalidad === 'domicilio' ? `
+        <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>Atención</span><strong style="text-align:right;">A domicilio · ${htmlSeguro(direccion)}</strong></div>
+        <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>Atención a domicilio</span><strong style="text-align:right;">${htmlSeguro(valorDomicilio)}</strong></div>` : `
+        <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>Atención</span><strong style="text-align:right;">En el taller</strong></div>`;
       document.getElementById('confirm-detalle').innerHTML = `
         <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>Servicio</span><strong style="text-align:right;">${htmlSeguro(selOtro ? `Otro: ${otroTexto}` : selTrabajo.nombre)}</strong></div>${filaValor}${filaDescripcion}
         <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>Día</span><strong>${textoDia(selYmd, { weekday: 'long', day: 'numeric', month: 'long' })}</strong></div>
-        <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>Hora</span><strong>${selSlot} hrs</strong></div>
+        <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>Hora</span><strong>${selSlot} hrs</strong></div>${filaAtencion}
         <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>A nombre de</span><strong>${htmlSeguro(nombreMostrado)}</strong></div>
         <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>Confirmación a</span><strong style="text-align:right; word-break:break-all;">${htmlSeguro(correo)}</strong></div>`;
       document.getElementById('wizard').style.display = 'none';
@@ -591,6 +650,7 @@
         return;
       }
       INFO = data;
+      if (data.taller && data.taller.direccion) document.getElementById('mod-taller-texto').textContent = `Traes tu vehículo al taller: ${data.taller.direccion}.`;
       if (data.taller && data.taller.nombre) {
         document.getElementById('taller-nombre').textContent = data.taller.nombre;
       }
