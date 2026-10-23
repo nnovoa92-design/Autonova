@@ -919,3 +919,11 @@ body.con-vista-impresion { overflow: hidden; }
 #vista-impresion .print-area { display: block; max-width: 900px; margin: 0 auto; overflow-x: auto; }   /* en el celular las tablas anchas se desplazan de lado */
 @media (min-width: 900px) and (hover: hover) { #vista-impresion .vi-ayuda { display: none; } }
 @media (max-width: 480px) { #vista-impresion .vi-titulo { display: none; } }
+#vista-impresion .vi-acciones { display: flex; gap: 0.4rem; flex-shrink: 0; }
+#vista-impresion .vi-pdf { background: var(--color-primary); color: #fff; border: 1px solid var(--color-primary); }
+#vista-impresion .vi-pdf.vi-pdf-listo { background: #1b6e3c; border-color: #1b6e3c; }
+@media (max-width: 400px) { #vista-impresion .barra-impresion { padding: 0.5rem 0.6rem; gap: 0.4rem; } #vista-impresion .barra-impresion button { padding: 0.45rem 0.65rem; } }
+/* Copia del documento que se convierte en PDF (fuera de la vista; html2pdf la toma con ancho de hoja) */
+.print-area.pdf-hoja { display: block !important; max-width: none; overflow: visible; background: #fff; padding: 0 6px; box-sizing: border-box; }
+/* html2pdf centra la hoja en la pantalla; en el celular (más angosto que la hoja) quedaría corrida: se fija a la izquierda */
+.html2pdf__container { left: 0 !important; right: auto !important; margin: 0 !important; }

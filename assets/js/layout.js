@@ -1049,11 +1049,13 @@ function detectarDispositivo() {
   return `${so} · ${navegador}`;
 }
 
-// Muestra el documento a imprimir (cotización, OT, diagnóstico, inspección, libro contable) a pantalla completa
-// dentro de la MISMA página, con una barra «← Volver» / «🖨 Imprimir / Guardar PDF». Al imprimir solo sale el
-// documento. Antes se abría una ventana emergente en blanco: en el celular y en la app instalada en la pantalla
-// de inicio esas ventanas a menudo no dejaban imprimir ni guardar el PDF (y los bloqueadores las impedían).
-// El botón se habilita cuando cargaron las imágenes (logo, firmas, fotos), para que salgan en el PDF.
+// Muestra el documento (cotización, OT, diagnóstico, inspección, libro contable) a pantalla completa dentro de
+// la MISMA página, con una barra: «← Volver» · «🖨 Imprimir» · «📄 PDF».
+//   · Imprimir: el diálogo del navegador (solo sale el documento).
+//   · PDF: genera un archivo PDF real y lo comparte (WhatsApp, correo, Archivos…) o lo descarga. Es la vía que
+//     funciona en el celular: en la app instalada en la pantalla de inicio (y en iPhone en general) el
+//     navegador no deja imprimir desde la página, así que «Imprimir» puede no responder.
+// Los botones se habilitan cuando cargaron las imágenes (logo, firmas, fotos), para que salgan en el documento.
 function abrirVentanaImpresion(html, titulo) {
   cerrarVistaImpresion();
   const nombre = titulo || 'Documento';
@@ -1065,26 +1067,105 @@ function abrirVentanaImpresion(html, titulo) {
     <div class="barra-impresion">
       <button type="button" class="vi-volver">← Volver</button>
       <span class="vi-titulo">${htmlSeguro(nombre)}</span>
-      <button type="button" class="vi-imprimir" disabled>Preparando…</button>
+      <span class="vi-acciones">
+        <button type="button" class="vi-imprimir" disabled>🖨 Imprimir</button>
+        <button type="button" class="vi-pdf" disabled>Preparando…</button>
+      </span>
     </div>
-    <p class="vi-ayuda">En el celular: pulsa «Imprimir / Guardar PDF» y elige <strong>Guardar como PDF</strong>; luego puedes enviarlo por WhatsApp o correo.</p>
+    <p class="vi-ayuda">En el celular usa <strong>«📄 PDF»</strong>: arma el archivo y luego puedes enviarlo por WhatsApp o correo, o guardarlo.</p>
     <div class="print-area" id="print-area">${html}</div>`;
   document.body.appendChild(cont);
   document.body.classList.add('con-vista-impresion');
-  // El nombre sugerido del PDF es el título de la página
+  // El nombre sugerido al imprimir es el título de la página
   cont.dataset.tituloAnterior = document.title;
   document.title = nombre;
   cont.scrollTop = 0;
 
-  const boton = cont.querySelector('.vi-imprimir');
-  boton.addEventListener('click', () => window.print());
+  const botonImprimir = cont.querySelector('.vi-imprimir');
+  const botonPdf = cont.querySelector('.vi-pdf');
+  botonImprimir.addEventListener('click', () => window.print());
+  botonPdf.addEventListener('click', () => accionPdfDocumento(cont, nombre, botonPdf));
   cont.querySelector('.vi-volver').addEventListener('click', cerrarVistaImpresion);
   esperarImagenesImpresion(cont).then(() => {
     if (!document.body.contains(cont)) return;
-    boton.disabled = false;
-    boton.textContent = '🖨 Imprimir / Guardar PDF';
-    boton.focus();
+    botonImprimir.disabled = false;
+    botonPdf.disabled = false;
+    botonPdf.textContent = '📄 PDF';
   });
+}
+
+// ---------- PDF como archivo (html2pdf.js, se carga solo la primera vez que se usa) ----------
+const URL_HTML2PDF = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+let cargaHtml2pdf = null;
+function cargarHtml2pdf() {
+  if (window.html2pdf) return Promise.resolve(window.html2pdf);
+  if (!cargaHtml2pdf) {
+    cargaHtml2pdf = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = URL_HTML2PDF;
+      s.async = true;
+      s.onload = () => (window.html2pdf ? resolve(window.html2pdf) : reject(new Error('el generador de PDF no se cargó')));
+      s.onerror = () => { cargaHtml2pdf = null; reject(new Error('no se pudo cargar el generador de PDF: revisa la conexión a internet')); };
+      document.head.appendChild(s);
+    });
+  }
+  return cargaHtml2pdf;
+}
+
+// Arma el PDF (hoja A4, con el ancho de una hoja aunque se esté en el celular) y devuelve un File
+async function generarPdfDocumento(cont, nombre) {
+  const html2pdf = await cargarHtml2pdf();
+  const hoja = document.createElement('div');
+  hoja.className = 'print-area pdf-hoja';
+  hoja.innerHTML = cont.querySelector('#print-area').innerHTML;
+  const blob = await html2pdf().set({
+    margin: [8, 6, 10, 6],
+    filename: `${nombre}.pdf`,
+    image: { type: 'jpeg', quality: 0.92 },
+    // windowWidth = ancho de la hoja: se ve igual en el celular que en el computador
+    html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false, windowWidth: 820 },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', 'img', '.print-brand', '.print-header'] },
+  }).from(hoja).outputPdf('blob');
+  return new File([blob], `${nombre.replace(/[\\/:*?"<>|]+/g, '-')}.pdf`, { type: 'application/pdf' });
+}
+
+function descargarArchivo(archivo) {
+  const url = URL.createObjectURL(archivo);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = archivo.name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+// 1.er toque: arma el PDF. 2.º toque: lo envía con el menú de compartir del teléfono (o lo descarga en el
+// computador). Son dos toques porque el teléfono solo permite compartir justo después de tocar un botón.
+async function accionPdfDocumento(cont, nombre, boton) {
+  if (boton.disabled) return;
+  if (cont._pdfListo) {
+    const archivo = cont._pdfListo;
+    if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
+      try { await navigator.share({ files: [archivo], title: nombre }); return; }
+      catch (e) { if (e && e.name === 'AbortError') return; }   // cancelado por la persona: no se hace nada
+    }
+    descargarArchivo(archivo);
+    return;
+  }
+  boton.disabled = true;
+  boton.textContent = 'Armando PDF…';
+  try {
+    cont._pdfListo = await generarPdfDocumento(cont, nombre);
+    boton.textContent = (navigator.canShare && navigator.canShare({ files: [cont._pdfListo] })) ? '📤 Enviar PDF' : '⬇ Descargar PDF';
+    boton.classList.add('vi-pdf-listo');
+  } catch (e) {
+    boton.textContent = '📄 PDF';
+    alert(`No se pudo generar el PDF: ${e && e.message ? e.message : e}`);
+  } finally {
+    boton.disabled = false;
+  }
 }
 
 function cerrarVistaImpresion() {
