@@ -1393,15 +1393,14 @@
     async function compartirCorreo(d) {
       const email = d.clientes && d.clientes.email;
       if (!email) { alert('El cliente no tiene correo registrado.'); return; }
-      const resumen = resumenParaMensaje(d, t => `- ${t}`);
-      const asunto = `Informe de diagnóstico ${fmtNumero('DIAG', d.numero)} - ${config.nombre}`;
-      const cuerpo =
-        `Hola ${d.clientes.nombre},\n\n` +
-        `En ${config.nombre} revisamos ${descripcionVehiculo(d)} y preparamos el informe de diagnóstico ${fmtNumero('DIAG', d.numero)}.\n\n` +
-        (resumen ? resumen + '\n\n' : '') +
-        `Puede ver el informe completo, con fotos, y avisarnos si desea realizar los trabajos aquí:\n${linkPublicoDiagnostico(d.id)}` +
-        pieCorreoTaller(config);
-      await enviarCorreoOAbrirGmail(email, asunto, cuerpo);
+      const m = armarCorreo('diagnostico', {
+        nombre: d.clientes.nombre,
+        diagnostico: fmtNumero('DIAG', d.numero),
+        vehiculo: descripcionVehiculo(d),
+        resumen: resumenParaMensaje(d, t => `- ${t}`) || '',
+        link: linkPublicoDiagnostico(d.id),
+      }, config);
+      await enviarCorreoOAbrirGmail(email, m.asunto, m.texto);
     }
 
     async function copiarLinkDiagnostico(d) {

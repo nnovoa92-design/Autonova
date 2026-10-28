@@ -629,44 +629,126 @@ async function enviarCorreoOAbrirGmail(para, asunto, texto) {
   return { estado: 'gmail' };
 }
 
-function pieCorreoTaller(cfg) {
+// Despedida de los correos: nombre, dirección y teléfono del taller
+function firmaCorreoTaller(cfg) {
   cfg = cfg || {};
   const contacto = [cfg.direccion, cfg.telefono].filter(Boolean).join(' · ');
-  return `\n\nSaludos,\n${cfg.nombre || 'El taller'}${contacto ? `\n${contacto}` : ''}`;
+  return `Saludos,\n${cfg.nombre || 'El taller'}${contacto ? `\n${contacto}` : ''}`;
+}
+function pieCorreoTaller(cfg) {
+  return `\n\n${firmaCorreoTaller(cfg)}`;
+}
+
+// ---------- Mensajes de correo editables (Configuración → Mensajes de correo) ----------
+// Cada mensaje tiene asunto y texto con {variables} que se reemplazan al enviar. Lo que el taller edite se
+// guarda en taller_config.correo_plantillas ({ clave: { asunto, texto } }); si no editó un mensaje, se usa este.
+const PLANTILLAS_CORREO = {
+  ot_ingreso: {
+    titulo: 'Ingreso del vehículo (al crear la OT)',
+    asunto: 'Recibimos su vehículo — {ot} · {taller}',
+    texto: 'Hola {nombre},\n\nLe informamos que recibimos {vehiculo} en {taller}. Su orden de trabajo es la {ot} y pronto comenzaremos el diagnóstico.{bloque_inspeccion}{bloque_seguimiento}\n\n{firma}',
+    variables: ['nombre', 'vehiculo', 'patente', 'ot', 'taller', 'bloque_inspeccion', 'bloque_seguimiento', 'firma'],
+  },
+  ot_diagnostico: {
+    titulo: 'OT pasa a «Diagnóstico»',
+    asunto: 'Su vehículo está en diagnóstico — {ot} · {taller}',
+    texto: 'Hola {nombre},\n\nLe informamos que {vehiculo} está en diagnóstico ({ot}). Le enviaremos el detalle a la brevedad.{bloque_seguimiento}\n\n{firma}',
+    variables: ['nombre', 'vehiculo', 'patente', 'ot', 'taller', 'bloque_seguimiento', 'firma'],
+  },
+  ot_en_proceso: {
+    titulo: 'OT pasa a «En proceso»',
+    asunto: 'Estamos trabajando en su vehículo — {ot} · {taller}',
+    texto: 'Hola {nombre},\n\nLe informamos que {vehiculo} ya está siendo trabajado en nuestro taller ({ot}).{bloque_seguimiento}\n\n{firma}',
+    variables: ['nombre', 'vehiculo', 'patente', 'ot', 'taller', 'bloque_seguimiento', 'firma'],
+  },
+  ot_listo: {
+    titulo: 'Vehículo listo para retiro',
+    asunto: 'Su vehículo está listo para retiro — {ot} · {taller}',
+    texto: 'Hola {nombre},\n\nLe informamos que {vehiculo} está listo para retiro ({ot}). Lo esperamos en nuestro horario de atención.{bloque_seguimiento}\n\n{firma}',
+    variables: ['nombre', 'vehiculo', 'patente', 'ot', 'taller', 'bloque_seguimiento', 'firma'],
+  },
+  ot_entregado: {
+    titulo: 'Vehículo entregado',
+    asunto: 'Gracias por su visita — {ot} · {taller}',
+    texto: 'Hola {nombre},\n\nGracias por confiar en nosotros para el servicio de {vehiculo} ({ot}). Si tiene cualquier consulta sobre el trabajo realizado, estamos para ayudarle.\n\n{firma}',
+    variables: ['nombre', 'vehiculo', 'patente', 'ot', 'taller', 'firma'],
+  },
+  cotizacion_enviada: {
+    titulo: 'Cotización (al marcarla enviada y botón ✉ Correo)',
+    asunto: 'Cotización {cotizacion} - {taller}',
+    texto: 'Hola {nombre},\n\nEn {taller} preparamos la cotización {cotizacion} para {vehiculo}:\n\n{detalle}\n\nTotal: {total} ({iva}). Válida por {validez} días.\n\nPuede revisarla y aprobarla aquí:\n{link}\n\n{firma}',
+    variables: ['nombre', 'cotizacion', 'vehiculo', 'detalle', 'total', 'iva', 'validez', 'link', 'taller', 'firma'],
+  },
+  diagnostico: {
+    titulo: 'Informe de diagnóstico (botón ✉ Correo)',
+    asunto: 'Informe de diagnóstico {diagnostico} - {taller}',
+    texto: 'Hola {nombre},\n\nEn {taller} revisamos {vehiculo} y preparamos el informe de diagnóstico {diagnostico}.\n\n{resumen}\n\nPuede ver el informe completo, con fotos, y avisarnos si desea realizar los trabajos aquí:\n{link}\n\n{firma}',
+    variables: ['nombre', 'diagnostico', 'vehiculo', 'resumen', 'link', 'taller', 'firma'],
+  },
+  inspeccion: {
+    titulo: 'Inspección precompra terminada',
+    asunto: 'Inspección precompra {numero} - {taller}',
+    texto: 'Hola {nombre},\n\nLe enviamos el resultado de la inspección precompra {numero} de {vehiculo}:\n\nPuntaje: {puntaje}/100 — {resumen}.\n{recomendacion}\n\nInforme completo, con fotos:\n{link}\n\n{firma}',
+    variables: ['nombre', 'numero', 'vehiculo', 'patente', 'puntaje', 'resumen', 'recomendacion', 'link', 'taller', 'firma'],
+  },
+};
+
+// Qué es cada variable (ayuda en Configuración)
+const DESCRIPCION_VARIABLES_CORREO = {
+  nombre: 'nombre del cliente',
+  vehiculo: 'el vehículo con su patente y modelo',
+  patente: 'solo la patente',
+  ot: 'número de la OT (ej. OT-0015)',
+  taller: 'nombre del taller',
+  bloque_inspeccion: 'párrafo con el link de la inspección de ingreso (solo si se registró)',
+  bloque_seguimiento: 'párrafo con el link para seguir el estado del vehículo',
+  firma: 'despedida con nombre, dirección y teléfono del taller',
+  cotizacion: 'número de la cotización (ej. COT-0007)',
+  detalle: 'lista de trabajos y repuestos con su valor',
+  total: 'total a pagar',
+  iva: '«IVA incluido» o «sin IVA»',
+  validez: 'días de validez',
+  link: 'link para que el cliente lo vea en línea',
+  diagnostico: 'número del diagnóstico (ej. DIAG-0003)',
+  resumen: 'resumen del resultado',
+  numero: 'número de la inspección (ej. INS-0003)',
+  puntaje: 'puntaje de 0 a 100',
+  recomendacion: 'recomendación final',
+};
+
+// Arma asunto y texto de un mensaje con sus valores. Las {variables} desconocidas quedan tal cual (así se nota
+// un error de tipeo al revisar el ejemplo).
+function armarCorreo(clave, valores, cfg) {
+  const base = PLANTILLAS_CORREO[clave];
+  const propia = (cfg && cfg.correo_plantillas && cfg.correo_plantillas[clave]) || {};
+  const asuntoTpl = String(propia.asunto || '').trim() ? propia.asunto : base.asunto;
+  const textoTpl = String(propia.texto || '').trim() ? propia.texto : base.texto;
+  const todos = { taller: (cfg && cfg.nombre) || 'el taller', firma: firmaCorreoTaller(cfg), ...valores };
+  const reemplazar = (s) => String(s).replace(/\{(\w+)\}/g, (m, k) => (todos[k] != null ? String(todos[k]) : m));
+  return {
+    asunto: reemplazar(asuntoTpl).replace(/\s+/g, ' ').trim(),
+    texto: reemplazar(textoTpl).replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim(),
+  };
 }
 
 // Correo de una OT según su estado (recepción = ingreso del vehículo). null para estados sin aviso (cancelado).
-// o: { id, numero, clientes: { nombre }, vehiculos: { patente, marca, modelo }, checklist_recepcion, checklist_firma_png }
+// o: { id, numero, clientes: { nombre }, vehiculos: { patente, marca, modelo }, checklist_recepcion, checklist_firma_png, firma_cliente_url }
 function correoEstadoOT(o, estado, cfg) {
-  cfg = cfg || {};
+  const clave = { recepcion: 'ot_ingreso', diagnostico: 'ot_diagnostico', en_proceso: 'ot_en_proceso', listo: 'ot_listo', entregado: 'ot_entregado' }[estado];
+  if (!clave) return null;
   const v = o.vehiculos;
-  const vehiculo = v ? `su vehículo ${v.patente}${[v.marca, v.modelo].filter(Boolean).length ? ` (${[v.marca, v.modelo].filter(Boolean).join(' ')})` : ''}` : 'su vehículo';
-  const ot = fmtNumero('OT', o.numero);
-  const frases = {
-    recepcion: `Le informamos que recibimos ${vehiculo} en ${cfg.nombre || 'nuestro taller'}. Su orden de trabajo es la ${ot} y pronto comenzaremos el diagnóstico.`,
-    diagnostico: `Le informamos que ${vehiculo} está en diagnóstico (${ot}). Le enviaremos el detalle a la brevedad.`,
-    en_proceso: `Le informamos que ${vehiculo} ya está siendo trabajado en nuestro taller (${ot}).`,
-    listo: `Le informamos que ${vehiculo} está listo para retiro (${ot}). Lo esperamos en nuestro horario de atención.`,
-    entregado: `Gracias por confiar en nosotros para el servicio de ${vehiculo} (${ot}). Si tiene cualquier consulta sobre el trabajo realizado, estamos para ayudarle.`,
-  };
-  const frase = frases[estado];
-  if (!frase) return null;
-  const asuntos = {
-    recepcion: `Recibimos su vehículo — ${ot}`,
-    diagnostico: `Su vehículo está en diagnóstico — ${ot}`,
-    en_proceso: `Estamos trabajando en su vehículo — ${ot}`,
-    listo: `Su vehículo está listo para retiro — ${ot}`,
-    entregado: `Gracias por su visita — ${ot}`,
-  };
-  const nombre = (o.clientes && o.clientes.nombre) || '';
-  let texto = `Hola${nombre ? ' ' + nombre : ''},\n\n${frase}`;
-  if (estado === 'recepcion' && o.id && Array.isArray(o.checklist_recepcion) && o.checklist_recepcion.length) {
-    texto += `\n\nPuede revisar la inspección de ingreso de su vehículo${(o.checklist_firma_png || o.firma_cliente_url) ? '' : ' (y firmarla)'} aquí:\n${window.location.origin}/inspeccion-ingreso.html?id=${o.id}`;
-  }
-  if (v && v.patente && estado !== 'entregado') {
-    texto += `\n\nPuede seguir el estado de su vehículo aquí:\n${window.location.origin}/portal.html?patente=${encodeURIComponent(v.patente)}&ot=${o.numero}`;
-  }
-  return { asunto: `${asuntos[estado]} · ${cfg.nombre || 'Taller'}`, texto: texto + pieCorreoTaller(cfg) };
+  const modelo = v ? [v.marca, v.modelo].filter(Boolean).join(' ') : '';
+  const firmada = !!(o.checklist_firma_png || o.firma_cliente_url);
+  return armarCorreo(clave, {
+    nombre: (o.clientes && o.clientes.nombre) || '',
+    vehiculo: v ? `su vehículo ${v.patente}${modelo ? ` (${modelo})` : ''}` : 'su vehículo',
+    patente: (v && v.patente) || '',
+    ot: fmtNumero('OT', o.numero),
+    bloque_inspeccion: (o.id && Array.isArray(o.checklist_recepcion) && o.checklist_recepcion.length)
+      ? `\n\nPuede revisar la inspección de ingreso de su vehículo${firmada ? '' : ' (y firmarla)'} aquí:\n${window.location.origin}/inspeccion-ingreso.html?id=${o.id}` : '',
+    bloque_seguimiento: (v && v.patente)
+      ? `\n\nPuede seguir el estado de su vehículo aquí:\n${window.location.origin}/portal.html?patente=${encodeURIComponent(v.patente)}&ot=${o.numero}` : '',
+  }, cfg);
 }
 
 // Aviso automático de una OT (ingreso o cambio de estado) al correo del cliente

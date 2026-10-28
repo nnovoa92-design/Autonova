@@ -366,16 +366,17 @@
 
     // Texto del correo con el resultado de la inspección y el link al informe completo
     function correoInspeccion(i) {
-      return {
-        asunto: `Inspección precompra ${fmtNumero('INS', i.numero)}${i.patente ? ' · ' + i.patente : ''} - ${config.nombre}`,
-        texto:
-          `Hola ${i.nombre_comprador},\n\n` +
-          `Le enviamos el resultado de la inspección precompra ${fmtNumero('INS', i.numero)}` +
-          `${i.patente ? ' del vehículo ' + i.patente : ''} (${[i.marca, i.modelo].filter(Boolean).join(' ')}):\n\n` +
-          `Puntaje: ${i.score}/100 — ${i.ok} bien, ${i.warn} con atención, ${i.bad} malos.\n` +
-          `${i.recomendacion || ''}\n\n` +
-          `Informe completo, con fotos:\n${window.location.origin}/inspeccion.html?id=${i.id}` + pieCorreoTaller(config),
-      };
+      const modelo = [i.marca, i.modelo].filter(Boolean).join(' ');
+      return armarCorreo('inspeccion', {
+        nombre: i.nombre_comprador,
+        numero: fmtNumero('INS', i.numero),
+        vehiculo: `el vehículo${i.patente ? ' ' + i.patente : ''}${modelo ? ` (${modelo})` : ''}`,
+        patente: i.patente || '',
+        puntaje: i.score,
+        resumen: `${i.ok} bien, ${i.warn} con atención, ${i.bad} malos`,
+        recomendacion: i.recomendacion || '',
+        link: `${window.location.origin}/inspeccion.html?id=${i.id}`,
+      }, config);
     }
 
     document.getElementById('correo-insp-btn').addEventListener('click', async () => {

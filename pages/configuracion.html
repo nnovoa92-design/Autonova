@@ -274,6 +274,41 @@
           </p>
         </div>
 
+        <div class="card" id="mensajes-correo-card">
+          <h2 style="margin-top:0;">Mensajes de correo</h2>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
+            Edita el asunto y el texto de cada correo que reciben tus clientes. Las palabras entre llaves, como
+            <code>{nombre}</code>, se reemplazan solas al enviar: tócalas abajo para insertarlas donde está el cursor.
+            Usa «Ver ejemplo» para revisar cómo queda antes de guardar.
+          </p>
+          <div class="form-group">
+            <label for="pc-clave">Mensaje</label>
+            <select id="pc-clave"></select>
+          </div>
+          <div class="form-group">
+            <label for="pc-asunto">Asunto</label>
+            <input type="text" id="pc-asunto" maxlength="200" />
+          </div>
+          <div class="form-group">
+            <label for="pc-texto">Texto del correo</label>
+            <textarea id="pc-texto" rows="11"></textarea>
+          </div>
+          <div style="font-size:0.82rem; color:var(--color-text-muted); margin-bottom:0.3rem;">Datos que puedes usar (toca para insertar):</div>
+          <div id="pc-variables" style="display:flex; flex-wrap:wrap; gap:0.35rem; margin-bottom:0.75rem;"></div>
+          <div>
+            <button type="button" id="pc-guardar-btn">Guardar mensaje</button>
+            <button type="button" id="pc-ejemplo-btn" class="btn-secondary">Ver ejemplo</button>
+            <button type="button" id="pc-restaurar-btn" class="btn-secondary">Restaurar texto original</button>
+          </div>
+          <p class="error-message" id="pc-error"></p>
+          <p id="pc-ok" style="color:#1b6e3c; font-size:0.85rem;"></p>
+          <div id="pc-ejemplo" hidden style="margin-top:0.5rem; border:1px solid var(--color-border); border-radius:var(--radius); padding:0.75rem 0.9rem; background:#fafafa;">
+            <div style="font-size:0.8rem; color:var(--color-text-muted);">Asunto:</div>
+            <div id="pc-ejemplo-asunto" style="font-weight:600; margin-bottom:0.5rem;"></div>
+            <div id="pc-ejemplo-texto" style="white-space:pre-wrap; font-size:0.9rem;"></div>
+          </div>
+        </div>
+
         <div class="card">
           <h2 style="margin-top:0;">Horario de atención</h2>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
@@ -770,6 +805,107 @@
       estadoEl.textContent = 'Guardado.';
     });
 
+    // ---------- Mensajes de correo editables (taller_config.correo_plantillas: { clave: { asunto, texto } }) ----------
+    let correoPlantillas = {};
+    // Datos de ejemplo para «Ver ejemplo»
+    const EJEMPLO_CORREO = {
+      nombre: 'Juan Pérez', vehiculo: 'su vehículo ABCD12 (Kia Rio)', patente: 'ABCD12', ot: 'OT-0015',
+      bloque_inspeccion: `\n\nPuede revisar la inspección de ingreso de su vehículo (y firmarla) aquí:\n${window.location.origin}/inspeccion-ingreso.html?id=…`,
+      bloque_seguimiento: `\n\nPuede seguir el estado de su vehículo aquí:\n${window.location.origin}/portal.html?patente=ABCD12&ot=15`,
+      cotizacion: 'COT-0007', detalle: '- Cambio de aceite: $25.000\n- Filtro de aceite: $8.000', total: '$39.270', iva: 'IVA incluido', validez: 15,
+      link: `${window.location.origin}/…`, diagnostico: 'DIAG-0003', resumen: '- Pastillas de freno gastadas\n- Ruido en la suspensión delantera',
+      numero: 'INS-0003', puntaje: 82, recomendacion: 'Recomendable, con detalles menores a revisar.',
+    };
+    const valoresEjemplo = (clave) => clave === 'inspeccion'
+      ? { ...EJEMPLO_CORREO, vehiculo: 'el vehículo ABCD12 (Toyota Corolla)', resumen: '20 bien, 3 con atención, 0 malos' }
+      : (clave === 'cotizacion_enviada' ? { ...EJEMPLO_CORREO, vehiculo: 'ABCD12 (Kia Rio)' } : EJEMPLO_CORREO);
+    const configParaEjemplo = () => ({
+      nombre: document.getElementById('nombre').value || 'Tu taller',
+      direccion: document.getElementById('direccion').value, telefono: document.getElementById('telefono').value,
+    });
+
+    function cargarPlantillaEnPantalla() {
+      const clave = document.getElementById('pc-clave').value;
+      const base = PLANTILLAS_CORREO[clave], propia = correoPlantillas[clave] || {};
+      document.getElementById('pc-asunto').value = propia.asunto || base.asunto;
+      document.getElementById('pc-texto').value = propia.texto || base.texto;
+      document.getElementById('pc-variables').innerHTML = base.variables.map(v =>
+        `<button type="button" class="btn-secondary btn-mini pc-var" data-var="${v}" title="${htmlSeguro(DESCRIPCION_VARIABLES_CORREO[v] || '')}">{${v}}</button>`).join('');
+      document.getElementById('pc-error').textContent = '';
+      document.getElementById('pc-ok').textContent = correoPlantillas[clave] ? 'Este mensaje está personalizado.' : 'Este mensaje usa el texto original.';
+      document.getElementById('pc-ejemplo').hidden = true;
+    }
+    function renderSelectorPlantillas() {
+      const sel = document.getElementById('pc-clave');
+      const actual = sel.value;
+      sel.innerHTML = Object.entries(PLANTILLAS_CORREO).map(([clave, p]) =>
+        `<option value="${clave}">${htmlSeguro(p.titulo)}${correoPlantillas[clave] ? ' ✎' : ''}</option>`).join('');
+      if (actual && PLANTILLAS_CORREO[actual]) sel.value = actual;
+      cargarPlantillaEnPantalla();
+    }
+    document.getElementById('pc-clave').addEventListener('change', cargarPlantillaEnPantalla);
+
+    // Toca una variable: se inserta donde está el cursor (en el asunto o en el texto, el último que se usó)
+    let pcUltimoCampo = 'pc-texto';
+    ['pc-asunto', 'pc-texto'].forEach(id => document.getElementById(id).addEventListener('focus', () => { pcUltimoCampo = id; }));
+    document.getElementById('pc-variables').addEventListener('click', (e) => {
+      const b = e.target.closest('.pc-var');
+      if (!b) return;
+      const campo = document.getElementById(pcUltimoCampo);
+      const ini = campo.selectionStart ?? campo.value.length, fin = campo.selectionEnd ?? campo.value.length;
+      const token = `{${b.dataset.var}}`;
+      campo.value = campo.value.slice(0, ini) + token + campo.value.slice(fin);
+      campo.focus();
+      campo.selectionStart = campo.selectionEnd = ini + token.length;
+    });
+
+    document.getElementById('pc-ejemplo-btn').addEventListener('click', () => {
+      const clave = document.getElementById('pc-clave').value;
+      const cfgEj = { ...configParaEjemplo(), correo_plantillas: { [clave]: { asunto: document.getElementById('pc-asunto').value, texto: document.getElementById('pc-texto').value } } };
+      const m = armarCorreo(clave, valoresEjemplo(clave), cfgEj);
+      document.getElementById('pc-ejemplo-asunto').textContent = m.asunto;
+      document.getElementById('pc-ejemplo-texto').textContent = m.texto;
+      document.getElementById('pc-ejemplo').hidden = false;
+      const desconocidas = [...new Set((m.asunto + ' ' + m.texto).match(/\{\w+\}/g) || [])];
+      document.getElementById('pc-error').textContent = desconocidas.length
+        ? `Ojo: ${desconocidas.join(', ')} no es un dato conocido y saldría tal cual. Revisa cómo está escrito.` : '';
+    });
+
+    async function guardarPlantillas(nuevas, mensajeOk) {
+      const errorEl = document.getElementById('pc-error'), okEl = document.getElementById('pc-ok');
+      errorEl.textContent = ''; okEl.textContent = '';
+      const { error } = await supabaseClient.from('taller_config').update({ correo_plantillas: nuevas }).eq('id', 1);
+      if (error) {
+        errorEl.textContent = /correo_plantillas/.test(error.message || '')
+          ? 'Falta ejecutar sql/actualizacion-v58-correos-automaticos.sql en el SQL Editor de Supabase.'
+          : `Error: ${error.message}`;
+        return false;
+      }
+      correoPlantillas = nuevas;
+      tallerConfigCache = null;
+      renderSelectorPlantillas();
+      okEl.textContent = mensajeOk;
+      return true;
+    }
+    document.getElementById('pc-guardar-btn').addEventListener('click', async () => {
+      const clave = document.getElementById('pc-clave').value;
+      const base = PLANTILLAS_CORREO[clave];
+      const asunto = document.getElementById('pc-asunto').value.trim();
+      const texto = document.getElementById('pc-texto').value.replace(/\s+$/, '');
+      if (!asunto || !texto.trim()) { document.getElementById('pc-error').textContent = 'El asunto y el texto no pueden quedar vacíos (usa «Restaurar texto original» si quieres volver al de siempre).'; return; }
+      const nuevas = { ...correoPlantillas };
+      if (asunto === base.asunto && texto === base.texto) delete nuevas[clave]; else nuevas[clave] = { asunto, texto };
+      await guardarPlantillas(nuevas, 'Mensaje guardado. Los próximos correos saldrán con este texto.');
+    });
+    document.getElementById('pc-restaurar-btn').addEventListener('click', async () => {
+      const clave = document.getElementById('pc-clave').value;
+      if (!correoPlantillas[clave]) { cargarPlantillaEnPantalla(); return; }
+      if (!confirm('¿Volver al texto original de este mensaje? Se pierde lo que personalizaste.')) return;
+      const nuevas = { ...correoPlantillas };
+      delete nuevas[clave];
+      await guardarPlantillas(nuevas, 'Listo: este mensaje volvió al texto original.');
+    });
+
     // ---------- Atención a domicilio: servicio del catálogo y traslado bloqueado ----------
     let trabajosDomicilio = [];
     function mostrarValorDomicilio() {
@@ -999,6 +1135,8 @@ function responder(obj) {
       cargarDomicilio(data).catch(e => console.error('Error en cargarDomicilio:', e));
       correoEventos = (data.correo_eventos && typeof data.correo_eventos === 'object') ? data.correo_eventos : {};
       renderCorreoEventos();
+      correoPlantillas = (data.correo_plantillas && typeof data.correo_plantillas === 'object') ? data.correo_plantillas : {};
+      renderSelectorPlantillas();
       cargarHorario().catch(e => console.error('Error en cargarHorario:', e));
       cargarBloqueos().catch(e => console.error('Error en cargarBloqueos:', e));
 

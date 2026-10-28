@@ -848,17 +848,16 @@
     // Texto del correo de una cotización (con su link para revisarla y aprobarla)
     function mensajeCorreoCotizacion(c) {
       const t = totalesCotizacion(c);
-      const vehiculo = c.vehiculos ? `${c.vehiculos.patente} (${[c.vehiculos.marca, c.vehiculos.modelo].filter(Boolean).join(' ')})` : 'su vehículo';
-      const detalle = itemsEfectivos(c).map(i => `- ${i.descripcion}: ${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}`).join('\n');
-      return {
-        asunto: `Cotización ${fmtNumero('COT', c.numero)} - ${config.nombre}`,
-        texto:
-          `Hola ${c.clientes.nombre},\n\n` +
-          `En ${config.nombre} preparamos la cotización ${fmtNumero('COT', c.numero)} para ${vehiculo}:\n\n` +
-          `${detalle}\n\n` +
-          `Total: ${fmtMoneda(t.total)} (${t.conIva ? 'IVA incluido' : 'sin IVA'}). Válida por ${c.validez_dias} días.\n\n` +
-          `Puede revisarla y aprobarla aquí:\n${linkPublicoCotizacion(c.id)}` + pieCorreoTaller(config),
-      };
+      return armarCorreo('cotizacion_enviada', {
+        nombre: (c.clientes && c.clientes.nombre) || '',
+        cotizacion: fmtNumero('COT', c.numero),
+        vehiculo: c.vehiculos ? `${c.vehiculos.patente} (${[c.vehiculos.marca, c.vehiculos.modelo].filter(Boolean).join(' ')})` : 'su vehículo',
+        detalle: itemsEfectivos(c).map(i => `- ${i.descripcion}: ${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}`).join('\n'),
+        total: fmtMoneda(t.total),
+        iva: t.conIva ? 'IVA incluido' : 'sin IVA',
+        validez: c.validez_dias,
+        link: linkPublicoCotizacion(c.id),
+      }, config);
     }
 
     // «✉ Correo»: sale directo con el envío configurado; si no, abre Gmail con el correo redactado
