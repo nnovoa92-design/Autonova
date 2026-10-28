@@ -1389,7 +1389,8 @@
       abrirEnlace(linkWhatsApp(tel, mensaje));
     }
 
-    function compartirCorreo(d) {
+    // «✉ Correo»: sale directo con el envío configurado; si no, abre Gmail con el correo redactado
+    async function compartirCorreo(d) {
       const email = d.clientes && d.clientes.email;
       if (!email) { alert('El cliente no tiene correo registrado.'); return; }
       const resumen = resumenParaMensaje(d, t => `- ${t}`);
@@ -1398,9 +1399,9 @@
         `Hola ${d.clientes.nombre},\n\n` +
         `En ${config.nombre} revisamos ${descripcionVehiculo(d)} y preparamos el informe de diagnóstico ${fmtNumero('DIAG', d.numero)}.\n\n` +
         (resumen ? resumen + '\n\n' : '') +
-        `Puede ver el informe completo, con fotos, y avisarnos si desea realizar los trabajos aquí:\n${linkPublicoDiagnostico(d.id)}\n\n` +
-        `Saludos,\n${config.nombre}`;
-      abrirEnlace(linkGmail(email, asunto, cuerpo));
+        `Puede ver el informe completo, con fotos, y avisarnos si desea realizar los trabajos aquí:\n${linkPublicoDiagnostico(d.id)}` +
+        pieCorreoTaller(config);
+      await enviarCorreoOAbrirGmail(email, asunto, cuerpo);
     }
 
     async function copiarLinkDiagnostico(d) {
@@ -1515,7 +1516,9 @@
         if (modo === 'ot-desde-cotizacion') {
           if (!confirm(`¿Crear la orden de trabajo desde la cotización ${fmtNumero('COT', cotDe(fila).numero)}?`)) return;
           const orden = await crearOTDesdeCotizacion(cotDe(fila).id, fila);
+          const envioCorreo = avisarCorreoOT({ id: orden.id, numero: orden.numero, clientes: fila.clientes, vehiculos: fila.vehiculos, checklist_recepcion: fila.checklist_recepcion, checklist_firma_png: fila.checklist_firma_png }, 'recepcion');
           alert(`Orden ${fmtNumero('OT', orden.numero)} creada.`);
+          await envioCorreo;   // ingreso del vehículo: aviso automático al correo del cliente
           irA('ordenes.html');
           return;
         }
@@ -1554,7 +1557,9 @@
 
         if (modo === 'ot') {
           const orden = await crearOTDesdeCotizacion(cot.id, fila);
+          const envioCorreo = avisarCorreoOT({ id: orden.id, numero: orden.numero, clientes: fila.clientes, vehiculos: fila.vehiculos, checklist_recepcion: fila.checklist_recepcion, checklist_firma_png: fila.checklist_firma_png }, 'recepcion');
           alert(`Cotización ${fmtNumero('COT', cot.numero)} y orden ${fmtNumero('OT', orden.numero)} creadas.`);
+          await envioCorreo;   // ingreso del vehículo: aviso automático al correo del cliente
           irA('ordenes.html');
           return;
         }

@@ -261,6 +261,13 @@
           </div>
           <p class="error-message" id="correo-error"></p>
           <p id="correo-ok" style="color:#1b6e3c; font-size:0.85rem;"></p>
+          <h3 style="margin:1rem 0 0.25rem;">Avisos automáticos al cliente</h3>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.4rem;">
+            Con el envío configurado, estos correos salen solos al correo del cliente (si lo tiene registrado).
+            El WhatsApp sigue siendo manual con sus botones. Desmarca los que no quieras enviar.
+          </p>
+          <div id="correo-eventos" style="display:grid; gap:0.3rem;"></div>
+          <p id="correo-eventos-estado" style="font-size:0.82rem; color:var(--color-text-muted); min-height:1em;"></p>
           <p style="color:var(--color-text-muted); font-size:0.8rem;">
             Sin esto configurado todo sigue funcionando: el correo del cliente se guarda en su ficha y desde la cita puedes
             pulsar «Avisar por correo» para abrir tu Gmail con el mensaje listo. Gmail permite unos 100 correos al día con este método.
@@ -736,6 +743,33 @@
       }
     });
 
+    // ---------- Avisos automáticos por correo (taller_config.correo_eventos: los apagados en false) ----------
+    let correoEventos = {};
+    function renderCorreoEventos() {
+      document.getElementById('correo-eventos').innerHTML = Object.entries(EVENTOS_CORREO).map(([clave, etiqueta]) => `
+        <label style="display:flex; gap:0.5rem; align-items:center; font-weight:500;">
+          <input type="checkbox" data-evento="${clave}" ${correoEventos[clave] === false ? '' : 'checked'} style="width:auto;" />
+          <span>${htmlSeguro(etiqueta)}</span>
+        </label>`).join('');
+    }
+    document.getElementById('correo-eventos').addEventListener('change', async (e) => {
+      if (!e.target.matches('input[data-evento]')) return;
+      const estadoEl = document.getElementById('correo-eventos-estado');
+      const nuevo = { ...correoEventos };
+      if (e.target.checked) delete nuevo[e.target.dataset.evento]; else nuevo[e.target.dataset.evento] = false;
+      const { error } = await supabaseClient.from('taller_config').update({ correo_eventos: nuevo }).eq('id', 1);
+      if (error) {
+        e.target.checked = !e.target.checked;
+        estadoEl.style.color = 'var(--color-danger)';
+        estadoEl.textContent = /correo_eventos/.test(error.message || '') ? 'Falta ejecutar sql/actualizacion-v58-correos-automaticos.sql en Supabase.' : `Error: ${error.message}`;
+        return;
+      }
+      correoEventos = nuevo;
+      tallerConfigCache = null;
+      estadoEl.style.color = '#1b6e3c';
+      estadoEl.textContent = 'Guardado.';
+    });
+
     // ---------- Atención a domicilio: servicio del catálogo y traslado bloqueado ----------
     let trabajosDomicilio = [];
     function mostrarValorDomicilio() {
@@ -963,6 +997,8 @@ function responder(obj) {
       if (data.correo_script_url) document.getElementById('correo_script_url').value = data.correo_script_url;
       refrescarScriptCorreo();
       cargarDomicilio(data).catch(e => console.error('Error en cargarDomicilio:', e));
+      correoEventos = (data.correo_eventos && typeof data.correo_eventos === 'object') ? data.correo_eventos : {};
+      renderCorreoEventos();
       cargarHorario().catch(e => console.error('Error en cargarHorario:', e));
       cargarBloqueos().catch(e => console.error('Error en cargarBloqueos:', e));
 

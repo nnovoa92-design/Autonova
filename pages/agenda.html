@@ -1931,7 +1931,10 @@
         }
       }
       await supabaseClient.from('citas').update({ estado: 'completado', orden_id: orden.id }).eq('id', citaId);
+      // Ingreso del vehículo: aviso automático al correo del cliente (se espera antes de cambiar de página)
+      const envioCorreo = avisarCorreoOT({ id: orden.id, numero: orden.numero, clientes: { ...(c.clientes || { nombre: c.nombre_contacto }), email: (c.clientes && c.clientes.email) || c.email_contacto }, vehiculos: c.vehiculos }, 'recepcion');
       alert(`Orden ${fmtNumero('OT', orden.numero)} creada.`);
+      await envioCorreo;
       window.location.href = 'ordenes.html';
     }
 

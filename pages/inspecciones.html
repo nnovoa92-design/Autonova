@@ -29,6 +29,10 @@
               <input type="text" id="i-wa" placeholder="+56 9 1234 5678" />
             </div>
             <div class="form-group">
+              <label for="i-email">Correo (le llega el informe al terminar)</label>
+              <input type="email" id="i-email" placeholder="comprador@correo.cl" />
+            </div>
+            <div class="form-group">
               <label for="i-pat">Patente</label>
               <input type="text" id="i-pat" placeholder="CRZC88" style="text-transform:uppercase;" />
             </div>
@@ -78,6 +82,7 @@
             <h2 style="margin:0;" id="detalle-title">Inspección</h2>
             <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
               <button type="button" id="wa-btn" class="btn-secondary">WhatsApp</button>
+              <button type="button" id="correo-insp-btn" class="btn-secondary">Correo</button>
               <button type="button" id="link-btn" class="btn-secondary">Copiar link</button>
               <button type="button" id="pdf-btn" class="btn-secondary">PDF</button>
               <button type="button" id="imprimir-btn" class="btn-secondary">Imprimir</button>
@@ -136,7 +141,7 @@
 
     // ---------- Paso 1: datos ----------
     document.getElementById('nueva-btn').addEventListener('click', () => {
-      ['i-nombre','i-wa','i-pat','i-marca','i-modelo','i-km','i-precio'].forEach(id => {
+      ['i-nombre','i-wa','i-email','i-pat','i-marca','i-modelo','i-km','i-precio'].forEach(id => {
         document.getElementById(id).value = '';
       });
       document.getElementById('datos-error').textContent = '';
@@ -153,6 +158,7 @@
       cabecera = {
         nombre_comprador: nombre,
         telefono: document.getElementById('i-wa').value.trim() || null,
+        email: document.getElementById('i-email').value.trim().toLowerCase() || null,
         patente: document.getElementById('i-pat').value.trim().toUpperCase() || null,
         marca: document.getElementById('i-marca').value.trim() || null,
         modelo: document.getElementById('i-modelo').value.trim() || null,
@@ -330,20 +336,59 @@
       const obs = document.getElementById('i-obs').value.trim() || null;
       datosActuales._obs = obs ?? undefined;
 
-      const { data, error } = await supabaseClient.from('inspecciones').insert({
+      if (cabecera.email && !correoValido(cabecera.email)) {
+        errorEl.textContent = 'El correo del comprador no es válido: corrígelo en los datos o déjalo vacío.';
+        return;
+      }
+      const fila = {
         ...cabecera,
         datos: datosActuales,
         score: r.score,
         ok: r.ok, warn: r.warn, bad: r.bad, na: r.na, total: r.total,
         recomendacion: r.rec,
         observaciones: obs,
-      }).select('*').single();
+      };
+      let { data, error } = await supabaseClient.from('inspecciones').insert(fila).select('*').single();
+      if (error && /email/.test(error.message || '')) {
+        // Aún no se ejecutó v58 (correo en inspecciones): se guarda sin el correo
+        delete fila.email;
+        ({ data, error } = await supabaseClient.from('inspecciones').insert(fila).select('*').single());
+      }
       if (error) {
         errorEl.textContent = `Error al guardar: ${error.message}`;
         return;
       }
       await loadInspecciones();
       abrirDetalle(data.id);
+      // Inspección terminada: aviso automático con el informe al correo del comprador (el WhatsApp sigue manual)
+      if (data.email) correoAutomatico('inspeccion', { para: data.email, ...correoInspeccion(data) });
+    });
+
+    // Texto del correo con el resultado de la inspección y el link al informe completo
+    function correoInspeccion(i) {
+      return {
+        asunto: `Inspección precompra ${fmtNumero('INS', i.numero)}${i.patente ? ' · ' + i.patente : ''} - ${config.nombre}`,
+        texto:
+          `Hola ${i.nombre_comprador},\n\n` +
+          `Le enviamos el resultado de la inspección precompra ${fmtNumero('INS', i.numero)}` +
+          `${i.patente ? ' del vehículo ' + i.patente : ''} (${[i.marca, i.modelo].filter(Boolean).join(' ')}):\n\n` +
+          `Puntaje: ${i.score}/100 — ${i.ok} bien, ${i.warn} con atención, ${i.bad} malos.\n` +
+          `${i.recomendacion || ''}\n\n` +
+          `Informe completo, con fotos:\n${window.location.origin}/inspeccion.html?id=${i.id}` + pieCorreoTaller(config),
+      };
+    }
+
+    document.getElementById('correo-insp-btn').addEventListener('click', async () => {
+      if (!inspActual) return;
+      let email = inspActual.email;
+      if (!email) {
+        email = (prompt('Esta inspección no tiene correo. ¿A qué correo envío el informe?') || '').trim().toLowerCase();
+        if (!email) return;
+        if (!correoValido(email)) { alert('Ese correo no es válido.'); return; }
+        const { error } = await supabaseClient.from('inspecciones').update({ email }).eq('id', inspActual.id);
+        if (!error) inspActual.email = email;
+      }
+      await enviarCorreoOAbrirGmail(email, correoInspeccion(inspActual).asunto, correoInspeccion(inspActual).texto);
     });
 
     // ---------- Detalle ----------

@@ -757,7 +757,9 @@
 
       document.getElementById('nueva-card').style.display = 'none';
       await loadOrdenes();
-      abrirDetalle(data.id);
+      await abrirDetalle(data.id);
+      // Ingreso del vehículo: aviso automático al correo del cliente (con el link de la inspección de ingreso)
+      if (ordenActual && ordenActual.id === data.id) avisarCorreoOT(ordenActual, 'recepcion');
     }
 
     // ---------- Detalle ----------
@@ -1573,6 +1575,8 @@
         await supabaseClient.from('ordenes_historial').insert({ orden_id: ordenActual.id, estado_anterior: estadoAnterior, estado_nuevo: estado });
       }
       await abrirDetalle(ordenActual.id);
+      // Cambio de estado: aviso automático al correo del cliente (el WhatsApp sigue siendo manual)
+      if (estado !== estadoAnterior && ordenActual) avisarCorreoOT(ordenActual, estado);
     });
 
     document.getElementById('avance-fotos').addEventListener('change', async (e) => {
@@ -1845,29 +1849,14 @@
       abrirVentanaImpresion(html, `Expediente ${fmtNumero('OT', ordenActual.numero)}`);
     });
 
-    document.getElementById('email-ot-btn').addEventListener('click', () => {
+    // «Avisar por correo»: el mismo aviso del estado actual (sale directo con el envío configurado; si no, abre Gmail)
+    document.getElementById('email-ot-btn').addEventListener('click', async () => {
       if (!ordenActual) return;
       const o = ordenActual;
       const email = o.clientes && o.clientes.email;
       if (!email) { alert('El cliente no tiene correo registrado.'); return; }
-      const vehiculo = o.vehiculos
-        ? `su vehículo ${o.vehiculos.patente} (${[o.vehiculos.marca, o.vehiculos.modelo].filter(Boolean).join(' ')})`
-        : 'su vehículo';
-      const MENSAJES_ESTADO = {
-        recepcion: `recibimos ${vehiculo} y pronto comenzaremos el diagnóstico`,
-        diagnostico: `${vehiculo} está en diagnóstico; le enviaremos el detalle a la brevedad`,
-        en_proceso: `${vehiculo} está siendo trabajado en nuestro taller`,
-        listo: `${vehiculo} está listo para retiro`,
-        entregado: `gracias por confiar en nosotros para el servicio de ${vehiculo}`,
-      };
-      const cuerpo = MENSAJES_ESTADO[o.estado] || `le informamos sobre ${vehiculo}`;
-      const asunto = `${fmtNumero('OT', o.numero)} - ${config.nombre}`;
-      let cuerpoMail = `Hola ${o.clientes.nombre},\n\nLe informamos que ${cuerpo} (${fmtNumero('OT', o.numero)}).`;
-      if (o.vehiculos) {
-        cuerpoMail += `\n\nPuede seguir el estado de su vehículo aquí:\n${window.location.origin}/portal.html?patente=${encodeURIComponent(o.vehiculos.patente)}&ot=${o.numero}`;
-      }
-      cuerpoMail += `\n\nSaludos,\n${config.nombre}`;
-      abrirEnlace(linkGmail(email, asunto, cuerpoMail));
+      const msg = correoEstadoOT(o, o.estado, config) || correoEstadoOT(o, 'recepcion', config);
+      await enviarCorreoOAbrirGmail(email, msg.asunto, msg.texto);
     });
 
     // Opciones: "No recordar" + 1 a 11 meses

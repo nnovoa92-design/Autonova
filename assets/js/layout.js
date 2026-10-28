@@ -577,6 +577,106 @@ function mostrarToast(texto, tipo = 'ok', ms = 7000) {
   mostrarToast.temporizador = setTimeout(() => { caja.style.display = 'none'; }, ms);
 }
 
+// ---------- Correos automáticos al cliente ----------
+// Salen solos con el envío configurado (Configuración → Correo de confirmaciones) si el cliente tiene correo y
+// el aviso está activado (Configuración → Avisos automáticos). El WhatsApp sigue siendo manual en cada pantalla.
+const EVENTOS_CORREO = {
+  ot_ingreso:         'Ingreso del vehículo al taller (al crear la OT)',
+  ot_diagnostico:     'OT pasa a «Diagnóstico»',
+  ot_en_proceso:      'OT pasa a «En proceso»',
+  ot_listo:           'Vehículo listo para retiro',
+  ot_entregado:       'Vehículo entregado',
+  cotizacion_enviada: 'Cotización marcada como enviada (con su link)',
+  inspeccion:         'Inspección precompra terminada (con su informe)',
+};
+
+async function correoEventoActivo(evento) {
+  const cfg = await getTallerConfig();
+  if (!cfg || !cfg.correo_script_url || !cfg.correo_script_clave) return false;
+  return !(cfg.correo_eventos && cfg.correo_eventos[evento] === false);
+}
+
+function avisarResultadoCorreo(r, para) {
+  if (r.estado === 'enviado') mostrarToast(`✉ Correo enviado a ${para}`, 'ok');
+  else if (r.estado === 'error') mostrarToast(`No se pudo enviar el correo a ${para}: ${r.mensaje}`, 'error', 12000);
+  else if (r.estado === 'incierto') mostrarToast(`No pude confirmar si el correo a ${para} salió (${r.mensaje}). Revisa «Enviados» en tu Gmail.`, 'aviso', 15000);
+}
+
+// Aviso automático de un evento. No interrumpe: si no hay correo, el aviso está apagado o no hay envío
+// configurado, no hace nada. Devuelve el resultado (para esperar el envío antes de cambiar de página).
+async function correoAutomatico(evento, { para, asunto, texto }) {
+  try {
+    para = String(para || '').trim();
+    if (!correoValido(para)) return { estado: 'sin_correo' };
+    if (!(await correoEventoActivo(evento))) return { estado: 'desactivado' };
+    const r = await enviarCorreo({ para, asunto, texto });
+    avisarResultadoCorreo(r, para);
+    return r;
+  } catch (e) {
+    return { estado: 'error', mensaje: e && e.message };
+  }
+}
+
+// Botones «✉ Correo»: con el envío configurado sale directo; si no, se abre Gmail con el correo redactado.
+async function enviarCorreoOAbrirGmail(para, asunto, texto) {
+  const cfg = await getTallerConfig();
+  if (cfg && cfg.correo_script_url && cfg.correo_script_clave) {
+    const r = await enviarCorreo({ para, asunto, texto });
+    avisarResultadoCorreo(r, para);
+    return r;
+  }
+  abrirEnlace(linkGmail(para, asunto, texto));
+  return { estado: 'gmail' };
+}
+
+function pieCorreoTaller(cfg) {
+  cfg = cfg || {};
+  const contacto = [cfg.direccion, cfg.telefono].filter(Boolean).join(' · ');
+  return `\n\nSaludos,\n${cfg.nombre || 'El taller'}${contacto ? `\n${contacto}` : ''}`;
+}
+
+// Correo de una OT según su estado (recepción = ingreso del vehículo). null para estados sin aviso (cancelado).
+// o: { id, numero, clientes: { nombre }, vehiculos: { patente, marca, modelo }, checklist_recepcion, checklist_firma_png }
+function correoEstadoOT(o, estado, cfg) {
+  cfg = cfg || {};
+  const v = o.vehiculos;
+  const vehiculo = v ? `su vehículo ${v.patente}${[v.marca, v.modelo].filter(Boolean).length ? ` (${[v.marca, v.modelo].filter(Boolean).join(' ')})` : ''}` : 'su vehículo';
+  const ot = fmtNumero('OT', o.numero);
+  const frases = {
+    recepcion: `Le informamos que recibimos ${vehiculo} en ${cfg.nombre || 'nuestro taller'}. Su orden de trabajo es la ${ot} y pronto comenzaremos el diagnóstico.`,
+    diagnostico: `Le informamos que ${vehiculo} está en diagnóstico (${ot}). Le enviaremos el detalle a la brevedad.`,
+    en_proceso: `Le informamos que ${vehiculo} ya está siendo trabajado en nuestro taller (${ot}).`,
+    listo: `Le informamos que ${vehiculo} está listo para retiro (${ot}). Lo esperamos en nuestro horario de atención.`,
+    entregado: `Gracias por confiar en nosotros para el servicio de ${vehiculo} (${ot}). Si tiene cualquier consulta sobre el trabajo realizado, estamos para ayudarle.`,
+  };
+  const frase = frases[estado];
+  if (!frase) return null;
+  const asuntos = {
+    recepcion: `Recibimos su vehículo — ${ot}`,
+    diagnostico: `Su vehículo está en diagnóstico — ${ot}`,
+    en_proceso: `Estamos trabajando en su vehículo — ${ot}`,
+    listo: `Su vehículo está listo para retiro — ${ot}`,
+    entregado: `Gracias por su visita — ${ot}`,
+  };
+  const nombre = (o.clientes && o.clientes.nombre) || '';
+  let texto = `Hola${nombre ? ' ' + nombre : ''},\n\n${frase}`;
+  if (estado === 'recepcion' && o.id && Array.isArray(o.checklist_recepcion) && o.checklist_recepcion.length) {
+    texto += `\n\nPuede revisar la inspección de ingreso de su vehículo${(o.checklist_firma_png || o.firma_cliente_url) ? '' : ' (y firmarla)'} aquí:\n${window.location.origin}/inspeccion-ingreso.html?id=${o.id}`;
+  }
+  if (v && v.patente && estado !== 'entregado') {
+    texto += `\n\nPuede seguir el estado de su vehículo aquí:\n${window.location.origin}/portal.html?patente=${encodeURIComponent(v.patente)}&ot=${o.numero}`;
+  }
+  return { asunto: `${asuntos[estado]} · ${cfg.nombre || 'Taller'}`, texto: texto + pieCorreoTaller(cfg) };
+}
+
+// Aviso automático de una OT (ingreso o cambio de estado) al correo del cliente
+async function avisarCorreoOT(o, estado) {
+  const cfg = await getTallerConfig();
+  const msg = correoEstadoOT(o, estado, cfg);
+  if (!msg) return { estado: 'sin_aviso' };
+  return correoAutomatico(estado === 'recepcion' ? 'ot_ingreso' : `ot_${estado}`, { para: o.clientes && o.clientes.email, ...msg });
+}
+
 // ---------- RUT, teléfono y patente (Chile) ----------
 // Los campos se van formateando solos mientras se escribe: RUT con puntos y guion,
 // teléfono con +56 y patente en mayúsculas.
