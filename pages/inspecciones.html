@@ -231,7 +231,7 @@
                 placeholder="${item.mode === 'dtc' ? 'P0301, P0420... o ninguno' : 'Km'}" style="max-width:240px;" />
             </div>`;
           }
-          return clItemHtml(k, item.t);
+          return clItemHtml(k, item.t + inspBadgeImportancia(item.p));   // crítico / importante pesan más en el puntaje
         }).join('');
 
         const customs = (datosActuales._custom && datosActuales._custom[si]) || [];
@@ -258,7 +258,7 @@
       });
 
       body.querySelectorAll('.cl-txt').forEach(inp => {
-        inp.addEventListener('input', () => { datosActuales[inp.dataset.k + '_txt'] = inp.value; });
+        inp.addEventListener('input', () => { datosActuales[inp.dataset.k + '_txt'] = inp.value; actualizarProgreso(); });   // km y códigos de falla también influyen
       });
 
       body.querySelectorAll('.cl-obs').forEach(inp => {
@@ -295,8 +295,10 @@
 
     function actualizarProgreso() {
       const r = inspCalcular(datosActuales);
-      document.getElementById('progreso').textContent =
-        `${r.ok + r.warn + r.bad + r.na} de ${r.total} evaluados`;
+      const evaluados = r.ok + r.warn + r.bad;
+      // Puntaje provisorio con la evaluación ponderada (se ve cómo cambia la recomendación al ir evaluando)
+      document.getElementById('progreso').textContent = `${evaluados + r.na} de ${r.total} evaluados`
+        + (evaluados ? ` · Puntaje provisorio: ${r.score} · ${(INSP_NIVELES[r.evaluacion.nivel] || {}).label || ''}` : '');
     }
 
     document.getElementById('cancelar-cl-btn').addEventListener('click', () => {
@@ -342,7 +344,8 @@
       }
       const fila = {
         ...cabecera,
-        datos: datosActuales,
+        // Se guarda la evaluación tal como se calculó hoy (si mañana cambian los pesos, el informe no cambia)
+        datos: { ...datosActuales, _eval: r.evaluacion },
         score: r.score,
         ok: r.ok, warn: r.warn, bad: r.bad, na: r.na, total: r.total,
         recomendacion: r.rec,
@@ -397,7 +400,7 @@
       inspActual = inspeccionesCache.find(x => x.id === id);
       if (!inspActual) return;
       const i = inspActual;
-      const nivel = i.score >= 90 ? 'ok' : (i.score >= 60 ? 'warn' : 'bad');
+      const nivel = inspNivelDe(i);
 
       document.getElementById('detalle-title').textContent =
         `${fmtNumero('INS', i.numero)} — ${i.patente ?? 'sin patente'}`;
@@ -423,6 +426,7 @@
             <p style="margin:0.4rem 0; font-weight:600;">${i.recomendacion ?? ''}</p>
           </div>
         </div>
+        ${inspRenderResumen(i.datos || {})}
         ${inspRenderDetalle(i.datos || {})}
         ${i.observaciones ? `<h3>Observaciones</h3><p>${i.observaciones}</p>` : ''}
       `;
@@ -490,6 +494,7 @@
         <h2>Puntaje: ${i.score}/100</h2>
         <p>${i.ok} bien · ${i.warn} con atención · ${i.bad} malos · ${i.na} no aplica</p>
         <p><strong>${i.recomendacion ?? ''}</strong></p>
+        ${inspRenderResumen(i.datos || {})}
         ${inspRenderDetalle(i.datos || {})}
         ${i.observaciones ? `<h3>Observaciones</h3><p>${i.observaciones}</p>` : ''}
       `;
@@ -509,7 +514,7 @@
         return;
       }
       tbody.innerHTML = lista.map(i => {
-        const nivel = i.score >= 90 ? 'badge-green' : (i.score >= 60 ? 'badge-yellow' : 'badge-red');
+        const nivel = { ok: 'badge-green', warn: 'badge-yellow', bad: 'badge-red' }[inspNivelDe(i)];
         return `
         <tr>
           <td style="white-space:nowrap;">${fmtNumero('INS', i.numero)}</td>

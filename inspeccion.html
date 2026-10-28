@@ -39,7 +39,7 @@
       }
 
       if (d.taller && d.taller.nombre) document.getElementById('taller-nombre').textContent = d.taller.nombre;
-      const nivel = d.score >= 90 ? 'ok' : (d.score >= 60 ? 'warn' : 'bad');
+      const nivel = inspNivelDe(d);
 
       contenido.innerHTML = `
         <div style="display:flex; gap:1.5rem; align-items:center; flex-wrap:wrap; margin-bottom:1rem;">
@@ -64,6 +64,7 @@
             <p style="margin:0.4rem 0; font-weight:600;">${d.recomendacion ?? ''}</p>
           </div>
         </div>
+        ${inspRenderResumen(d.datos || {})}
         ${inspRenderDetalle(d.datos || {})}
         ${d.observaciones ? `<h3>Observaciones</h3><p>${d.observaciones}</p>` : ''}
         ${d.taller ? `<p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:1.5rem;">
