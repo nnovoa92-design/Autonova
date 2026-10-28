@@ -206,6 +206,23 @@
           <p id="patentes-ok" style="color:#1b6e3c; font-size:0.85rem;"></p>
         </div>
 
+        <div class="card" id="criterios-insp-card">
+          <h2 style="margin-top:0;">Criterios de inspección precompra</h2>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
+            Importancia con que cuenta cada ítem en el puntaje: <strong>Crítico ×3</strong> (seguridad o reparación costosa),
+            <strong>Importante ×2</strong> y <strong>Menor ×1</strong>. Una falla en un crítico limita la recomendación aunque el resto esté bien.
+            Este es tu estándar para todas las inspecciones; además, en cada inspección puedes ajustar la importancia de un
+            hallazgo según su causa (al marcarlo «Atención» o «Malo»). Los cambios aplican a las inspecciones nuevas.
+          </p>
+          <div id="criterios-insp-lista"></div>
+          <div style="margin-top:0.6rem;">
+            <button type="button" id="guardar-criterios-btn">Guardar criterios</button>
+            <button type="button" id="restaurar-criterios-btn" class="btn-secondary">Volver al estándar de la app</button>
+          </div>
+          <p class="error-message" id="criterios-error"></p>
+          <p id="criterios-ok" style="color:#1b6e3c; font-size:0.85rem;"></p>
+        </div>
+
         <div class="card" id="domicilio-card">
           <h2 style="margin-top:0;">Atención a domicilio</h2>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
@@ -451,6 +468,7 @@
   <script src="../assets/vendor/supabase.min.js"></script>
   <script src="../assets/js/supabaseClient.js"></script>
   <script src="../assets/js/layout.js"></script>
+  <script src="../assets/js/checklist.js"></script>
   <script>
     const CAMPOS = ['nombre','rut','telefono','email','direccion','valor_hora','iva_pct','pct_mecanico','pct_dueno','pct_taller','politicas_generales_texto','bodegaje_dias_gracia','bodegaje_monto_dia','politica_inspeccion_texto','politica_revision_tecnica_texto','msg_confirmacion_cita','msg_recordatorio_cita','msg_recordatorio_mantencion','msg_recordatorio_revision_tecnica','msg_modalidad_taller','msg_modalidad_retiro','msg_modalidad_terreno'];
 
@@ -906,6 +924,57 @@
       await guardarPlantillas(nuevas, 'Listo: este mensaje volvió al texto original.');
     });
 
+    // ---------- Criterios de inspección precompra (taller_config.insp_pesos: { título: 1|2|3 }, solo lo que cambia) ----------
+    let criteriosInsp = {};
+    function renderCriteriosInsp() {
+      const opciones = (sel, p) => [3, 2, 1].map(v => `<option value="${v}"${v === sel ? ' selected' : ''}>${INSP_IMPORTANCIA[v].label} ×${v}</option>`).join('');
+      document.getElementById('criterios-insp-lista').innerHTML = INSP_CHECKLIST.map((sec, si) => {
+        const filas = sec.items.filter(it => it.mode === 'std').map(it => {
+          const actual = inspPesoValido(criteriosInsp[it.t]) || it.p;
+          const cambiado = actual !== it.p;
+          return `<div style="display:flex; justify-content:space-between; align-items:center; gap:0.6rem; padding:0.3rem 0; border-bottom:1px solid var(--color-border);">
+              <span style="font-size:0.88rem;">${htmlSeguro(it.t)}${cambiado ? ` <small style="color:#92600a;">(estándar de la app: ${INSP_IMPORTANCIA[it.p].label})</small>` : ''}</span>
+              <select class="crit-sel" data-t="${htmlSeguro(it.t)}" data-base="${it.p}" style="max-width:170px;">${opciones(actual)}</select>
+            </div>`;
+        }).join('');
+        const cambios = sec.items.filter(it => it.mode === 'std' && (inspPesoValido(criteriosInsp[it.t]) || it.p) !== it.p).length;
+        return `<details style="margin:0.35rem 0;">
+            <summary style="cursor:pointer; font-weight:600;">${sec.sec}${cambios ? ` <span class="badge badge-yellow">${cambios} cambiado${cambios > 1 ? 's' : ''}</span>` : ''}</summary>
+            <div style="padding:0.25rem 0 0.5rem 0.75rem;">${filas}</div>
+          </details>`;
+      }).join('');
+    }
+    async function guardarCriteriosInsp(nuevos, mensajeOk) {
+      const errorEl = document.getElementById('criterios-error'), okEl = document.getElementById('criterios-ok');
+      errorEl.textContent = ''; okEl.textContent = '';
+      const { error } = await supabaseClient.from('taller_config').update({ insp_pesos: nuevos }).eq('id', 1);
+      if (error) {
+        errorEl.textContent = /insp_pesos/.test(error.message || '')
+          ? 'Falta ejecutar sql/actualizacion-v59-criterios-inspeccion.sql en el SQL Editor de Supabase.'
+          : `Error: ${error.message}`;
+        return;
+      }
+      criteriosInsp = nuevos;
+      tallerConfigCache = null;
+      renderCriteriosInsp();
+      okEl.textContent = mensajeOk;
+    }
+    document.getElementById('guardar-criterios-btn').addEventListener('click', () => {
+      // Se guarda solo lo que difiere del estándar de la app
+      const nuevos = {};
+      document.querySelectorAll('#criterios-insp-lista .crit-sel').forEach(sel => {
+        const v = Number(sel.value);
+        if (v !== Number(sel.dataset.base)) nuevos[sel.dataset.t] = v;
+      });
+      const n = Object.keys(nuevos).length;
+      guardarCriteriosInsp(nuevos, n ? `Guardado: ${n} ítem${n > 1 ? 's' : ''} con tu criterio. Aplica a las inspecciones nuevas.` : 'Guardado: se usa el estándar de la app.');
+    });
+    document.getElementById('restaurar-criterios-btn').addEventListener('click', () => {
+      if (!Object.keys(criteriosInsp).length) { renderCriteriosInsp(); return; }
+      if (!confirm('¿Volver a la importancia estándar de la app en todos los ítems?')) return;
+      guardarCriteriosInsp({}, 'Listo: todos los ítems volvieron al estándar de la app.');
+    });
+
     // ---------- Atención a domicilio: servicio del catálogo y traslado bloqueado ----------
     let trabajosDomicilio = [];
     function mostrarValorDomicilio() {
@@ -1137,6 +1206,8 @@ function responder(obj) {
       renderCorreoEventos();
       correoPlantillas = (data.correo_plantillas && typeof data.correo_plantillas === 'object') ? data.correo_plantillas : {};
       renderSelectorPlantillas();
+      criteriosInsp = (data.insp_pesos && typeof data.insp_pesos === 'object') ? data.insp_pesos : {};
+      renderCriteriosInsp();
       cargarHorario().catch(e => console.error('Error en cargarHorario:', e));
       cargarBloqueos().catch(e => console.error('Error en cargarBloqueos:', e));
 

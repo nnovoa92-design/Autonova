@@ -177,7 +177,8 @@
     // ---------- Paso 2: checklist ----------
     // Render de un ítem evaluable. Si está en "Atención" o "Malo",
     // exige observación + foto (cámara o galería).
-    function clItemHtml(k, label) {
+    // pEstandar: importancia por defecto del ítem (estándar del taller o de la app)
+    function clItemHtml(k, label, pEstandar = INSP_PESO_EXTRA) {
       const val = datosActuales[k] || '';
       const requiere = (val === 'warn' || val === 'bad');
       const fotos = datosActuales[k + '_fotos'] || [];
@@ -186,11 +187,15 @@
       return `
         <div class="cl-item" style="flex-direction:column; align-items:stretch;">
           <div style="display:flex; align-items:center; justify-content:space-between; gap:0.75rem; flex-wrap:wrap;">
-            <div class="cl-label">${label}</div>
+            <div class="cl-label">${label}${inspBadgeImportancia(inspPesoValido(datosActuales[k + '_p']) || pEstandar)}</div>
             <div class="cl-botones" data-k="${k}">${botones}</div>
           </div>
           ${requiere ? `
           <div style="margin-top:0.5rem; padding:0.6rem; background:#fff7f6; border:1px solid #f3c9c4; border-radius:8px;">
+            <div style="display:flex; gap:0.4rem; align-items:center; flex-wrap:wrap; margin-bottom:0.5rem;">
+              <span style="font-size:0.78rem; color:var(--color-text-muted);" title="Según la causa encontrada: p. ej. el motor falla pero es una manguera de vacío (menor), o la radio falla por la computadora (crítico)">Importancia en este caso:</span>
+              <div class="cl-imp" data-k="${k}" data-estandar="${pEstandar}">${[3, 2, 1].map(p => `<button type="button" data-p="${p}" class="${(inspPesoValido(datosActuales[k + '_p']) || pEstandar) === p ? 'sel-imp-' + p : ''}">${INSP_IMPORTANCIA[p].label}${p === pEstandar ? ' · estándar' : ''}</button>`).join('')}</div>
+            </div>
             <label style="font-size:0.78rem; color:var(--color-danger); margin:0 0 0.25rem;">Observación obligatoria *</label>
             <input type="text" class="cl-obs" data-k="${k}" value="${(datosActuales[k+'_obs']||'').replace(/"/g,'&quot;')}" placeholder="Describe el problema encontrado..." />
             <div style="margin-top:0.5rem; display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap;">
@@ -231,7 +236,7 @@
                 placeholder="${item.mode === 'dtc' ? 'P0301, P0420... o ninguno' : 'Km'}" style="max-width:240px;" />
             </div>`;
           }
-          return clItemHtml(k, item.t + inspBadgeImportancia(item.p));   // crítico / importante pesan más en el puntaje
+          return clItemHtml(k, item.t, inspPesoEstandar(item.t, item.p));   // crítico / importante pesan más en el puntaje
         }).join('');
 
         const customs = (datosActuales._custom && datosActuales._custom[si]) || [];
@@ -253,7 +258,18 @@
           const k = btn.parentElement.dataset.k;
           const v = btn.dataset.v;
           datosActuales[k] = datosActuales[k] === v ? '' : v;
+          // Sin hallazgo (bien / n/a / sin marcar) vuelve a su importancia estándar
+          if (datosActuales[k] !== 'warn' && datosActuales[k] !== 'bad') delete datosActuales[k + '_p'];
           renderChecklist(); // re-render: muestra/oculta el bloque de evidencia
+        });
+      });
+
+      // Importancia de este hallazgo según la causa (el estándar queda sin ajuste)
+      body.querySelectorAll('.cl-imp button').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const caja = btn.parentElement, k = caja.dataset.k, p = Number(btn.dataset.p);
+          if (p === Number(caja.dataset.estandar)) delete datosActuales[k + '_p']; else datosActuales[k + '_p'] = p;
+          renderChecklist();
         });
       });
 
@@ -345,7 +361,7 @@
       const fila = {
         ...cabecera,
         // Se guarda la evaluación tal como se calculó hoy (si mañana cambian los pesos, el informe no cambia)
-        datos: { ...datosActuales, _eval: r.evaluacion },
+        datos: { ...inspFijarPesos(datosActuales), _eval: r.evaluacion },
         score: r.score,
         ok: r.ok, warn: r.warn, bad: r.bad, na: r.na, total: r.total,
         recomendacion: r.rec,
@@ -561,6 +577,7 @@
       const session = await initLayout('inspecciones');
       if (!session) return;
       config = await getTallerConfig();
+      inspPesosTaller = (config && config.insp_pesos && typeof config.insp_pesos === 'object') ? config.insp_pesos : {};   // estándar del taller
       await loadInspecciones();
       renderListado();
     })();

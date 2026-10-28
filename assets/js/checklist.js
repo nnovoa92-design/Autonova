@@ -117,6 +117,26 @@ const INSP_IMPORTANCIA = {
 };
 const INSP_PESO_EXTRA = 2;   // ítems agregados a mano durante la inspección
 
+// Importancia con que se evalúa cada ítem (de lo más específico a lo general):
+//   1. el ajuste hecho en ESTA inspección según la causa encontrada  → datos[k + '_p']
+//   2. el estándar del taller (Configuración → Criterios de inspección) → inspPesosTaller[título]
+//   3. el estándar de la app                                          → p de INSP_CHECKLIST
+let inspPesosTaller = {};   // { 'Título del ítem': 1 | 2 | 3 }; lo carga cada página desde taller_config.insp_pesos
+const inspPesoValido = (p) => [1, 2, 3].includes(Number(p)) ? Number(p) : null;
+function inspPesoEstandar(titulo, pBase) {
+  return inspPesoValido(inspPesosTaller && inspPesosTaller[titulo]) || pBase;
+}
+function inspPesoItem(datos, k, titulo, pBase) {
+  return inspPesoValido(datos[k + '_p']) || inspPesoEstandar(titulo, pBase);
+}
+// Al terminar la inspección se guarda la importancia usada en cada hallazgo (atención/malo), para que el
+// informe no cambie si después se modifica el estándar
+function inspFijarPesos(datos) {
+  const copia = { ...datos };
+  inspItemsEvaluables(datos).forEach(it => { if (it.v === 'warn' || it.v === 'bad') copia[it.k + '_p'] = it.p; });
+  return copia;
+}
+
 const INSP_NIVELES = {
   recomendada:    { label: 'Recomendada',                  visual: 'ok' },
   observaciones:  { label: 'Recomendada con observaciones', visual: 'warn' },
@@ -143,12 +163,12 @@ function inspItemsEvaluables(datos) {
     sec.items.forEach((item, ii) => {
       if (item.mode !== 'std') return;
       const k = si + '_' + ii;
-      items.push({ k, t: item.t, p: item.p || 2, si, v: datos[k] || '' });
+      items.push({ k, t: item.t, p: inspPesoItem(datos, k, item.t, item.p || 2), si, v: datos[k] || '' });
     });
     const customs = (datos._custom && datos._custom[si]) || [];
     customs.forEach((nombre, ci) => {
       const k = 'c_' + si + '_' + ci;
-      items.push({ k, t: nombre, p: INSP_PESO_EXTRA, si, v: datos[k] || '' });
+      items.push({ k, t: nombre, p: inspPesoItem(datos, k, nombre, INSP_PESO_EXTRA), si, v: datos[k] || '' });
     });
   });
   return items;
@@ -298,7 +318,7 @@ function inspRenderDetalle(datos) {
       if (item.mode === 'std') {
         const v = datos[k];
         if (!v || !INSP_ESTADOS[v]) return;
-        filas.push(`<tr><td>${item.t}${etiquetaCritico(item.p, v)}${inspEvidencia(datos, k)}</td><td><span class="badge ${INSP_ESTADOS[v].badge}">${INSP_ESTADOS[v].label}</span></td></tr>`);
+        filas.push(`<tr><td>${item.t}${etiquetaCritico(inspPesoValido(datos[k + '_p']) || item.p, v)}${inspEvidencia(datos, k)}</td><td><span class="badge ${INSP_ESTADOS[v].badge}">${INSP_ESTADOS[v].label}</span></td></tr>`);
       } else {
         const txt = inspTexto(datos, k);
         if (!txt) return;
@@ -310,7 +330,7 @@ function inspRenderDetalle(datos) {
       const k = 'c_' + si + '_' + ci;
       const v = datos[k];
       if (!v || !INSP_ESTADOS[v]) return;
-      filas.push(`<tr><td>${nombre} <span class="badge">extra</span>${inspEvidencia(datos, k)}</td><td><span class="badge ${INSP_ESTADOS[v].badge}">${INSP_ESTADOS[v].label}</span></td></tr>`);
+      filas.push(`<tr><td>${nombre} <span class="badge">extra</span>${etiquetaCritico(inspPesoValido(datos[k + '_p']) || INSP_PESO_EXTRA, v)}${inspEvidencia(datos, k)}</td><td><span class="badge ${INSP_ESTADOS[v].badge}">${INSP_ESTADOS[v].label}</span></td></tr>`);
     });
     if (!filas.length) return '';
     return `<h3>${sec.sec}</h3><table><tbody>${filas.join('')}</tbody></table>`;

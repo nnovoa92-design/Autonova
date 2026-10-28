@@ -927,3 +927,10 @@ body.con-vista-impresion { overflow: hidden; }
 .print-area.pdf-hoja { display: block !important; max-width: none; overflow: visible; background: #fff; padding: 0 6px; box-sizing: border-box; }
 /* html2pdf centra la hoja en la pantalla; en el celular (más angosto que la hoja) quedaría corrida: se fija a la izquierda */
 .html2pdf__container { left: 0 !important; right: auto !important; margin: 0 !important; }
+
+/* Importancia de un hallazgo en esta inspección (Crítico / Importante / Menor) */
+.cl-imp { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+.cl-imp button { padding: 0.25rem 0.55rem; font-size: 0.72rem; background: transparent; color: var(--color-text-muted); border: 1px solid var(--color-border); }
+.cl-imp button.sel-imp-3 { background: #fde2e0; color: #a93b33; border-color: #a93b33; }
+.cl-imp button.sel-imp-2 { background: #fef3c7; color: #92600a; border-color: #92600a; }
+.cl-imp button.sel-imp-1 { background: #e4e7eb; color: #4b5563; border-color: #4b5563; }
