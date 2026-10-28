@@ -10,7 +10,7 @@
 //   "c_si_ci"    -> estado de un ítem extra
 //   "_obs"       -> observaciones generales
 const INSP_CHECKLIST = [
-  { sec: '💻 Electrónica y diagnóstico', items: [
+  { sec: '💻 Electrónica y diagnóstico', pExtra: 2, items: [
     { t: 'DTC Activos (códigos de falla)', mode: 'dtc' },
     { t: 'Km Panel', mode: 'km' },
     { t: 'Km Real (verificado)', mode: 'km' },
@@ -26,7 +26,7 @@ const INSP_CHECKLIST = [
     { t: 'Sistema de alarma', mode: 'std', p: 1 },
     { t: 'Radio / pantalla / conectividad', mode: 'std', p: 1 },
   ]},
-  { sec: '🔧 Motor y mecánica', items: [
+  { sec: '🔧 Motor y mecánica', pExtra: 2, items: [
     { t: 'Aceite motor — nivel y color', mode: 'std', p: 3 },
     { t: 'Aceite transmisión', mode: 'std', p: 3 },
     { t: 'Líquido de frenos', mode: 'std', p: 2 },
@@ -43,7 +43,7 @@ const INSP_CHECKLIST = [
     { t: 'Ralentí — estable', mode: 'std', p: 2 },
     { t: 'Humo de escape — color y cantidad', mode: 'std', p: 3 },
   ]},
-  { sec: '🛑 Frenos', items: [
+  { sec: '🛑 Frenos', pExtra: 3, items: [
     { t: 'Pastillas delanteras — espesor', mode: 'std', p: 3 },
     { t: 'Pastillas traseras — espesor', mode: 'std', p: 3 },
     { t: 'Discos delanteros — sin rayaduras ni deformación', mode: 'std', p: 3 },
@@ -53,7 +53,7 @@ const INSP_CHECKLIST = [
     { t: 'Bomba de freno', mode: 'std', p: 3 },
     { t: 'ABS — sin luz en tablero', mode: 'std', p: 3 },
   ]},
-  { sec: '🏎 Suspensión y dirección', items: [
+  { sec: '🏎 Suspensión y dirección', pExtra: 3, items: [
     { t: 'Amortiguadores delanteros — sin fugas', mode: 'std', p: 2 },
     { t: 'Amortiguadores traseros — sin fugas', mode: 'std', p: 2 },
     { t: 'Rótulas y terminales — holgura', mode: 'std', p: 3 },
@@ -63,7 +63,7 @@ const INSP_CHECKLIST = [
     { t: 'Alineación — verificación visual', mode: 'std', p: 1 },
     { t: 'Convergencia — desgaste uniforme', mode: 'std', p: 1 },
   ]},
-  { sec: '🛞 Neumáticos y ruedas', items: [
+  { sec: '🛞 Neumáticos y ruedas', pExtra: 3, items: [
     { t: 'Neumático delantero derecho — banda rodadura', mode: 'std', p: 3 },
     { t: 'Neumático delantero izquierdo — banda rodadura', mode: 'std', p: 3 },
     { t: 'Neumático trasero derecho — banda rodadura', mode: 'std', p: 3 },
@@ -72,7 +72,7 @@ const INSP_CHECKLIST = [
     { t: 'Rines — sin daños ni fisuras', mode: 'std', p: 2 },
     { t: 'Tapas de ruedas', mode: 'std', p: 1 },
   ]},
-  { sec: '🚘 Carrocería y estructura', items: [
+  { sec: '🚘 Carrocería y estructura', pExtra: 1, items: [
     { t: 'Capot — sin golpes ni óxido', mode: 'std', p: 1 },
     { t: 'Guardafangos delanteros', mode: 'std', p: 1 },
     { t: 'Puertas — apertura, cierre y bisagras', mode: 'std', p: 2 },
@@ -87,7 +87,7 @@ const INSP_CHECKLIST = [
     { t: 'Sellos de puertas y techo', mode: 'std', p: 1 },
     { t: 'Maletero — cierre y estado interior', mode: 'std', p: 1 },
   ]},
-  { sec: '🪑 Interior', items: [
+  { sec: '🪑 Interior', pExtra: 1, items: [
     { t: 'Tapiz y asientos — estado general', mode: 'std', p: 1 },
     { t: 'Cinturones de seguridad — funcionamiento', mode: 'std', p: 3 },
     { t: 'Airbag — sin luz en tablero', mode: 'std', p: 3 },
@@ -115,7 +115,7 @@ const INSP_IMPORTANCIA = {
   2: { label: 'Importante', badge: 'badge-yellow', ayuda: 'funcionamiento, exigencia legal o costo medio' },
   1: { label: 'Menor',      badge: 'badge-gray',   ayuda: 'confort o estética' },
 };
-const INSP_PESO_EXTRA = 2;   // ítems agregados a mano durante la inspección
+const INSP_PESO_EXTRA = 2;   // ítems agregados a mano, si la sección no define otro (pExtra)
 
 // Importancia con que se evalúa cada ítem (de lo más específico a lo general):
 //   1. el ajuste hecho en ESTA inspección según la causa encontrada  → datos[k + '_p']
@@ -128,6 +128,12 @@ function inspPesoEstandar(titulo, pBase) {
 }
 function inspPesoItem(datos, k, titulo, pBase) {
   return inspPesoValido(datos[k + '_p']) || inspPesoEstandar(titulo, pBase);
+}
+// Criterio de los ítems agregados a mano: el de la sección donde se agregan (estándar del taller, guardado como
+// 'seccion:<título>' en insp_pesos, o el de la app: pExtra de la sección)
+function inspPesoExtraSeccion(si) {
+  const sec = INSP_CHECKLIST[si] || {};
+  return inspPesoValido(inspPesosTaller && inspPesosTaller['seccion:' + sec.sec]) || sec.pExtra || INSP_PESO_EXTRA;
 }
 // Al terminar la inspección se guarda la importancia usada en cada hallazgo (atención/malo), para que el
 // informe no cambie si después se modifica el estándar
@@ -168,7 +174,7 @@ function inspItemsEvaluables(datos) {
     const customs = (datos._custom && datos._custom[si]) || [];
     customs.forEach((nombre, ci) => {
       const k = 'c_' + si + '_' + ci;
-      items.push({ k, t: nombre, p: inspPesoItem(datos, k, nombre, INSP_PESO_EXTRA), si, v: datos[k] || '' });
+      items.push({ k, t: nombre, p: inspPesoItem(datos, k, nombre, inspPesoExtraSeccion(si)), si, v: datos[k] || '' });
     });
   });
   return items;
@@ -330,7 +336,7 @@ function inspRenderDetalle(datos) {
       const k = 'c_' + si + '_' + ci;
       const v = datos[k];
       if (!v || !INSP_ESTADOS[v]) return;
-      filas.push(`<tr><td>${nombre} <span class="badge">extra</span>${etiquetaCritico(inspPesoValido(datos[k + '_p']) || INSP_PESO_EXTRA, v)}${inspEvidencia(datos, k)}</td><td><span class="badge ${INSP_ESTADOS[v].badge}">${INSP_ESTADOS[v].label}</span></td></tr>`);
+      filas.push(`<tr><td>${nombre} <span class="badge">extra</span>${etiquetaCritico(inspPesoValido(datos[k + '_p']) || sec.pExtra || INSP_PESO_EXTRA, v)}${inspEvidencia(datos, k)}</td><td><span class="badge ${INSP_ESTADOS[v].badge}">${INSP_ESTADOS[v].label}</span></td></tr>`);
     });
     if (!filas.length) return '';
     return `<h3>${sec.sec}</h3><table><tbody>${filas.join('')}</tbody></table>`;

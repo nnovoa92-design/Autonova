@@ -242,7 +242,7 @@
         const customs = (datosActuales._custom && datosActuales._custom[si]) || [];
         const customsHtml = customs.map((nombre, ci) => {
           const k = `c_${si}_${ci}`;
-          return clItemHtml(k, `${nombre} <span class="badge">extra</span>`);
+          return clItemHtml(k, `${nombre} <span class="badge">extra</span>`, inspPesoExtraSeccion(si));   // toma el criterio de su sección
         }).join('');
 
         return `
@@ -250,7 +250,7 @@
         ${items}
         ${customsHtml}
         <button type="button" class="btn-secondary agregar-custom-btn" data-si="${si}"
-          style="margin:0.5rem 0 1rem; padding:0.3rem 0.7rem; font-size:0.78rem;">+ Agregar ítem</button>`;
+          style="margin:0.5rem 0 1rem; padding:0.3rem 0.7rem; font-size:0.78rem;">+ Agregar ítem <span style="opacity:0.75;">(entra como ${INSP_IMPORTANCIA[inspPesoExtraSeccion(si)].label})</span></button>`;
       }).join('');
 
       body.querySelectorAll('.cl-botones button').forEach(btn => {

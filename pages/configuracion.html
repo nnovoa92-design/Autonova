@@ -937,10 +937,17 @@
               <select class="crit-sel" data-t="${htmlSeguro(it.t)}" data-base="${it.p}" style="max-width:170px;">${opciones(actual)}</select>
             </div>`;
         }).join('');
-        const cambios = sec.items.filter(it => it.mode === 'std' && (inspPesoValido(criteriosInsp[it.t]) || it.p) !== it.p).length;
+        // Criterio de los ítems que se agreguen a mano en esta sección durante la inspección
+        const claveSec = 'seccion:' + sec.sec, baseSec = sec.pExtra || INSP_PESO_EXTRA;
+        const actualSec = inspPesoValido(criteriosInsp[claveSec]) || baseSec;
+        const filaSec = `<div style="display:flex; justify-content:space-between; align-items:center; gap:0.6rem; padding:0.4rem 0.5rem; margin-bottom:0.25rem; background:#f6f7f9; border-radius:6px;">
+              <span style="font-size:0.85rem;"><strong>Ítems que agregues en esta sección</strong>${actualSec !== baseSec ? ` <small style="color:#92600a;">(estándar de la app: ${INSP_IMPORTANCIA[baseSec].label})</small>` : ''}</span>
+              <select class="crit-sel" data-t="${htmlSeguro(claveSec)}" data-base="${baseSec}" style="max-width:170px;">${opciones(actualSec)}</select>
+            </div>`;
+        const cambios = sec.items.filter(it => it.mode === 'std' && (inspPesoValido(criteriosInsp[it.t]) || it.p) !== it.p).length + (actualSec !== baseSec ? 1 : 0);
         return `<details style="margin:0.35rem 0;">
             <summary style="cursor:pointer; font-weight:600;">${sec.sec}${cambios ? ` <span class="badge badge-yellow">${cambios} cambiado${cambios > 1 ? 's' : ''}</span>` : ''}</summary>
-            <div style="padding:0.25rem 0 0.5rem 0.75rem;">${filas}</div>
+            <div style="padding:0.25rem 0 0.5rem 0.75rem;">${filaSec}${filas}</div>
           </details>`;
       }).join('');
     }
@@ -967,7 +974,7 @@
         if (v !== Number(sel.dataset.base)) nuevos[sel.dataset.t] = v;
       });
       const n = Object.keys(nuevos).length;
-      guardarCriteriosInsp(nuevos, n ? `Guardado: ${n} ítem${n > 1 ? 's' : ''} con tu criterio. Aplica a las inspecciones nuevas.` : 'Guardado: se usa el estándar de la app.');
+      guardarCriteriosInsp(nuevos, n ? `Guardado: ${n} criterio${n > 1 ? 's' : ''} propio${n > 1 ? 's' : ''}. Aplica a las inspecciones nuevas.` : 'Guardado: se usa el estándar de la app.');
     });
     document.getElementById('restaurar-criterios-btn').addEventListener('click', () => {
       if (!Object.keys(criteriosInsp).length) { renderCriteriosInsp(); return; }
