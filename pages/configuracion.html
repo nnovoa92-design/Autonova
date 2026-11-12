@@ -27,14 +27,15 @@
       <header class="topbar">
         <h1>Configuración del taller</h1>
       </header>
-      <div class="content">
+      <div class="content" data-autolista="no">
+        <div class="cfg-barra" id="cfg-barra"></div>
 
         <div class="card">
-          <h2 style="margin-top:0;">Datos del taller</h2>
-          <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
-            Estos datos aparecen en las cotizaciones impresas, el portal del cliente y los mensajes de WhatsApp.
-          </p>
           <form id="config-form">
+            <h2 data-cfg="taller" style="margin-top:0;">Datos del taller</h2>
+            <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
+              Estos datos aparecen en las cotizaciones impresas, el portal del cliente y los mensajes de WhatsApp.
+            </p>
             <div class="form-row">
               <div class="form-group">
                 <label for="nombre">Nombre del taller *</label>
@@ -58,7 +59,7 @@
               <input type="text" id="direccion" />
             </div>
 
-            <h2>Valores</h2>
+            <h2 data-cfg="valores">Valores e IVA</h2>
             <div class="form-row">
               <div class="form-group">
                 <label for="valor_hora">Valor hora de taller ($)</label>
@@ -73,7 +74,7 @@
               El valor hora calcula el precio de los trabajos del catálogo que no tienen precio fijo.
             </p>
 
-            <h2>Reparto de mano de obra (opcional)</h2>
+            <h2 data-cfg="reparto">Reparto de mano de obra (opcional)</h2>
             <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
               Porcentajes manuales para repartir la mano de obra de cada orden de trabajo.
               Déjalos en 0 si no quieres usar esta función. Se muestran como referencia
@@ -95,7 +96,7 @@
             </div>
             <p id="suma-pcts" style="font-size:0.85rem; margin-top:0;"></p>
 
-            <h2>Bodegaje por no retiro</h2>
+            <h2 data-cfg="bodegaje">Bodegaje por no retiro</h2>
             <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
               Al marcar una OT como "Listo", se guarda la fecha. Pasados los días de gracia sin que
               el cliente retire el vehículo, se suma automáticamente el cobro por día al saldo de esa OT.
@@ -111,7 +112,7 @@
               </div>
             </div>
 
-            <h2>Políticas y términos legales</h2>
+            <h2 data-cfg="politicas-legales">Políticas y términos legales</h2>
             <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
               Se imprimen como letra chica al final de la Cotización y la Orden de Trabajo.
               Cubre retiro del vehículo, pertenencias, garantía general y responsabilidad legal.
@@ -136,7 +137,7 @@
               <textarea id="politica_revision_tecnica_texto" rows="6" style="font-family:inherit; font-size:0.85rem;"></textarea>
             </div>
 
-            <h2>Plantillas de mensajes de WhatsApp</h2>
+            <h2 data-cfg="whatsapp">Mensajes de WhatsApp</h2>
             <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
               Usa estos textos entre llaves donde corresponda — la app los reemplaza al enviar:
               <code>{nombre}</code> <code>{taller}</code> <code>{fecha}</code> <code>{hora}</code> <code>{servicio}</code>
@@ -179,14 +180,14 @@
               <input type="text" id="msg_modalidad_terreno" />
             </div>
 
-            <button type="submit" id="guardar-btn">Guardar configuración</button>
+            <button type="submit" id="guardar-btn" data-cfg-fin>Guardar configuración</button>
             <p class="error-message" id="form-error"></p>
             <p id="form-ok" style="color:#1b6e3c; font-size:0.85rem;"></p>
           </form>
         </div>
 
         <div class="card">
-          <h2 style="margin-top:0;">Consulta de patentes</h2>
+          <h2 data-cfg="patentes" style="margin-top:0;">Consulta de patentes</h2>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
             Con una clave del servicio <strong>boostr.cl</strong>, al ingresar una patente en la agenda se completan
             solos la marca, el modelo y el año desde el registro público de vehículos.
@@ -207,15 +208,13 @@
         </div>
 
         <div class="card" id="planes-insp-card">
-          <div class="toolbar" style="margin-bottom:0.25rem;">
-            <h2 style="margin:0;">Planes de inspección precompra</h2>
-            <button type="button" id="folleto-planes-btn" class="btn-secondary">📄 Ver folleto</button>
-          </div>
+          <h2 data-cfg="planes-inspeccion" style="margin-top:0;">Planes de inspección precompra</h2>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
             Los tres planes son <strong>acumulativos</strong>: cada uno revisa todo lo del anterior, más sus puntos propios.
             Nombre, precio (sin IVA), duración y descripción son los del servicio en el <strong>Catálogo de trabajos</strong>:
             si los cambias aquí o allá, se actualizan en ambos lados (y en la reserva online).
           </p>
+          <button type="button" id="folleto-planes-btn" class="btn-secondary" style="margin-bottom:0.75rem;">📄 Ver folleto</button>
           <div class="planes-ed-grid" id="planes-insp-cab"></div>
 
           <h3 style="margin:1.25rem 0 0.25rem;">Puntos de inspección</h3>
@@ -236,7 +235,7 @@
         </div>
 
         <div class="card" id="domicilio-card">
-          <h2 style="margin-top:0;">Atención a domicilio</h2>
+          <h2 data-cfg="domicilio" style="margin-top:0;">Atención a domicilio</h2>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
             En la reserva online el cliente elige <strong>En el taller</strong> o <strong>A domicilio</strong>. Una cita a domicilio
             bloquea además el traslado antes y después de la hora elegida, y su valor sale del servicio del catálogo que elijas aquí
@@ -259,7 +258,7 @@
         </div>
 
         <div class="card" id="correo-card">
-          <h2 style="margin-top:0;">Correo de confirmaciones</h2>
+          <h2 data-cfg="correo" style="margin-top:0;">Correo automático (desde tu Gmail)</h2>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
             Al confirmar una reserva, el cliente recibe un correo con su día, hora y el horario reservado, enviado
             <strong>desde tu propio Gmail</strong> (gratis, sin dominio ni servicios de pago). Se configura una sola vez:
@@ -304,7 +303,7 @@
         </div>
 
         <div class="card" id="mensajes-correo-card">
-          <h2 style="margin-top:0;">Mensajes de correo</h2>
+          <h2 data-cfg="mensajes-correo" style="margin-top:0;">Mensajes de correo</h2>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
             Edita el asunto y el texto de cada correo que reciben tus clientes. Las palabras entre llaves, como
             <code>{nombre}</code>, se reemplazan solas al enviar: tócalas abajo para insertarlas donde está el cursor.
@@ -338,8 +337,27 @@
           </div>
         </div>
 
+        <div class="card" id="registro-correos-card">
+          <h2 data-cfg="registro-correos" style="margin-top:0;">Correos enviados</h2>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
+            Respaldo de cada correo que la app envió a tus clientes. También aparecen en la campanita 🔔; los que no se
+            pudieron confirmar quedan como aviso sin leer para que los revises.
+          </p>
+          <label style="display:flex; gap:0.5rem; align-items:flex-start; font-weight:500;">
+            <input type="checkbox" id="correo-copia" style="width:auto; margin-top:0.2rem;" />
+            <span>Enviarme además una copia de cada correo a <strong id="correo-copia-a">el correo del taller</strong>
+              <small style="display:block; color:var(--color-text-muted); font-weight:400;">Cada copia cuenta dentro del límite diario de Gmail (unos 100 correos al día).</small></span>
+          </label>
+          <p id="correo-copia-estado" style="font-size:0.82rem; color:var(--color-text-muted); min-height:1em; margin:0.2rem 0 0.6rem;"></p>
+          <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.5rem;">
+            <input type="search" id="registro-buscar" placeholder="Buscar por correo, asunto o patente..." style="max-width:320px;" />
+            <button type="button" id="registro-recargar" class="btn-secondary">Actualizar</button>
+          </div>
+          <div id="registro-correos-lista"><p style="color:var(--color-text-muted); font-size:0.85rem;">Se carga al abrir esta sección.</p></div>
+        </div>
+
         <div class="card">
-          <h2 style="margin-top:0;">Horario de atención</h2>
+          <h2 data-cfg="horario" style="margin-top:0;">Horario de atención</h2>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
             Define qué días atiendes y en qué horas. Se usa en la agenda y en la reserva online:
             el cliente ve toda la semana, pero solo las horas disponibles de los días abiertos
@@ -362,7 +380,7 @@
           <p class="error-message" id="horario-error"></p>
           <p id="horario-ok" style="color:#1b6e3c; font-size:0.85rem;"></p>
 
-          <h2 style="margin-top:1.75rem;">Bloqueos de agenda</h2>
+          <h2 data-cfg="bloqueos" style="margin-top:1.75rem;">Bloqueos de agenda</h2>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
             Cierra un día, un rango de días o unas horas por motivos internos (feriado, mantención, trámite...).
             Mientras dure el bloqueo no se pueden reservar horas online.
@@ -407,7 +425,7 @@
         </div>
 
         <div class="card">
-          <h2 style="margin-top:0;">Políticas de Servicio</h2>
+          <h2 data-cfg="politicas-servicio" style="margin-top:0;">Políticas de servicio</h2>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
             Define garantías, trabajos recomendados y repuestos típicos para cada categoría de servicio.
           </p>
@@ -1417,6 +1435,147 @@ function responder(obj) {
       cargarBloqueos();
     });
 
+    // ---------- Correos enviados (registro de respaldo, tabla correos_enviados de v62) ----------
+    let registroCorreos = null;
+    const ETIQUETA_EVENTO_CORREO = { ...EVENTOS_CORREO, manual: 'Enviado con el botón ✉ Correo', cita_confirmada: 'Confirmación de cita' };
+    async function cargarRegistroCorreos(forzar) {
+      if (registroCorreos && !forzar) { renderRegistroCorreos(); return; }
+      const lista = document.getElementById('registro-correos-lista');
+      lista.innerHTML = '<p style="color:var(--color-text-muted); font-size:0.85rem;">Cargando…</p>';
+      const { data, error } = await supabaseClient.from('correos_enviados')
+        .select('*, vehiculos(patente)').order('creado_en', { ascending: false }).limit(300);
+      if (error) {
+        lista.innerHTML = `<p class="error-message">${/correos_enviados/.test(error.message || '')
+          ? 'Falta ejecutar sql/actualizacion-v62-registro-de-correos.sql en el SQL Editor de Supabase.' : htmlSeguro(error.message)}</p>`;
+        return;
+      }
+      registroCorreos = data || [];
+      renderRegistroCorreos();
+    }
+    function renderRegistroCorreos() {
+      const q = document.getElementById('registro-buscar').value.trim().toLowerCase();
+      const filas = (registroCorreos || []).filter(c => !q || [c.para, c.asunto, c.vehiculos && c.vehiculos.patente]
+        .some(x => String(x || '').toLowerCase().includes(q)));
+      const lista = document.getElementById('registro-correos-lista');
+      if (!filas.length) {
+        lista.innerHTML = `<p style="color:var(--color-text-muted); font-size:0.85rem;">No hay correos registrados${q ? ' con esa búsqueda' : ' todavía'}.</p>`;
+        return;
+      }
+      const estado = { enviado: ['Enviado', 'badge-green'], error: ['Falló', 'badge-red'], incierto: ['Sin confirmar', 'badge-yellow'] };
+      lista.innerHTML = filas.map(c => {
+        const [txt, badge] = estado[c.estado] || [c.estado, 'badge-gray'];
+        return `
+          <details class="registro-correo">
+            <summary>
+              <span class="badge ${badge}">${htmlSeguro(txt)}</span>
+              <span class="rc-fecha">${fmtFechaHora(c.creado_en)}</span>
+              <strong>${htmlSeguro(c.para)}</strong>
+              ${c.vehiculos && c.vehiculos.patente ? `<span class="badge">${htmlSeguro(c.vehiculos.patente)}</span>` : ''}
+              <span class="rc-asunto">${htmlSeguro(c.asunto || '')}</span>
+            </summary>
+            <div class="rc-cuerpo">
+              ${c.evento ? `<div class="rc-evento">${htmlSeguro(ETIQUETA_EVENTO_CORREO[c.evento] || c.evento)}</div>` : ''}
+              ${c.error ? `<div class="error-message" style="margin:0 0 0.4rem;">${htmlSeguro(c.error)}</div>` : ''}
+              <div style="white-space:pre-wrap;">${htmlSeguro(c.texto || '')}</div>
+            </div>
+          </details>`;
+      }).join('');
+    }
+    document.getElementById('registro-buscar').addEventListener('input', renderRegistroCorreos);
+    document.getElementById('registro-recargar').addEventListener('click', () => cargarRegistroCorreos(true));
+
+    // Copia de cada correo al correo del taller (taller_config.correo_eventos._copia)
+    function renderCopiaCorreo(data) {
+      document.getElementById('correo-copia').checked = !!correoEventos._copia;
+      document.getElementById('correo-copia-a').textContent = (data && data.email) || 'el correo del taller (complétalo en Datos del taller)';
+    }
+    document.getElementById('correo-copia').addEventListener('change', async (e) => {
+      const estadoEl = document.getElementById('correo-copia-estado');
+      const nuevo = { ...correoEventos };
+      if (e.target.checked) nuevo._copia = true; else delete nuevo._copia;
+      const { error } = await supabaseClient.from('taller_config').update({ correo_eventos: nuevo }).eq('id', 1);
+      if (error) {
+        e.target.checked = !e.target.checked;
+        estadoEl.style.color = 'var(--color-danger)';
+        estadoEl.textContent = `Error: ${error.message}`;
+        return;
+      }
+      correoEventos = nuevo;
+      tallerConfigCache = null;
+      estadoEl.style.color = '#1b6e3c';
+      estadoEl.textContent = e.target.checked ? 'Listo: te llegará una copia de cada correo.' : 'Listo: ya no se envían copias.';
+    });
+
+    // ---------- Secciones plegables (cada <h2 data-cfg>) y vista de una sola sección (configuracion.html#id) ----------
+    // El menú lateral lleva a cada sección; «Todo» muestra la página completa con cada sección abierta o cerrada.
+    const CLAVE_SECCIONES_ABIERTAS = 'autonova-config-abiertas';
+    function seccionesAbiertas() {
+      try { return new Set(JSON.parse(localStorage.getItem(CLAVE_SECCIONES_ABIERTAS) || '[]')); } catch (e) { return new Set(); }
+    }
+    function armarSeccionesConfig() {
+      document.querySelectorAll('h2[data-cfg]').forEach(h2 => {
+        const id = h2.dataset.cfg;
+        const sec = document.createElement('section');
+        sec.className = 'cfg-sec';
+        sec.id = 'cfg-' + id;
+        sec.dataset.cfg = id;
+        const cab = document.createElement('button');
+        cab.type = 'button';
+        cab.className = 'cfg-cab';
+        cab.innerHTML = `<span>${h2.innerHTML}</span><span class="cfg-flecha" aria-hidden="true">▾</span>`;
+        const cuerpo = document.createElement('div');
+        cuerpo.className = 'cfg-cuerpo';
+        // La sección es el título y todo lo que sigue hasta la próxima sección (o el botón Guardar del formulario)
+        const mover = [];
+        for (let n = h2.nextSibling; n && !(n.nodeType === 1 && (n.matches('h2[data-cfg]') || n.hasAttribute('data-cfg-fin'))); n = n.nextSibling) mover.push(n);
+        h2.replaceWith(sec);
+        sec.append(cab, cuerpo);
+        cuerpo.append(...mover);
+        cab.addEventListener('click', () => abrirSeccionConfig(id, !sec.classList.contains('abierta')));
+      });
+    }
+    function alAbrirSeccionConfig(id) {
+      if (id === 'registro-correos') cargarRegistroCorreos();
+    }
+    function abrirSeccionConfig(id, abrir) {
+      const sec = document.getElementById('cfg-' + id);
+      if (!sec) return;
+      sec.classList.toggle('abierta', abrir);
+      const abiertas = seccionesAbiertas();
+      if (abrir) abiertas.add(id); else abiertas.delete(id);
+      try { localStorage.setItem(CLAVE_SECCIONES_ABIERTAS, JSON.stringify([...abiertas])); } catch (e) { /* solo no se recuerda */ }
+      if (abrir) alAbrirSeccionConfig(id);
+    }
+    function aplicarVistaConfig() {
+      const id = decodeURIComponent(window.location.hash.slice(1));
+      const sola = id !== 'todo' && !!document.getElementById('cfg-' + id);
+      const abiertas = seccionesAbiertas();
+      document.querySelectorAll('.cfg-sec').forEach(sec => {
+        const esta = sec.dataset.cfg === id;
+        sec.hidden = sola && !esta;
+        sec.classList.toggle('abierta', sola ? esta : abiertas.has(sec.dataset.cfg));
+        if (sec.classList.contains('abierta')) alAbrirSeccionConfig(sec.dataset.cfg);
+      });
+      // Una tarjeta sin secciones a la vista no se muestra
+      document.querySelectorAll('.content > .card').forEach(card => {
+        if (card.querySelector('.cfg-sec')) card.hidden = !card.querySelector('.cfg-sec:not([hidden])');
+      });
+      const info = SECCIONES_CONFIG.find(s => s.id === id);
+      document.getElementById('cfg-barra').innerHTML = sola
+        ? `<span>⚙ <strong>${htmlSeguro(info ? info.label : id)}</strong></span><a href="#todo" class="btn btn-secondary btn-mini">Ver toda la configuración</a>`
+        : `<span>Toca cada sección para abrirla o cerrarla. También puedes ir directo a una desde el menú <strong>Configuración</strong>.</span>
+           <span style="display:flex; gap:0.35rem;"><button type="button" class="btn-secondary btn-mini" id="cfg-abrir-todo">Abrir todas</button><button type="button" class="btn-secondary btn-mini" id="cfg-cerrar-todo">Cerrar todas</button></span>`;
+      marcarSubmenuConfig(id);
+      if (sola) window.scrollTo({ top: 0 });
+    }
+    window.addEventListener('hashchange', aplicarVistaConfig);
+    document.getElementById('cfg-barra').addEventListener('click', (e) => {
+      if (e.target.id === 'cfg-abrir-todo') document.querySelectorAll('.cfg-sec').forEach(s => abrirSeccionConfig(s.dataset.cfg, true));
+      if (e.target.id === 'cfg-cerrar-todo') document.querySelectorAll('.cfg-sec').forEach(s => abrirSeccionConfig(s.dataset.cfg, false));
+    });
+    armarSeccionesConfig();
+    aplicarVistaConfig();
+
     (async () => {
       const session = await initLayout('configuracion');
       if (!session) return;
@@ -1439,6 +1598,7 @@ function responder(obj) {
       cargarDomicilio(data).catch(e => console.error('Error en cargarDomicilio:', e));
       correoEventos = (data.correo_eventos && typeof data.correo_eventos === 'object') ? data.correo_eventos : {};
       renderCorreoEventos();
+      renderCopiaCorreo(data);
       correoPlantillas = (data.correo_plantillas && typeof data.correo_plantillas === 'object') ? data.correo_plantillas : {};
       renderSelectorPlantillas();
       cargarPlanesInsp(data).catch(e => console.error('Error en cargarPlanesInsp:', e));

@@ -137,7 +137,7 @@
     function itemFila(c) {
       return `
         <div style="padding:0.5rem 0; border-bottom:1px solid #eee;">
-          <span>${estadoChecklistLabel(c)} — ${c.item}${c.nota ? ` — ${c.nota}` : ''}</span>
+          <span>${estadoChecklistLabel(c)} — ${c.item}${c.nota ? ` — ${htmlSeguroMulti(c.nota)}` : ''}</span>
           ${(c.fotos && c.fotos.length) ? `<div class="fotos-grid" style="margin-top:0.4rem;">${c.fotos.map(u => `<div class="foto-item"><a href="${u}" target="_blank"><img src="${u}" /></a></div>`).join('')}</div>` : ''}
         </div>`;
     }

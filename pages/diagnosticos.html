@@ -603,7 +603,7 @@
             <button type="button" class="chk-estado-btn estado-optimo ci-estado${c.estado === 'optimo' ? ' activo' : ''}" data-idx="${idx}" data-estado="optimo" ${soloLectura ? 'disabled' : ''}>✓ Óptimo</button>
             <button type="button" class="chk-estado-btn estado-observacion ci-estado${c.estado === 'observacion' ? ' activo' : ''}" data-idx="${idx}" data-estado="observacion" ${soloLectura ? 'disabled' : ''}>⚠ Observación</button>
           </div>
-          <input type="text" class="ci-nota" data-idx="${idx}" value="${esc(c.nota)}" placeholder="Nota (opcional)" style="width:100%; margin-top:0.4rem; font-size:0.82rem; padding:0.4rem 0.6rem;" ${soloLectura ? 'disabled' : ''} />
+          <textarea class="ci-nota" data-idx="${idx}" data-autoalto rows="1" placeholder="Nota (opcional)" style="width:100%; margin-top:0.4rem; font-size:0.82rem; padding:0.4rem 0.6rem; resize:vertical;" ${soloLectura ? 'disabled' : ''}>${esc(c.nota)}</textarea>
           <div class="h-fotos">
             ${(c.fotos || []).map((u, fi) => `
               <div class="h-foto">
@@ -1245,7 +1245,7 @@
         return `<tr style="border-bottom:1px solid #ccc;">
           <td style="padding:4px; vertical-align:top;">${esc(c.item)}</td>
           <td style="padding:4px; vertical-align:top; white-space:nowrap;">${textoEstadoIngreso(c)}</td>
-          <td style="padding:4px; vertical-align:top;">${esc(c.nota || '')}${fotosIng}</td>
+          <td style="padding:4px; vertical-align:top;">${esc(c.nota || '').replace(/\n/g, '<br>')}${fotosIng}</td>
         </tr>`;
       }).join('');
       const firmaIngreso = d.checklist_firma_png ? `
@@ -1400,7 +1400,7 @@
         resumen: resumenParaMensaje(d, t => `- ${t}`) || '',
         link: linkPublicoDiagnostico(d.id),
       }, config);
-      await enviarCorreoOAbrirGmail(email, m.asunto, m.texto);
+      await enviarCorreoOAbrirGmail(email, m.asunto, m.texto, { tabla: 'diagnosticos', id: d.id, cliente_id: d.cliente_id, vehiculo_id: d.vehiculo_id });
     }
 
     async function copiarLinkDiagnostico(d) {

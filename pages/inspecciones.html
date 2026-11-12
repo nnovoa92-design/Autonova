@@ -675,7 +675,7 @@
               <div class="cl-imp" data-k="${k}" data-estandar="${pEstandar}">${[3, 2, 1].map(p => `<button type="button" data-p="${p}" class="${pCaso === p ? 'sel-imp-' + p : ''}">${INSP_IMPORTANCIA[p].label}${p === pEstandar ? ' · estándar' : ''}</button>`).join('')}</div>
             </div>
             <label style="font-size:0.78rem; color:var(--color-danger); margin:0 0 0.25rem;">Observación obligatoria *</label>
-            <input type="text" class="cl-obs" data-k="${k}" value="${htmlSeguro(obs)}" placeholder="Describe el problema encontrado..." />
+            <textarea class="cl-obs" data-k="${k}" data-autoalto rows="1" placeholder="Describe el problema encontrado...">${htmlSeguro(obs)}</textarea>
             <div style="margin-top:0.5rem; display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap;">
               ${botonFoto(k, '📷 Tomar foto / Galería *')}
               <span style="font-size:0.78rem; color:${fotos.length ? '#1b6e3c' : 'var(--color-danger)'};">${fotos.length ? fotos.length + ' foto(s) adjunta(s)' : 'Sin fotos'}</span>
@@ -685,7 +685,7 @@
       } else if (v === 'ok' && (notasAbiertas.has(k) || obs || fotos.length || subiendo.has(k))) {
         evidencia = `
           <div class="cl-evidencia opcional">
-            <input type="text" class="cl-obs" data-k="${k}" value="${htmlSeguro(obs)}" placeholder="Nota (opcional): p. ej. neumático nuevo, mantención reciente…" />
+            <textarea class="cl-obs" data-k="${k}" data-autoalto rows="1" placeholder="Nota (opcional): p. ej. neumático nuevo, mantención reciente…">${htmlSeguro(obs)}</textarea>
             <div style="margin-top:0.4rem;">${botonFoto(k, '📷 Foto (opcional)')}</div>
             ${fotosHtml(k)}
           </div>`;
@@ -964,7 +964,7 @@
       abrirDetalle(data.id);
       if (avisoSql) mostrarToast(avisoSql, 'error', 9000);
       // Inspección terminada: aviso automático con el informe al correo del comprador (el WhatsApp sigue manual)
-      if (data.email) correoAutomatico('inspeccion', { para: data.email, ...correoInspeccion(data) });
+      if (data.email) correoAutomatico('inspeccion', { para: data.email, ...correoInspeccion(data), ref: { tabla: 'inspecciones', id: data.id, cliente_id: data.cliente_id, vehiculo_id: data.vehiculo_id } });
     });
 
     // Texto del correo con el resultado de la inspección y el link al informe completo
@@ -994,7 +994,7 @@
         const { error } = await supabaseClient.from('inspecciones').update({ email }).eq('id', inspActual.id);
         if (!error) inspActual.email = email;
       }
-      await enviarCorreoOAbrirGmail(email, correoInspeccion(inspActual).asunto, correoInspeccion(inspActual).texto);
+      await enviarCorreoOAbrirGmail(email, correoInspeccion(inspActual).asunto, correoInspeccion(inspActual).texto, { tabla: 'inspecciones', id: inspActual.id, cliente_id: inspActual.cliente_id, vehiculo_id: inspActual.vehiculo_id });
     });
 
     // ---------- Detalle ----------

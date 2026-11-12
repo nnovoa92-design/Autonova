@@ -554,7 +554,7 @@ function inspEvidencia(datos, k) {
   const fotos = datos[k + '_fotos'] || [];
   if (!obs && !fotos.length) return '';
   let html = '';
-  if (obs) html += `<div style="font-size:0.82rem; color:var(--color-text-muted); margin-top:3px;">${inspEsc(obs)}</div>`;
+  if (obs) html += `<div style="font-size:0.82rem; color:var(--color-text-muted); margin-top:3px; white-space:pre-line;">${inspEsc(obs)}</div>`;
   if (fotos.length) {
     html += `<div class="fotos-grid" style="margin-top:5px;">` +
       fotos.map(u => `<div class="foto-item"><a href="${inspEsc(u)}" target="_blank"><img src="${inspEsc(u)}" /></a></div>`).join('') +

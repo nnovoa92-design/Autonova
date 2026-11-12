@@ -767,7 +767,7 @@
           const cot = cotizacionesCache.find(x => x.id === btn.dataset.id);
           await supabaseClient.from('cotizaciones').update({ estado: btn.dataset.estado }).eq('id', btn.dataset.id);
           // Marcada como enviada: aviso automático al correo del cliente con el link (el WhatsApp sigue manual)
-          if (btn.dataset.estado === 'enviada' && cot) correoAutomatico('cotizacion_enviada', { para: cot.clientes && cot.clientes.email, ...mensajeCorreoCotizacion(cot) });
+          if (btn.dataset.estado === 'enviada' && cot) correoAutomatico('cotizacion_enviada', { para: cot.clientes && cot.clientes.email, ...mensajeCorreoCotizacion(cot), ref: { tabla: 'cotizaciones', id: cot.id, cliente_id: cot.cliente_id, vehiculo_id: cot.vehiculo_id } });
           await loadCotizaciones();
         });
       });
@@ -867,7 +867,7 @@
       const email = c.clientes && c.clientes.email;
       if (!email) { alert('El cliente no tiene correo registrado.'); return; }
       const m = mensajeCorreoCotizacion(c);
-      await enviarCorreoOAbrirGmail(email, m.asunto, m.texto);
+      await enviarCorreoOAbrirGmail(email, m.asunto, m.texto, { tabla: 'cotizaciones', id: c.id, cliente_id: c.cliente_id, vehiculo_id: c.vehiculo_id });
     }
 
     function imprimirCotizacion(cotId) {

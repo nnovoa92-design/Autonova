@@ -1043,3 +1043,38 @@ table.tabla-comparativa { min-width: 0; }
 .ed-ctrls select { width: auto; padding: 0.3rem 0.4rem; font-size: 0.8rem; }
 .ed-ctrls button[disabled] { opacity: 0.35; cursor: not-allowed; }
 .sec-ed-pie { padding: 0.55rem 0.75rem; display: flex; gap: 0.4rem; flex-wrap: wrap; }
+
+/* ---------- Submenú de Configuración en el menú lateral ---------- */
+.sidebar nav a.nav-padre { display: flex; justify-content: space-between; align-items: center; }
+.sidebar nav a.nav-padre .nav-flecha { font-size: 0.7rem; opacity: 0.7; transition: transform 0.15s; transform: rotate(-90deg); }
+.sidebar nav a.nav-padre.abierto .nav-flecha { transform: none; }
+.sidebar nav .nav-sub { display: flex; flex-direction: column; padding: 0.15rem 0 0.35rem; background: rgba(0, 0, 0, 0.18); }
+.sidebar nav .nav-sub[hidden] { display: none; }
+.sidebar nav .nav-sub a { padding: 0.42rem 1.25rem 0.42rem 2.1rem; font-size: 0.82rem; font-weight: 400; }
+.sidebar nav .nav-sub a.active { background: rgba(225, 52, 30, 0.12); border-left-color: var(--color-primary); color: #fff; }
+
+/* ---------- Configuración: secciones plegables ---------- */
+.card[hidden], .cfg-sec[hidden] { display: none !important; }
+.cfg-barra {
+  display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+  margin-bottom: 1rem; padding: 0.6rem 0.9rem; background: #fff; border: 1px solid var(--color-border);
+  border-radius: var(--radius); font-size: 0.85rem; color: var(--color-text-muted);
+}
+.cfg-sec + .cfg-sec { border-top: 1px solid var(--color-border); }
+.cfg-cab {
+  display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; width: 100%;
+  padding: 0.7rem 0.1rem; margin: 0; background: none; border: none; border-radius: 0;
+  color: var(--color-text); text-align: left; cursor: pointer;
+  font-family: var(--font-display); font-size: 1.15rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em;
+}
+.cfg-cab:hover { background: none; color: var(--color-primary); }
+.cfg-flecha { font-size: 0.85rem; color: var(--color-text-muted); transition: transform 0.15s; transform: rotate(-90deg); }
+.cfg-sec.abierta .cfg-flecha { transform: none; }
+.cfg-cuerpo { display: none; padding-bottom: 0.75rem; }
+.cfg-sec.abierta .cfg-cuerpo { display: block; }
+.registro-correo { border-bottom: 1px solid var(--color-border); }
+.registro-correo > summary { cursor: pointer; padding: 0.5rem 0; display: flex; gap: 0.4rem 0.6rem; align-items: center; flex-wrap: wrap; font-size: 0.86rem; }
+.registro-correo .rc-fecha { color: var(--color-text-muted); font-size: 0.78rem; }
+.registro-correo .rc-asunto { color: var(--color-text-muted); flex-basis: 100%; }
+.registro-correo .rc-cuerpo { padding: 0.5rem 0.75rem 0.75rem; background: #fafbfc; border-radius: 8px; margin-bottom: 0.5rem; font-size: 0.85rem; }
+.registro-correo .rc-evento { font-size: 0.78rem; color: var(--color-text-muted); margin-bottom: 0.35rem; }

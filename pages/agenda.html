@@ -933,7 +933,7 @@
     function correoCita(c) {
       return String(c.email_contacto || (c.clientes && c.clientes.email) || '').trim();
     }
-    // ¿Está configurado el envío automático de correos (Configuración → Correo de confirmaciones)?
+    // ¿Está configurado el envío automático de correos (Configuración → Correo automático)?
     const envioCorreoListo = () => !!(tallerHorarios && tallerHorarios.correo_script_url && tallerHorarios.correo_script_clave);
 
     // Reserva web de alguien que aún no es cliente: su ficha (y la del vehículo) se crean al confirmar.
@@ -1050,6 +1050,10 @@
     async function mensajeConfirmacionCita(c) {
       const precio = await buscarPrecioEstimado(c);
       const tiempo = c.trabajos && c.trabajos.horas_estimadas ? fmtDuracion(c.trabajos.horas_estimadas) : '';
+      // Si el taller corrigió el servicio elegido al reservar, se le explica al cliente
+      const ajuste = c.servicioPedido
+        ? `\n\nNota: ajustamos el servicio de su reserva («${c.servicioPedido}») a «${servicioCita(c) || 'por definir'}», según lo que necesita su vehículo. El valor y el tiempo de arriba ya corresponden al servicio correcto.`
+        : '';
       return renderPlantilla(tallerHorarios.msg_confirmacion_cita || DEFAULT_MSG_CONFIRMACION, {
         nombre: nombreCliente(c),
         taller: tallerHorarios.nombre,
@@ -1059,7 +1063,7 @@
         precio_linea: lineaPrecioCita(c, precio),
         tiempo_linea: lineaTiempo(tiempo),
         modalidad_linea: lineaModalidad(c.modalidad, c.direccion),
-      });
+      }) + ajuste;
     }
 
     // Correo de confirmación: el mismo texto que el WhatsApp (plantilla de Configuración) más el bloque de horas
@@ -1081,7 +1085,7 @@
       const para = String(correo || correoCita(c)).trim();
       if (!correoValido(para)) { alert('Esta cita no tiene un correo válido.'); return { estado: 'sin_correo' }; }
       const { asunto, texto } = await correoConfirmacionCita(c);
-      const r = await enviarCorreo({ para, asunto, texto });
+      const r = await enviarCorreo({ para, asunto, texto, ref: { evento: 'cita_confirmada', tabla: 'citas', id: c.id, cliente_id: c.cliente_id, vehiculo_id: c.vehiculo_id } });
       if (r.estado === 'enviado') mostrarToast(`✉ Correo enviado a ${para}`, 'ok');
       else if (r.estado === 'error') mostrarToast(`No se pudo enviar el correo a ${para}: ${r.mensaje}`, 'error', 12000);
       else if (r.estado === 'incierto') mostrarToast(`No pude confirmar si el correo a ${para} salió (${r.mensaje}). Revisa «Enviados» en tu Gmail antes de reenviarlo.`, 'aviso', 15000);
@@ -1642,11 +1646,22 @@
             ${tel ? `<span>📞 ${escapar(tel)}</span>` : ''}
             ${veh ? `<span>🚗 ${escapar(veh)}</span>` : ''}
           </div>
-          <div class="ficha-datos"><span>🔧 ${escapar(servicioCita(c) || 'Servicio por definir')}${horasCatalogo ? ` (referencia del catálogo: ${fmtDuracion(horasCatalogo)})` : ''}</span></div>
+          <div class="ficha-datos"><span>🔧 Pidió: ${escapar(servicioCita(c) || 'Servicio por definir')}${horasCatalogo ? ` (referencia del catálogo: ${fmtDuracion(horasCatalogo)})` : ''}</span></div>
           ${c.modalidad === 'terreno' ? `<div class="ficha-datos"><span>🚗 <strong>A domicilio</strong>${c.direccion ? ' · ' + escapar(c.direccion) : ''}</span></div>
           ${(margenesCita(c).antes || margenesCita(c).despues) ? `<div class="ficha-datos"><span>⏱ Se bloquea también el traslado: ${margenesCita(c).antes} min antes y ${margenesCita(c).despues} min después</span></div>` : ''}
           <div class="ficha-datos"><span>💲 Atención a domicilio (catálogo${trabajoDomicilio() ? ': ' + escapar(trabajoDomicilio().nombre) : ''}): ${escapar(textoValorDomicilio(valorDomicilio()))}</span></div>` : ''}
           ${c.notas ? `<div class="ficha-datos"><span>💬 ${escapar(c.notas)}</span></div>` : ''}
+        </div>
+
+        <div class="form-group" style="margin-top:0.6rem;">
+          <label for="cf-servicio">Servicio <small style="font-weight:400; color:var(--color-text-muted);">(si el cliente se equivocó, corrígelo: el aviso le llega con el servicio, valor y tiempo correctos)</small></label>
+          <select id="cf-servicio">
+            <option value="">Otro (descríbelo)</option>
+            ${c.trabajo_id && !trabajosCache.some(t => t.id === c.trabajo_id) ? `<option value="${c.trabajo_id}" selected>${escapar(servicioCita(c))}</option>` : ''}
+            ${trabajosCache.map(t => `<option value="${t.id}"${t.id === c.trabajo_id ? ' selected' : ''}>${escapar(t.nombre)}</option>`).join('')}
+          </select>
+          <input type="text" id="cf-servicio-otro" value="${escapar(c.trabajo_id ? '' : (c.descripcion || ''))}" placeholder="Describe el servicio" style="margin-top:0.35rem;${c.trabajo_id ? ' display:none;' : ''}" />
+          <small id="cf-servicio-info" style="display:block; color:var(--color-text-muted); margin-top:0.2rem;"></small>
         </div>
 
         <div class="form-row" style="align-items:flex-end;">
@@ -1684,7 +1699,7 @@
         <label style="display:flex; gap:0.5rem; align-items:flex-start; margin-top:0.2rem; font-weight:500;">
           <input type="checkbox" id="cf-correo" ${envioCorreoListo() && correoCita(c) ? 'checked' : ''} ${envioCorreoListo() ? '' : 'disabled'} style="margin-top:0.2rem; width:auto;" />
           <span>Enviar la confirmación por correo (con el horario reservado)
-            ${envioCorreoListo() ? '' : '<small style="display:block; color:var(--color-text-muted); font-weight:400;">El envío automático aún no está configurado (Configuración → Correo de confirmaciones). Igual se guarda el correo en la ficha y luego puedes usar «Avisar por correo» en la cita.</small>'}
+            ${envioCorreoListo() ? '' : '<small style="display:block; color:var(--color-text-muted); font-weight:400;">El envío automático aún no está configurado (Configuración → Correo automático). Igual se guarda el correo en la ficha y luego puedes usar «Avisar por correo» en la cita.</small>'}
           </span>
         </label>
 
@@ -1728,6 +1743,28 @@
 
       document.getElementById('cf-horas').addEventListener('input', programar);
       document.getElementById('cf-paralelo').addEventListener('change', refrescar);
+
+      // Servicio corregido: muestra su valor y tiempo del catálogo y propone esa duración
+      const selServicio = document.getElementById('cf-servicio'), otroServicio = document.getElementById('cf-servicio-otro');
+      const infoServicio = () => {
+        const t = trabajosCache.find(x => x.id === selServicio.value);
+        otroServicio.style.display = selServicio.value ? 'none' : '';
+        const neto = t ? precioNetoTrabajo(t, tallerHorarios && tallerHorarios.valor_hora) : null;
+        document.getElementById('cf-servicio-info').textContent = t ? [
+          neto != null ? `Valor: ${opcionesDeTrabajo(t).length ? 'desde ' : ''}${fmtMoneda(neto)} + IVA` : '',
+          Number(t.horas_estimadas) > 0 ? `Tiempo del catálogo: ${fmtDuracion(Number(t.horas_estimadas))}` : '',
+        ].filter(Boolean).join(' · ') : '';
+      };
+      selServicio.addEventListener('change', () => {
+        infoServicio();
+        const t = trabajosCache.find(x => x.id === selServicio.value);
+        if (t && Number(t.horas_estimadas) > 0) {
+          const campo = document.getElementById('cf-horas');
+          campo.value = Math.round(Number(t.horas_estimadas) * 100) / 100;
+          campo.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      });
+      infoServicio();
       document.getElementById('confirmar-modal').querySelectorAll('.cf-chip').forEach(b => b.addEventListener('click', () => {
         const campo = document.getElementById('cf-horas');
         campo.value = b.dataset.h;
@@ -1767,6 +1804,11 @@
         }
         const payload = { estado: 'confirmado', duracion_min: minutos, personal_id: document.getElementById('cf-mec').value || null };
         if ('bloquea' in c) payload.bloquea = !paralelo;
+        // Servicio corregido por el taller (el cliente eligió otro al reservar)
+        const trabajoElegido = selServicio.value || null;
+        const otroTexto = otroServicio.value.trim();
+        if (trabajoElegido !== (c.trabajo_id || null)) payload.trabajo_id = trabajoElegido;
+        if (!trabajoElegido && otroTexto !== String(c.descripcion || '')) payload.descripcion = otroTexto || null;
         if ('email_contacto' in c && correoIngresado !== String(c.email_contacto || '')) payload.email_contacto = correoIngresado || null;
         const boton = document.getElementById('cf-confirmar');
         boton.disabled = true;
@@ -1847,6 +1889,11 @@
         const { error: eNotif } = await supabaseClient.from('notificaciones').update({ leida: true }).eq('ref_id', c.id);
         void eNotif;   // si aún no existe ref_id (falta v48), la campanita se actualiza igual al volver a cargar
         const actualizada = { ...c, ...payload };
+        if ('trabajo_id' in payload || 'descripcion' in payload) {
+          // El aviso sale con el servicio nuevo: su nombre, valor y tiempo del catálogo
+          actualizada.trabajos = trabajoElegido ? (trabajosCache.find(t => t.id === trabajoElegido) || c.trabajos) : null;
+          if (servicioCita(actualizada) !== servicioCita(c)) actualizada.servicioPedido = servicioCita(c);
+        }
         const avisar = document.getElementById('cf-wa') && document.getElementById('cf-wa').checked && telefonoCita(c);
         cerrarConfirmacion();
         if (avisar) avisarWhatsAppCita(actualizada, await mensajeConfirmacionCita(actualizada));

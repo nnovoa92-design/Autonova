@@ -15,6 +15,27 @@ const NAV_ITEMS = [
   { key: 'configuracion', label: 'Configuración', href: 'configuracion.html' },
 ];
 
+// Secciones de Configuración: el ítem «Configuración» del menú se despliega y lleva directo a cada una
+// (configuracion.html#id). «Todo» muestra la página completa con cada sección plegable.
+const SECCIONES_CONFIG = [
+  { id: 'todo', label: 'Todo' },
+  { id: 'taller', label: 'Datos del taller' },
+  { id: 'valores', label: 'Valores e IVA' },
+  { id: 'reparto', label: 'Reparto de mano de obra' },
+  { id: 'bodegaje', label: 'Bodegaje' },
+  { id: 'politicas-legales', label: 'Políticas y términos legales' },
+  { id: 'whatsapp', label: 'Mensajes de WhatsApp' },
+  { id: 'patentes', label: 'Consulta de patentes' },
+  { id: 'planes-inspeccion', label: 'Planes de inspección' },
+  { id: 'domicilio', label: 'Atención a domicilio' },
+  { id: 'correo', label: 'Correo automático' },
+  { id: 'mensajes-correo', label: 'Mensajes de correo' },
+  { id: 'registro-correos', label: 'Correos enviados' },
+  { id: 'horario', label: 'Horario de atención' },
+  { id: 'bloqueos', label: 'Bloqueos de agenda' },
+  { id: 'politicas-servicio', label: 'Políticas de servicio' },
+];
+
 // Estados con su etiqueta y color de badge
 const ESTADOS_COTIZACION = {
   borrador:   { label: 'Borrador',   badge: 'badge-gray' },
@@ -535,19 +556,27 @@ function correoValido(valor) {
 }
 
 // Envía un correo con el «script de correo» del taller: un Google Apps Script publicado con su cuenta de Gmail
-// (Configuración → Correo de confirmaciones). Devuelve { estado }:
+// (Configuración → Correo automático). Devuelve { estado }:
 //   'enviado' · 'sin_configurar' · 'error' (+ mensaje: el script rechazó el envío) ·
 //   'incierto' (+ mensaje: no se pudo leer la respuesta, el correo puede haber salido: revisar «Enviados»).
-async function enviarCorreo({ para, asunto, texto }) {
+// ref (opcional): de qué se trata el correo, para el registro y el expediente del vehículo:
+//   { evento, tabla, id, cliente_id, vehiculo_id }
+async function enviarCorreo({ para, asunto, texto, ref }) {
   const cfg = await getTallerConfig();
   const url = cfg && cfg.correo_script_url, clave = cfg && cfg.correo_script_clave;
   if (!url || !clave) return { estado: 'sin_configurar' };
   if (!correoValido(para)) return { estado: 'error', mensaje: 'El correo del cliente no es válido.' };
+  const r = await enviarPorScript(url, clave, cfg, String(para).trim(), asunto, texto);
+  respaldarCorreo(cfg, { para: String(para).trim(), asunto, texto, ref }, r);   // sin esperar
+  return r;
+}
+
+async function enviarPorScript(url, clave, cfg, para, asunto, texto) {
   try {
     const r = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // sin «preflight»: Apps Script no lo responde
-      body: JSON.stringify({ clave, para: String(para).trim(), asunto, texto, nombre: (cfg && cfg.nombre) || 'Autonova' }),
+      body: JSON.stringify({ clave, para, asunto, texto, nombre: (cfg && cfg.nombre) || 'Autonova' }),
     });
     let j = null;
     try { j = await r.json(); } catch (e) { j = null; }
@@ -556,6 +585,36 @@ async function enviarCorreo({ para, asunto, texto }) {
     return { estado: 'incierto', mensaje: `respuesta inesperada (HTTP ${r.status})` };
   } catch (e) {
     return { estado: 'incierto', mensaje: e && e.message ? e.message : 'sin respuesta' };
+  }
+}
+
+// Respaldo de cada correo al cliente: queda en el registro (correos_enviados, v62), aparece en la campanita
+// (los que fallan, como no leídos) y, si se pidió en Configuración, llega una copia al correo del taller.
+async function respaldarCorreo(cfg, { para, asunto, texto, ref }, r) {
+  ref = ref || {};
+  try {
+    const { error } = await supabaseClient.from('correos_enviados').insert({
+      para, asunto, texto, estado: r.estado, error: r.mensaje || null,
+      evento: ref.evento || null, ref_tabla: ref.tabla || null, ref_id: ref.id || null,
+      cliente_id: ref.cliente_id || null, vehiculo_id: ref.vehiculo_id || null,
+    });
+    void error;   // sin v62 no hay registro, pero el correo ya salió
+  } catch (e) { /* sin conexión: el correo igual se intentó */ }
+  try {
+    const ok = r.estado === 'enviado';
+    const { error } = await supabaseClient.from('notificaciones').insert({
+      tipo: ok ? 'correo_enviado' : 'correo_error',
+      titulo: ok ? `✉ Correo enviado a ${para}` : `⚠ No se confirmó el correo a ${para}`,
+      detalle: ok ? asunto : `${asunto} — ${r.mensaje || 'sin respuesta'}. Revisa «Enviados» en tu Gmail.`,
+      url: 'configuracion.html#registro-correos',
+      leida: ok,   // los enviados quedan como respaldo; los que fallan avisan
+    });
+    void error;
+  } catch (e) { /* ok */ }
+  const copiaA = cfg && cfg.email;
+  if (r.estado === 'enviado' && cfg && cfg.correo_eventos && cfg.correo_eventos._copia && correoValido(copiaA) && copiaA.toLowerCase() !== para.toLowerCase()) {
+    enviarPorScript(cfg.correo_script_url, cfg.correo_script_clave, cfg, copiaA.trim(),
+      `Copia: ${asunto}`, `Copia del correo enviado a ${para} el ${new Date().toLocaleString('es-CL')}.\n\n────────────────\n\n${texto}`);
   }
 }
 
@@ -579,7 +638,7 @@ function mostrarToast(texto, tipo = 'ok', ms = 7000) {
 }
 
 // ---------- Correos automáticos al cliente ----------
-// Salen solos con el envío configurado (Configuración → Correo de confirmaciones) si el cliente tiene correo y
+// Salen solos con el envío configurado (Configuración → Correo automático) si el cliente tiene correo y
 // el aviso está activado (Configuración → Avisos automáticos). El WhatsApp sigue siendo manual en cada pantalla.
 const EVENTOS_CORREO = {
   ot_ingreso:         'Ingreso del vehículo al taller (al crear la OT)',
@@ -605,12 +664,12 @@ function avisarResultadoCorreo(r, para) {
 
 // Aviso automático de un evento. No interrumpe: si no hay correo, el aviso está apagado o no hay envío
 // configurado, no hace nada. Devuelve el resultado (para esperar el envío antes de cambiar de página).
-async function correoAutomatico(evento, { para, asunto, texto }) {
+async function correoAutomatico(evento, { para, asunto, texto, ref }) {
   try {
     para = String(para || '').trim();
     if (!correoValido(para)) return { estado: 'sin_correo' };
     if (!(await correoEventoActivo(evento))) return { estado: 'desactivado' };
-    const r = await enviarCorreo({ para, asunto, texto });
+    const r = await enviarCorreo({ para, asunto, texto, ref: { evento, ...(ref || {}) } });
     avisarResultadoCorreo(r, para);
     return r;
   } catch (e) {
@@ -619,10 +678,10 @@ async function correoAutomatico(evento, { para, asunto, texto }) {
 }
 
 // Botones «✉ Correo»: con el envío configurado sale directo; si no, se abre Gmail con el correo redactado.
-async function enviarCorreoOAbrirGmail(para, asunto, texto) {
+async function enviarCorreoOAbrirGmail(para, asunto, texto, ref) {
   const cfg = await getTallerConfig();
   if (cfg && cfg.correo_script_url && cfg.correo_script_clave) {
-    const r = await enviarCorreo({ para, asunto, texto });
+    const r = await enviarCorreo({ para, asunto, texto, ref: { evento: 'manual', ...(ref || {}) } });
     avisarResultadoCorreo(r, para);
     return r;
   }
@@ -758,7 +817,10 @@ async function avisarCorreoOT(o, estado) {
   const cfg = await getTallerConfig();
   const msg = correoEstadoOT(o, estado, cfg);
   if (!msg) return { estado: 'sin_aviso' };
-  return correoAutomatico(estado === 'recepcion' ? 'ot_ingreso' : `ot_${estado}`, { para: o.clientes && o.clientes.email, ...msg });
+  return correoAutomatico(estado === 'recepcion' ? 'ot_ingreso' : `ot_${estado}`, {
+    para: o.clientes && o.clientes.email, ...msg,
+    ref: { tabla: 'ordenes', id: o.id, cliente_id: o.cliente_id, vehiculo_id: o.vehiculo_id },
+  });
 }
 
 // ---------- RUT, teléfono y patente (Chile) ----------
@@ -996,6 +1058,9 @@ new MutationObserver((cambios) => {
       if (n.nodeType !== 1) continue;
       if (n.tagName === 'INPUT') { if (esCampoPrecio(n)) prepararCampoPrecio(n); }
       else if (n.querySelector && n.querySelector('input')) prepararCamposPrecio(n);
+      // Las casillas de varias filas que ya traen texto se muestran completas
+      if (n.matches && n.matches('textarea[data-autoalto]')) ajustarAltoTextarea(n);
+      else if (n.querySelectorAll) n.querySelectorAll('textarea[data-autoalto]').forEach(ajustarAltoTextarea);
     }
   }
 }).observe(document.documentElement, { childList: true, subtree: true });
@@ -1267,7 +1332,8 @@ function abrirEnlace(url) {
 
 // Auto-numeración en textareas: al presionar Enter en una línea que empieza con
 // "1. ", "a. ", "- ", "• " o "* ", la línea siguiente continúa la lista (2., b., -...).
-// Enter sobre un ítem vacío termina la lista. Acepta el elemento o su id.
+// Enter sobre un ítem vacío termina la lista. Acepta el elemento o su id. Por defecto también «inicia» la lista:
+// el primer Enter sobre una línea con texto la numera (opciones.iniciar === false lo desactiva).
 function setupAutoList(textareaOrId, opciones = {}) {
   const textarea = typeof textareaOrId === 'string' ? document.getElementById(textareaOrId) : textareaOrId;
   if (!textarea || textarea.dataset.autoList) return;
@@ -1282,7 +1348,7 @@ function setupAutoList(textareaOrId, opciones = {}) {
     if (!match) {
       // Modo «iniciar»: el primer Enter sobre una línea con texto la convierte en el ítem 1 y abre el 2.
       // Si más arriba ya hay una lista (o se cerró con un ítem vacío) no se toca nada.
-      if (!opciones.iniciar || !line.trim()) return;
+      if (opciones.iniciar === false || !line.trim()) return;
       const antes = text.substring(0, lineStart);
       if (antes.split('\n').some(l => /^(\d+\.|[a-z]\.|[-•*])\s+/.test(l))) return;
       e.preventDefault();
@@ -1315,6 +1381,26 @@ function setupAutoList(textareaOrId, opciones = {}) {
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }
+
+// Toda casilla de texto largo numera sola sus filas al escribir (1., 2., 3.…) y crece con el contenido,
+// en cualquier pantalla y también en las que aparecen después. Se excluye con data-autolista="no" (en la
+// casilla o en un contenedor), p. ej. las plantillas de mensajes de Configuración.
+document.addEventListener('focusin', (e) => {
+  const t = e.target;
+  if (!t || t.tagName !== 'TEXTAREA' || t.readOnly || t.dataset.autoList || t.closest('[data-autolista="no"]')) return;
+  setupAutoList(t);
+});
+function ajustarAltoTextarea(t) {
+  if (!t.isConnected || !t.offsetParent) return;   // oculta: se ajusta al mostrarse o al tocarla
+  t.style.height = 'auto';
+  t.style.height = (t.scrollHeight + 2) + 'px';
+}
+document.addEventListener('input', (e) => {
+  if (e.target && e.target.tagName === 'TEXTAREA' && e.target.dataset.autoalto !== undefined) ajustarAltoTextarea(e.target);
+});
+document.addEventListener('focusin', (e) => {
+  if (e.target && e.target.tagName === 'TEXTAREA' && e.target.dataset.autoalto !== undefined) ajustarAltoTextarea(e.target);
+});
 
 // Texto del usuario listo para meter en HTML (sin interpretar etiquetas).
 // htmlSeguroMulti además respeta los saltos de línea.
@@ -1712,6 +1798,13 @@ function iniciarCampanita() {
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') cargar(); });
 }
 
+// Resalta en el submenú de Configuración la sección que se está mirando
+function marcarSubmenuConfig(id) {
+  if (!document.querySelector('.nav-sub')) return;
+  const actual = SECCIONES_CONFIG.some(s => s.id === id) ? id : 'todo';
+  document.querySelectorAll('.nav-sub a').forEach(a => a.classList.toggle('active', a.dataset.cfg === actual));
+}
+
 async function initLayout(activeKey) {
   const session = await requireAuth();
   if (!session) return;
@@ -1720,7 +1813,11 @@ async function initLayout(activeKey) {
   if (sidebar) {
     const navLinks = NAV_ITEMS.map(item => {
       const activeClass = item.key === activeKey ? ' class="active"' : '';
-      return `<a href="${item.href}"${activeClass}>${item.label}</a>`;
+      if (item.key !== 'configuracion') return `<a href="${item.href}"${activeClass}>${item.label}</a>`;
+      // Configuración se despliega con sus secciones (en su propia página queda abierto)
+      const abierto = activeKey === 'configuracion';
+      return `<a href="${item.href}" class="nav-padre${abierto ? ' active abierto' : ''}">${item.label} <span class="nav-flecha">▾</span></a>
+        <div class="nav-sub"${abierto ? '' : ' hidden'}>${SECCIONES_CONFIG.map(s => `<a href="configuracion.html#${s.id}" data-cfg="${s.id}">${s.label}</a>`).join('')}</div>`;
     }).join('');
 
     // Logo opcional: si existe assets/img/logo.png se muestra; si no, se oculta solo.
@@ -1735,6 +1832,16 @@ async function initLayout(activeKey) {
     `;
 
     document.getElementById('logout-btn').addEventListener('click', logout);
+
+    // «Configuración» abre y cierra su submenú ahí mismo (no cambia de página)
+    sidebar.querySelectorAll('.nav-padre').forEach(a => a.addEventListener('click', (e) => {
+      e.preventDefault();
+      const sub = a.nextElementSibling;
+      const abrir = sub.hidden;
+      sub.hidden = !abrir;
+      a.classList.toggle('abierto', abrir);
+    }));
+    if (activeKey === 'configuracion') marcarSubmenuConfig(window.location.hash.slice(1));
 
     // Menú móvil: botón hamburguesa + fondo oscuro
     const shell = sidebar.closest('.app-shell');
@@ -1753,7 +1860,7 @@ async function initLayout(activeKey) {
       const cerrar = () => shell.classList.remove('nav-open');
       btn.addEventListener('click', () => shell.classList.toggle('nav-open'));
       backdrop.addEventListener('click', cerrar);
-      sidebar.querySelectorAll('nav a').forEach(a => a.addEventListener('click', cerrar));
+      sidebar.querySelectorAll('nav a:not(.nav-padre)').forEach(a => a.addEventListener('click', cerrar));
     }
   }
 
