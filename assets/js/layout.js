@@ -689,7 +689,7 @@ const PLANTILLAS_CORREO = {
     titulo: 'Inspección precompra terminada',
     asunto: 'Inspección precompra {numero} - {taller}',
     texto: 'Hola {nombre},\n\nLe enviamos el resultado de la inspección precompra {numero} de {vehiculo}:\n\nPuntaje: {puntaje}/100 — {resumen}.\n{recomendacion}\n\nInforme completo, con fotos:\n{link}\n\n{firma}',
-    variables: ['nombre', 'numero', 'vehiculo', 'patente', 'puntaje', 'resumen', 'recomendacion', 'link', 'taller', 'firma'],
+    variables: ['nombre', 'numero', 'vehiculo', 'patente', 'plan', 'puntaje', 'resumen', 'recomendacion', 'link', 'taller', 'firma'],
   },
 };
 
@@ -712,6 +712,7 @@ const DESCRIPCION_VARIABLES_CORREO = {
   diagnostico: 'número del diagnóstico (ej. DIAG-0003)',
   resumen: 'resumen del resultado',
   numero: 'número de la inspección (ej. INS-0003)',
+  plan: 'plan de inspección elegido (ej. Compra Segura Pro)',
   puntaje: 'puntaje de 0 a 100',
   recomendacion: 'recomendación final',
 };

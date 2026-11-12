@@ -206,21 +206,33 @@
           <p id="patentes-ok" style="color:#1b6e3c; font-size:0.85rem;"></p>
         </div>
 
-        <div class="card" id="criterios-insp-card">
-          <h2 style="margin-top:0;">Criterios de inspección precompra</h2>
-          <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
-            Importancia con que cuenta cada ítem en el puntaje: <strong>Crítico ×3</strong> (seguridad o reparación costosa),
-            <strong>Importante ×2</strong> y <strong>Menor ×1</strong>. Una falla en un crítico limita la recomendación aunque el resto esté bien.
-            Este es tu estándar para todas las inspecciones; además, en cada inspección puedes ajustar la importancia de un
-            hallazgo según su causa (al marcarlo «Atención» o «Malo»). Los cambios aplican a las inspecciones nuevas.
-          </p>
-          <div id="criterios-insp-lista"></div>
-          <div style="margin-top:0.6rem;">
-            <button type="button" id="guardar-criterios-btn">Guardar criterios</button>
-            <button type="button" id="restaurar-criterios-btn" class="btn-secondary">Volver al estándar de la app</button>
+        <div class="card" id="planes-insp-card">
+          <div class="toolbar" style="margin-bottom:0.25rem;">
+            <h2 style="margin:0;">Planes de inspección precompra</h2>
+            <button type="button" id="folleto-planes-btn" class="btn-secondary">📄 Ver folleto</button>
           </div>
-          <p class="error-message" id="criterios-error"></p>
-          <p id="criterios-ok" style="color:#1b6e3c; font-size:0.85rem;"></p>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
+            Los tres planes son <strong>acumulativos</strong>: cada uno revisa todo lo del anterior, más sus puntos propios.
+            Nombre, precio (sin IVA), duración y descripción son los del servicio en el <strong>Catálogo de trabajos</strong>:
+            si los cambias aquí o allá, se actualizan en ambos lados (y en la reserva online).
+          </p>
+          <div class="planes-ed-grid" id="planes-insp-cab"></div>
+
+          <h3 style="margin:1.25rem 0 0.25rem;">Puntos de inspección</h3>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
+            En cada punto eliges <strong>desde qué plan se revisa</strong> y su <strong>importancia</strong> en el puntaje:
+            Crítico ×3 (seguridad o reparación costosa), Importante ×2 y Menor ×1. Una falla en un crítico limita la recomendación.
+            Puedes agregar, quitar, renombrar y ordenar puntos y secciones; los cambios aplican a las inspecciones nuevas
+            (las ya hechas guardan la lista con que se hicieron).
+          </p>
+          <div id="planes-insp-secciones"></div>
+          <button type="button" id="agregar-seccion-btn" class="btn-secondary" style="margin-top:0.5rem;">+ Agregar sección</button>
+          <div style="margin-top:1rem; display:flex; gap:0.5rem; flex-wrap:wrap;">
+            <button type="button" id="guardar-planes-btn">Guardar planes</button>
+            <button type="button" id="restaurar-planes-btn" class="btn-secondary">Volver a los puntos estándar de la app</button>
+          </div>
+          <p class="error-message" id="planes-error"></p>
+          <p id="planes-ok" style="color:#1b6e3c; font-size:0.85rem;"></p>
         </div>
 
         <div class="card" id="domicilio-card">
@@ -924,62 +936,278 @@
       await guardarPlantillas(nuevas, 'Listo: este mensaje volvió al texto original.');
     });
 
-    // ---------- Criterios de inspección precompra (taller_config.insp_pesos: { título: 1|2|3 }, solo lo que cambia) ----------
-    let criteriosInsp = {};
-    function renderCriteriosInsp() {
-      const opciones = (sel, p) => [3, 2, 1].map(v => `<option value="${v}"${v === sel ? ' selected' : ''}>${INSP_IMPORTANCIA[v].label} ×${v}</option>`).join('');
-      document.getElementById('criterios-insp-lista').innerHTML = INSP_CHECKLIST.map((sec, si) => {
-        const filas = sec.items.filter(it => it.mode === 'std').map(it => {
-          const actual = inspPesoValido(criteriosInsp[it.t]) || it.p;
-          const cambiado = actual !== it.p;
-          return `<div style="display:flex; justify-content:space-between; align-items:center; gap:0.6rem; padding:0.3rem 0; border-bottom:1px solid var(--color-border);">
-              <span style="font-size:0.88rem;">${htmlSeguro(it.t)}${cambiado ? ` <small style="color:#92600a;">(estándar de la app: ${INSP_IMPORTANCIA[it.p].label})</small>` : ''}</span>
-              <select class="crit-sel" data-t="${htmlSeguro(it.t)}" data-base="${it.p}" style="max-width:170px;">${opciones(actual)}</select>
-            </div>`;
-        }).join('');
-        // Criterio de los ítems que se agreguen a mano en esta sección durante la inspección
-        const claveSec = 'seccion:' + sec.sec, baseSec = sec.pExtra || INSP_PESO_EXTRA;
-        const actualSec = inspPesoValido(criteriosInsp[claveSec]) || baseSec;
-        const filaSec = `<div style="display:flex; justify-content:space-between; align-items:center; gap:0.6rem; padding:0.4rem 0.5rem; margin-bottom:0.25rem; background:#f6f7f9; border-radius:6px;">
-              <span style="font-size:0.85rem;"><strong>Ítems que agregues en esta sección</strong>${actualSec !== baseSec ? ` <small style="color:#92600a;">(estándar de la app: ${INSP_IMPORTANCIA[baseSec].label})</small>` : ''}</span>
-              <select class="crit-sel" data-t="${htmlSeguro(claveSec)}" data-base="${baseSec}" style="max-width:170px;">${opciones(actualSec)}</select>
-            </div>`;
-        const cambios = sec.items.filter(it => it.mode === 'std' && (inspPesoValido(criteriosInsp[it.t]) || it.p) !== it.p).length + (actualSec !== baseSec ? 1 : 0);
-        return `<details style="margin:0.35rem 0;">
-            <summary style="cursor:pointer; font-weight:600;">${sec.sec}${cambios ? ` <span class="badge badge-yellow">${cambios} cambiado${cambios > 1 ? 's' : ''}</span>` : ''}</summary>
-            <div style="padding:0.25rem 0 0.5rem 0.75rem;">${filaSec}${filas}</div>
-          </details>`;
-      }).join('');
-    }
-    async function guardarCriteriosInsp(nuevos, mensajeOk) {
-      const errorEl = document.getElementById('criterios-error'), okEl = document.getElementById('criterios-ok');
-      errorEl.textContent = ''; okEl.textContent = '';
-      const { error } = await supabaseClient.from('taller_config').update({ insp_pesos: nuevos }).eq('id', 1);
-      if (error) {
-        errorEl.textContent = /insp_pesos/.test(error.message || '')
-          ? 'Falta ejecutar sql/actualizacion-v59-criterios-inspeccion.sql en el SQL Editor de Supabase.'
-          : `Error: ${error.message}`;
-        return;
+    // ---------- Planes de inspección precompra (taller_config.insp_planes + servicios del Catálogo de trabajos) ----------
+    let planesEd = null;           // { planes, secciones } en edición
+    let trabajosPlanesCfg = [];    // servicios del catálogo vinculados a los planes
+    let tallerDatosCfg = {};       // fila de taller_config (para el folleto y el valor hora)
+    const secAbiertas = new Set(); // secciones desplegadas en el editor
+
+    async function cargarPlanesInsp(data) {
+      tallerDatosCfg = data || {};
+      inspPesosTaller = (data.insp_pesos && typeof data.insp_pesos === 'object') ? data.insp_pesos : {};
+      inspPlanesTaller = (data.insp_planes && typeof data.insp_planes === 'object') ? data.insp_planes : {};
+      const ids = Object.values(inspPlanesTaller.trabajos || {}).filter(Boolean);
+      trabajosPlanesCfg = [];
+      if (ids.length) {
+        const { data: t } = await supabaseClient.from('trabajos').select('*').in('id', ids);
+        trabajosPlanesCfg = t || [];
       }
-      criteriosInsp = nuevos;
-      tallerConfigCache = null;
-      renderCriteriosInsp();
-      okEl.textContent = mensajeOk;
+      planesEd = {
+        planes: inspPlanesVigentes(trabajosPlanesCfg, data.valor_hora).map(p => ({ ...p })),
+        secciones: inspSeccionesVigentes(),
+      };
+      renderPlanesEd();
     }
-    document.getElementById('guardar-criterios-btn').addEventListener('click', () => {
-      // Se guarda solo lo que difiere del estándar de la app
-      const nuevos = {};
-      document.querySelectorAll('#criterios-insp-lista .crit-sel').forEach(sel => {
-        const v = Number(sel.value);
-        if (v !== Number(sel.dataset.base)) nuevos[sel.dataset.t] = v;
+
+    function conIvaCfg(n) {
+      return Math.round(Number(n || 0) * (1 + Number(document.getElementById('iva_pct').value || 19) / 100));
+    }
+
+    function renderPlanesEd() {
+      if (!planesEd) return;
+      document.getElementById('planes-insp-cab').innerHTML = planesEd.planes.map((p, i) => `
+        <div class="plan-ed${p.destacado ? ' destacado' : ''}" data-i="${i}">
+          <div class="plan-ed-tit">Plan ${i + 1} · <span class="pe-puntos" data-i="${i}">${inspContarPuntos(p.nivel, planesEd.secciones)} puntos</span></div>
+          <div class="form-group"><label>Nombre</label><input type="text" class="pe-campo" data-i="${i}" data-c="nombre" value="${htmlSeguro(p.nombre)}" /></div>
+          <div class="plan-ed-fila">
+            <div class="form-group"><label>Precio sin IVA</label><input type="number" class="pe-campo" data-i="${i}" data-c="precio" min="0" step="10" value="${p.precio ?? ''}" />
+              <small class="pe-iva" data-i="${i}">${fmtMoneda(conIvaCfg(p.precio))} con IVA</small></div>
+            <div class="form-group"><label>Duración (horas)</label><input type="number" class="pe-campo" data-i="${i}" data-c="horas" min="0.25" step="0.25" value="${p.horas ?? ''}" /></div>
+          </div>
+          <div class="form-group"><label>Frase corta</label><input type="text" class="pe-campo" data-i="${i}" data-c="lema" value="${htmlSeguro(p.lema || '')}" placeholder="ej. La más elegida" /></div>
+          <div class="form-group"><label>Descripción (la ve el cliente)</label><textarea class="pe-campo" data-i="${i}" data-c="descripcion" rows="5">${htmlSeguro(p.descripcion || '')}</textarea></div>
+          <label class="plan-ed-check"><input type="radio" name="pe-destacado" class="pe-destacado" data-i="${i}" ${p.destacado ? 'checked' : ''} /> Destacar como el más elegido</label>
+          <div class="plan-ed-vinculo">${p.vinculo === 'ok'
+            ? `🔗 Vinculado al catálogo${p.trabajo_activo === false ? ' <span class="badge badge-yellow">desactivado allá</span>' : ''}`
+            : '⚠ Aún no está en el catálogo: se crea al guardar.'}</div>
+        </div>`).join('');
+      renderSeccionesEd();
+    }
+
+    function renderSeccionesEd() {
+      const cortos = inspNombresCortos(planesEd.planes);
+      const opcN = (sel) => planesEd.planes.map((p, i) => `<option value="${p.nivel}"${p.nivel === sel ? ' selected' : ''}>Desde ${htmlSeguro(cortos[i])}</option>`).join('');
+      const opcP = (sel) => [3, 2, 1].map(v => `<option value="${v}"${v === sel ? ' selected' : ''}>${INSP_IMPORTANCIA[v].label}</option>`).join('');
+      document.getElementById('planes-insp-secciones').innerHTML = planesEd.secciones.map((s, si) => `
+        <details class="sec-ed" data-si="${si}" data-id="${htmlSeguro(s.id)}"${secAbiertas.has(s.id) ? ' open' : ''}>
+          <summary><span class="sec-ed-nombre">${htmlSeguro(s.sec || 'Sección sin nombre')}</span> <small class="sec-ed-cuenta" data-si="${si}">${cuentaSeccion(s, cortos)}</small></summary>
+          <div class="sec-ed-cab">
+            <input type="text" class="se-nombre" data-si="${si}" value="${htmlSeguro(s.sec)}" placeholder="Nombre de la sección (puede empezar con un emoji)" />
+            <div class="ed-ctrls">
+              <label style="margin:0; font-size:0.78rem;">Ítems agregados en la inspección entran como</label>
+              <select class="se-pextra" data-si="${si}">${opcP(inspPesoValido(s.pExtra) || INSP_PESO_EXTRA)}</select>
+              <button type="button" class="btn-secondary btn-mini" data-acc="sec-arriba" data-si="${si}" title="Subir sección">↑</button>
+              <button type="button" class="btn-secondary btn-mini" data-acc="sec-abajo" data-si="${si}" title="Bajar sección">↓</button>
+              <button type="button" class="btn-danger btn-mini" data-acc="sec-borrar" data-si="${si}" title="Quitar sección">🗑</button>
+            </div>
+          </div>
+          ${(s.items || []).map((it, ii) => `
+            <div class="ed-item">
+              <input type="text" class="ei-t" data-si="${si}" data-ii="${ii}" value="${htmlSeguro(it.t)}" placeholder="Punto a revisar" />
+              <div class="ed-ctrls">
+                <select class="ei-n" data-si="${si}" data-ii="${ii}">${opcN(Number(it.n) || 1)}</select>
+                ${it.mode && it.mode !== 'std'
+                  ? `<span class="badge badge-blue" title="Se anota un dato (no se evalúa Bien/Malo)">${INSP_MODOS_DATO[it.mode] || 'Dato'}</span>`
+                  : `<select class="ei-p" data-si="${si}" data-ii="${ii}">${opcP(inspPesoValido(it.p) || 2)}</select>`}
+                <button type="button" class="btn-secondary btn-mini" data-acc="item-arriba" data-si="${si}" data-ii="${ii}" title="Subir">↑</button>
+                <button type="button" class="btn-secondary btn-mini" data-acc="item-abajo" data-si="${si}" data-ii="${ii}" title="Bajar">↓</button>
+                <button type="button" class="btn-danger btn-mini" data-acc="item-borrar" data-si="${si}" data-ii="${ii}" ${it.rol ? 'disabled title="Se usa en las alertas de kilometraje y códigos de falla"' : 'title="Quitar punto"'}>🗑</button>
+              </div>
+            </div>`).join('')}
+          <div class="sec-ed-pie">
+            <button type="button" class="btn-secondary btn-mini" data-acc="item-agregar" data-si="${si}">+ Agregar punto</button>
+            <button type="button" class="btn-secondary btn-mini" data-acc="dato-agregar" data-si="${si}">+ Agregar dato a anotar</button>
+          </div>
+        </details>`).join('');
+    }
+
+    function cuentaSeccion(s, cortos) {
+      return planesEd.planes.map((p, i) => `${cortos[i]}: ${(s.items || []).filter(it => (Number(it.n) || 1) <= p.nivel).length}`).join(' · ');
+    }
+    // Totales de puntos y conteos por sección (sin redibujar lo que se está escribiendo)
+    function refrescarConteosPlanes() {
+      const cortos = inspNombresCortos(planesEd.planes);
+      planesEd.planes.forEach((p, i) => {
+        const el = document.querySelector(`.pe-puntos[data-i="${i}"]`);
+        if (el) el.textContent = `${inspContarPuntos(p.nivel, planesEd.secciones)} puntos`;
       });
-      const n = Object.keys(nuevos).length;
-      guardarCriteriosInsp(nuevos, n ? `Guardado: ${n} criterio${n > 1 ? 's' : ''} propio${n > 1 ? 's' : ''}. Aplica a las inspecciones nuevas.` : 'Guardado: se usa el estándar de la app.');
+      planesEd.secciones.forEach((s, si) => {
+        const el = document.querySelector(`.sec-ed-cuenta[data-si="${si}"]`);
+        if (el) el.textContent = cuentaSeccion(s, cortos);
+      });
+    }
+
+    const cardPlanes = document.getElementById('planes-insp-card');
+    cardPlanes.addEventListener('input', (e) => {
+      const t = e.target;
+      if (!planesEd) return;
+      if (t.matches('.pe-campo')) {
+        const p = planesEd.planes[Number(t.dataset.i)];
+        p[t.dataset.c] = (t.dataset.c === 'precio' || t.dataset.c === 'horas') ? (t.value === '' ? null : Number(t.value)) : t.value;
+        if (t.dataset.c === 'precio') document.querySelector(`.pe-iva[data-i="${t.dataset.i}"]`).textContent = `${fmtMoneda(conIvaCfg(p.precio))} con IVA`;
+        if (t.dataset.c === 'nombre') renderSeccionesEd();
+      } else if (t.matches('.se-nombre')) {
+        planesEd.secciones[Number(t.dataset.si)].sec = t.value;
+        const s = t.closest('details').querySelector('.sec-ed-nombre');
+        if (s) s.textContent = t.value || 'Sección sin nombre';
+      } else if (t.matches('.ei-t')) {
+        planesEd.secciones[Number(t.dataset.si)].items[Number(t.dataset.ii)].t = t.value;
+      }
     });
-    document.getElementById('restaurar-criterios-btn').addEventListener('click', () => {
-      if (!Object.keys(criteriosInsp).length) { renderCriteriosInsp(); return; }
-      if (!confirm('¿Volver a la importancia estándar de la app en todos los ítems?')) return;
-      guardarCriteriosInsp({}, 'Listo: todos los ítems volvieron al estándar de la app.');
+    cardPlanes.addEventListener('change', (e) => {
+      const t = e.target;
+      if (!planesEd) return;
+      if (t.matches('.pe-destacado')) {
+        planesEd.planes.forEach((p, i) => { p.destacado = i === Number(t.dataset.i); });
+        document.querySelectorAll('.plan-ed').forEach((el, i) => el.classList.toggle('destacado', i === Number(t.dataset.i)));
+      } else if (t.matches('.se-pextra')) {
+        planesEd.secciones[Number(t.dataset.si)].pExtra = Number(t.value);
+      } else if (t.matches('.ei-n')) {
+        planesEd.secciones[Number(t.dataset.si)].items[Number(t.dataset.ii)].n = Number(t.value);
+        refrescarConteosPlanes();
+      } else if (t.matches('.ei-p')) {
+        planesEd.secciones[Number(t.dataset.si)].items[Number(t.dataset.ii)].p = Number(t.value);
+      }
+    });
+    // Las secciones desplegadas se recuerdan al redibujar (el evento toggle no burbujea: se escucha en captura)
+    document.getElementById('planes-insp-secciones').addEventListener('toggle', (e) => {
+      const d = e.target;
+      if (!d.matches || !d.matches('details.sec-ed')) return;
+      if (d.open) secAbiertas.add(d.dataset.id); else secAbiertas.delete(d.dataset.id);
+    }, true);
+    cardPlanes.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-acc]');
+      if (!b || !planesEd) return;
+      const si = Number(b.dataset.si), ii = Number(b.dataset.ii);
+      const secs = planesEd.secciones, sec = secs[si];
+      const mover = (arr, i, d) => { const j = i + d; if (j < 0 || j >= arr.length) return; [arr[i], arr[j]] = [arr[j], arr[i]]; };
+      let enfocar = null;
+      switch (b.dataset.acc) {
+        case 'sec-arriba': mover(secs, si, -1); break;
+        case 'sec-abajo': mover(secs, si, 1); break;
+        case 'sec-borrar':
+          if ((sec.items || []).some(it => it.rol)) { alert('Esta sección tiene los datos de kilometraje o códigos de falla que usan las alertas: muévelos a otra sección antes de quitarla, o quita los demás puntos.'); return; }
+          if (sec.items.length && !confirm(`¿Quitar la sección «${sec.sec}» con sus ${sec.items.length} puntos?`)) return;
+          secs.splice(si, 1);
+          break;
+        case 'item-arriba': mover(sec.items, ii, -1); break;
+        case 'item-abajo': mover(sec.items, ii, 1); break;
+        case 'item-borrar': sec.items.splice(ii, 1); break;
+        case 'item-agregar':
+          sec.items.push({ id: inspNuevoId('u'), t: '', p: inspPesoValido(sec.pExtra) || INSP_PESO_EXTRA, n: 1 });
+          enfocar = `.ei-t[data-si="${si}"][data-ii="${sec.items.length - 1}"]`;
+          break;
+        case 'dato-agregar':
+          sec.items.push({ id: inspNuevoId('u'), t: '', mode: 'texto', n: 1 });
+          enfocar = `.ei-t[data-si="${si}"][data-ii="${sec.items.length - 1}"]`;
+          break;
+        default: return;
+      }
+      if (sec) secAbiertas.add(sec.id);
+      renderSeccionesEd();
+      refrescarConteosPlanes();
+      if (enfocar) { const el = document.querySelector(enfocar); if (el) el.focus(); }
+    });
+    document.getElementById('agregar-seccion-btn').addEventListener('click', () => {
+      if (!planesEd) return;
+      const nueva = { id: inspNuevoId('s'), sec: '', pExtra: 2, items: [] };
+      planesEd.secciones.push(nueva);
+      secAbiertas.add(nueva.id);
+      renderSeccionesEd();
+      const el = document.querySelector(`.se-nombre[data-si="${planesEd.secciones.length - 1}"]`);
+      if (el) el.focus();
+    });
+    document.getElementById('folleto-planes-btn').addEventListener('click', () => {
+      if (!planesEd) return;
+      abrirVentanaImpresion(inspFolletoPlanesHtml(planesEd.planes, planesEd.secciones,
+        { ...tallerDatosCfg, iva_pct: document.getElementById('iva_pct').value || tallerDatosCfg.iva_pct }), 'Planes de inspección precompra');
+    });
+
+    // Id de la categoría «Inspecciones precompra» del catálogo (la crea si no existe)
+    async function categoriaInspecciones() {
+      const nombre = 'Inspecciones precompra';
+      let { data } = await supabaseClient.from('categorias_trabajos').select('id').eq('nombre', nombre).maybeSingle();
+      if (data) return data.id;
+      ({ data } = await supabaseClient.from('categorias_trabajos').insert({ nombre }).select('id').single());
+      return data ? data.id : null;
+    }
+
+    async function guardarPlanesInsp(mantenerSecciones) {
+      const errorEl = document.getElementById('planes-error'), okEl = document.getElementById('planes-ok');
+      errorEl.textContent = ''; okEl.textContent = '';
+      if (!planesEd) return;
+      // Validación: nombres y precios de los planes, secciones con nombre; los puntos vacíos se descartan
+      for (const p of planesEd.planes) {
+        if (!String(p.nombre || '').trim()) { errorEl.textContent = 'Cada plan necesita un nombre.'; return; }
+        if (!(Number(p.precio) >= 0) || p.precio === null) { errorEl.textContent = `Indica el precio sin IVA de «${p.nombre}».`; return; }
+      }
+      const secciones = planesEd.secciones.map(s => ({
+        id: s.id, sec: String(s.sec || '').trim(), pExtra: inspPesoValido(s.pExtra) || INSP_PESO_EXTRA,
+        items: (s.items || []).filter(it => String(it.t || '').trim()).map(it => {
+          const item = { id: it.id, t: String(it.t).trim(), n: Number(it.n) || 1 };
+          if (it.mode && it.mode !== 'std') item.mode = it.mode; else item.p = inspPesoValido(it.p) || 2;
+          if (it.rol) item.rol = it.rol;
+          return item;
+        }),
+      }));
+      const sinNombre = secciones.find(s => !s.sec && s.items.length);
+      if (sinNombre) { errorEl.textContent = 'Hay una sección con puntos pero sin nombre.'; return; }
+      const finales = secciones.filter(s => s.sec);
+      const vacio = planesEd.planes.find(p => !inspContarPuntos(p.nivel, finales));
+      if (mantenerSecciones && vacio) { errorEl.textContent = `El plan «${vacio.nombre}» quedaría sin puntos.`; return; }
+
+      const btn = document.getElementById('guardar-planes-btn');
+      btn.disabled = true;
+      try {
+        // 0. Sin v60 no hay dónde guardar los vínculos: se avisa antes de crear nada en el catálogo
+        const prueba = await supabaseClient.from('taller_config').select('insp_planes').eq('id', 1).single();
+        if (prueba.error) {
+          errorEl.textContent = /insp_planes/.test(prueba.error.message || '')
+            ? 'Falta ejecutar sql/actualizacion-v60-planes-de-inspeccion.sql en el SQL Editor de Supabase.'
+            : `Error: ${prueba.error.message}`;
+          return;
+        }
+        // 1. Cada plan es un servicio del catálogo: se actualiza (o se crea) con su nombre, precio, descripción y duración
+        const vinculos = {}, extras = {};
+        let categoria;
+        for (const p of planesEd.planes) {
+          const fila = { nombre: p.nombre.trim(), precio_fijo: Number(p.precio), descripcion: String(p.descripcion || '').trim() || null, horas_estimadas: Number(p.horas) > 0 ? Number(p.horas) : 1 };
+          if (p.trabajo_id) {
+            const { error } = await supabaseClient.from('trabajos').update(fila).eq('id', p.trabajo_id);
+            if (error) { errorEl.textContent = `No se pudo actualizar «${p.nombre}» en el catálogo: ${error.message}`; return; }
+            vinculos[p.id] = p.trabajo_id;
+          } else {
+            if (categoria === undefined) categoria = await categoriaInspecciones();
+            const { data, error } = await supabaseClient.from('trabajos').insert({ ...fila, categoria_id: categoria }).select('id').single();
+            if (error) { errorEl.textContent = `No se pudo crear «${p.nombre}» en el catálogo: ${error.message}`; return; }
+            p.trabajo_id = data.id;   // si algo falla después, al reintentar se actualiza en vez de duplicarlo
+            vinculos[p.id] = data.id;
+          }
+          extras[p.id] = { lema: String(p.lema || '').trim(), destacado: !!p.destacado };
+        }
+        // 2. Vínculos, frase/destacado y (si se editaron) los puntos de inspección del taller
+        const nuevo = { trabajos: vinculos, planes: extras };
+        if (mantenerSecciones) nuevo.secciones = finales;
+        const { data, error } = await supabaseClient.from('taller_config').update(mantenerSecciones ? { insp_planes: nuevo } : { insp_planes: nuevo, insp_pesos: {} }).eq('id', 1).select('*').single();
+        if (error) {
+          errorEl.textContent = /insp_planes/.test(error.message || '')
+            ? 'Falta ejecutar sql/actualizacion-v60-planes-de-inspeccion.sql en el SQL Editor de Supabase.'
+            : `Error: ${error.message}`;
+          return;
+        }
+        tallerConfigCache = null;
+        await cargarPlanesInsp(data);
+        okEl.textContent = mantenerSecciones
+          ? 'Planes guardados. Precios y nombres ya están actualizados en el catálogo; los puntos aplican a las inspecciones nuevas.'
+          : 'Listo: los puntos volvieron al estándar de la app (nombres y precios de los planes se mantienen).';
+      } finally {
+        btn.disabled = false;
+      }
+    }
+    document.getElementById('guardar-planes-btn').addEventListener('click', () => guardarPlanesInsp(true));
+    document.getElementById('restaurar-planes-btn').addEventListener('click', () => {
+      if (!confirm('¿Volver a los puntos de inspección estándar de la app? Se pierden los puntos y secciones que agregaste o cambiaste (las inspecciones ya hechas no cambian).')) return;
+      guardarPlanesInsp(false);
     });
 
     // ---------- Atención a domicilio: servicio del catálogo y traslado bloqueado ----------
@@ -1213,8 +1441,7 @@ function responder(obj) {
       renderCorreoEventos();
       correoPlantillas = (data.correo_plantillas && typeof data.correo_plantillas === 'object') ? data.correo_plantillas : {};
       renderSelectorPlantillas();
-      criteriosInsp = (data.insp_pesos && typeof data.insp_pesos === 'object') ? data.insp_pesos : {};
-      renderCriteriosInsp();
+      cargarPlanesInsp(data).catch(e => console.error('Error en cargarPlanesInsp:', e));
       cargarHorario().catch(e => console.error('Error en cargarHorario:', e));
       cargarBloqueos().catch(e => console.error('Error en cargarBloqueos:', e));
 

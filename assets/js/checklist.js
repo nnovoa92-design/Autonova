@@ -1,14 +1,19 @@
-// Checklist de inspección precompra. Cada ítem estándar tiene su importancia `p` (3 crítico, 2 importante,
-// 1 menor), que pondera el puntaje (ver inspCalcular). Basado en el contenido de la versión
-// anterior de la app. Usado por pages/inspecciones.html y por el
-// informe público inspeccion.html.
+// Inspección precompra: planes, puntos de inspección y evaluación. Usado por pages/inspecciones.html,
+// pages/configuracion.html (editor de planes) y el informe público inspeccion.html.
 //
-// Formato de respuestas en `datos` (jsonb):
-//   "si_ii"      -> 'ok' | 'warn' | 'bad' | 'na'   (ítems estándar)
-//   "si_ii_txt"  -> texto libre                     (ítems dtc/km)
-//   "_custom"    -> { si: ["nombre ítem extra", ...] }
-//   "c_si_ci"    -> estado de un ítem extra
+// Desde v60 cada inspección guarda en `datos` la lista de puntos con que se hizo (así el informe no cambia
+// si después se editan los planes):
+//   "_plan"      -> { id, nombre, nivel, precio, trabajo_id }
+//   "_secciones" -> [{ id, sec, pExtra, items: [{ id, t, mode, p, rol, extra }] }]
+//   "<id>"       -> 'ok' | 'warn' | 'bad' | 'na'      (ítems a evaluar)
+//   "<id>_txt"   -> texto libre                       (ítems de dato: códigos de falla, kilometraje…)
+//   "<id>_obs" / "<id>_fotos" / "<id>_p" -> observación, fotos e importancia ajustada en este caso
+//   "_obsSec"    -> { idSección: observaciones de esa sección }
 //   "_obs"       -> observaciones generales
+// Las inspecciones anteriores (sin "_secciones") usan INSP_CHECKLIST con claves por posición:
+//   "si_ii" (estado), "si_ii_txt" (texto), "_custom" { si: [nombres] } y "c_si_ci" (ítems extra).
+// NO cambiar el orden de INSP_CHECKLIST: las inspecciones antiguas dependen de él.
+// Checklist anterior a los planes (solo para mostrar las inspecciones antiguas)
 const INSP_CHECKLIST = [
   { sec: '💻 Electrónica y diagnóstico', pExtra: 2, items: [
     { t: 'DTC Activos (códigos de falla)', mode: 'dtc' },
@@ -102,6 +107,185 @@ const INSP_CHECKLIST = [
   ]},
 ];
 
+// ---------- Planes de inspección (v60) ----------
+// Tres planes acumulativos: cada uno incluye todo lo del anterior. Nombre, precio (sin IVA), descripción y
+// duración viven en el servicio del Catálogo de trabajos vinculado (taller_config.insp_planes.trabajos), así un
+// cambio de precio en el catálogo o en Configuración se ve en ambos lados. Estos valores son el punto de partida.
+const INSP_PLANES_BASE = [
+  { id: 'esencial', nivel: 1, nombre: 'Compra Segura Esencial', precio: 45000, horas: 1,
+    lema: 'Lo indispensable antes de decidir',
+    descripcion: 'Revisión visual y funcional de todo el auto, sin elevador: documentos, luces y electrónica, testigos y medidores del panel, niveles, fugas visibles, frenos, neumáticos, carrocería e interior, lectura de códigos de falla con escáner y prueba en ruta urbana. Ideal para autos recientes o de bajo kilometraje, o para descartar entre varias opciones.' },
+  { id: 'pro', nivel: 2, nombre: 'Compra Segura Pro', precio: 55000, horas: 1.5, destacado: true,
+    lema: 'La más elegida',
+    descripcion: 'Todo lo del Esencial, más: revisión bajo el vehículo (chasis, fugas, rótulas, homocinéticas, espirales y cremallera), medición de pastillas y discos delanteros, espesor de pintura en capot, techo y puertas, búsqueda de choques e inundación, verificación del kilometraje y del VIN, y prueba en ruta ampliada. Ideal para la mayoría de los autos usados.' },
+  { id: 'total', nivel: 3, nombre: 'Compra Segura 360°', precio: 70000, horas: 2,
+    lema: 'Máxima tranquilidad',
+    descripcion: 'Todo lo del Pro, más: escáner de todos los módulos con datos en vivo y kilometraje cruzado entre módulos, prueba de batería, de humedad del líquido de frenos y de presión y gases del sistema de refrigeración (empaquetadura de culata), frenos traseros y discos medidos, pintura panel por panel, anotaciones vigentes y recalls, y prueba en carretera con frenada de emergencia. Ideal para autos de alto valor, con más de 100.000 km o cuando hay dudas.' },
+];
+
+// Puntos de inspección. n = plan desde el que se revisa (1 Esencial, 2 Pro, 3 360°); p = importancia en el
+// puntaje (3 crítico, 2 importante, 1 menor); mode 'dtc' | 'km' = dato a anotar (no se evalúa). rol marca los
+// datos que usan las alertas (kilometraje del panel / verificado y códigos de falla). Los ids no cambian nunca.
+const INSP_SECCIONES_BASE = [
+  { id: 'doc', sec: '📄 Documentación y antecedentes', pExtra: 2, items: [
+    { id: 'doc_padron', t: 'Padrón: patente, VIN y N° de motor coinciden con el vehículo', p: 3, n: 1 },
+    { id: 'doc_rt', t: 'Revisión técnica y de gases vigente', p: 2, n: 1 },
+    { id: 'doc_permiso', t: 'Permiso de circulación y SOAP vigentes', p: 1, n: 1 },
+    { id: 'doc_llaves', t: 'Llaves y control remoto (cantidad y funcionamiento)', p: 1, n: 1 },
+    { id: 'doc_vin', t: 'VIN y N° de motor sin adulteraciones (grabados originales)', p: 3, n: 2 },
+    { id: 'doc_mant', t: 'Historial de mantenciones (libro o facturas)', p: 1, n: 2 },
+    { id: 'doc_grabado', t: 'Patente grabada en vidrios y espejos', p: 1, n: 3 },
+    { id: 'doc_anot', t: 'Certificado de anotaciones: sin prendas, embargos ni prohibiciones', p: 3, n: 3 },
+    { id: 'doc_recall', t: 'Campañas de revisión (recall) pendientes del fabricante', p: 2, n: 3 },
+  ]},
+  { id: 'ele', sec: '💻 Electrónica y diagnóstico', pExtra: 2, items: [
+    { id: 'dtc', t: 'DTC Activos (códigos de falla)', mode: 'dtc', rol: 'dtc', n: 1 },
+    { id: 'km_panel', t: 'Km Panel', mode: 'km', rol: 'km_panel', n: 1 },
+    { id: 'km_real', t: 'Km Real (verificado)', mode: 'km', rol: 'km_real', n: 2 },
+    { id: 'ele_testigos', t: 'Testigos del panel: se encienden al dar contacto y se apagan al arrancar', p: 3, n: 1 },
+    { id: 'ele_panel', t: 'Panel de instrumentos y medidores (velocímetro, tacómetro, temperatura, combustible)', p: 2, n: 1 },
+    { id: 'ele_bateria', t: 'Batería — voltaje y estado', p: 2, n: 1 },
+    { id: 'ele_alternador', t: 'Alternador — carga correcta', p: 2, n: 1 },
+    { id: 'ele_luces_del', t: 'Luces delanteras (cortas/largas)', p: 2, n: 1 },
+    { id: 'ele_luces_tras', t: 'Luces traseras y stop', p: 2, n: 1 },
+    { id: 'ele_intermitentes', t: 'Intermitentes y luces de emergencia', p: 2, n: 1 },
+    { id: 'ele_reversa', t: 'Luz reversa', p: 1, n: 1 },
+    { id: 'ele_luz_interior', t: 'Luz interior / tablero', p: 1, n: 1 },
+    { id: 'ele_bocina', t: 'Bocina', p: 2, n: 1 },
+    { id: 'ele_radio', t: 'Radio / pantalla / conectividad', p: 1, n: 1 },
+    { id: 'ele_sensor', t: 'Sensor de estacionamiento / cámara', p: 1, n: 1 },
+    { id: 'ele_alarma', t: 'Sistema de alarma', p: 1, n: 2 },
+    { id: 'ele_cierre', t: 'Cierre centralizado', p: 1, n: 3 },
+    { id: 'ele_modulos', t: 'Escáner de todos los módulos (ABS, airbag, transmisión, carrocería)', mode: 'dtc', n: 3 },
+    { id: 'ele_vivo', t: 'Datos en vivo del motor (temperatura, sondas, ajustes de combustible)', p: 2, n: 3 },
+    { id: 'ele_bateria_test', t: 'Batería — prueba de carga con analizador', p: 2, n: 3 },
+    { id: 'ele_km_modulos', t: 'Kilometraje guardado en los módulos coincide con el panel', p: 3, n: 3 },
+  ]},
+  { id: 'mot', sec: '🔧 Motor y mecánica', pExtra: 2, items: [
+    { id: 'mot_aceite', t: 'Aceite motor — nivel y color', p: 3, n: 1 },
+    { id: 'mot_aceite_caja', t: 'Aceite transmisión', p: 3, n: 2 },
+    { id: 'mot_liq_frenos', t: 'Líquido de frenos', p: 2, n: 1 },
+    { id: 'mot_refrigerante', t: 'Líquido refrigerante — nivel y color', p: 3, n: 1 },
+    { id: 'mot_dir_hidraulica', t: 'Líquido dirección hidráulica', p: 2, n: 1 },
+    { id: 'mot_distribucion', t: 'Correa de distribución — estado y km', p: 3, n: 1 },
+    { id: 'mot_correa_acc', t: 'Correa alternador / accesorios', p: 2, n: 1 },
+    { id: 'mot_mangueras', t: 'Mangueras y juntas — sin fugas', p: 2, n: 1 },
+    { id: 'mot_filtro_aire', t: 'Filtro de aire', p: 1, n: 1 },
+    { id: 'mot_filtro_comb', t: 'Filtro de combustible', p: 1, n: 3 },
+    { id: 'mot_escape', t: 'Sistema de escape — sin fugas ni ruidos', p: 2, n: 1 },
+    { id: 'mot_radiador', t: 'Radiador — sin fugas', p: 3, n: 1 },
+    { id: 'mot_arranque', t: 'Arranque — sin ruidos anómalos', p: 2, n: 1 },
+    { id: 'mot_ralenti', t: 'Ralentí — estable', p: 2, n: 1 },
+    { id: 'mot_humo', t: 'Humo de escape — color y cantidad', p: 3, n: 1 },
+    { id: 'mot_tapa', t: 'Tapa de aceite sin emulsión (mayonesa)', p: 3, n: 1 },
+    { id: 'mot_ruidos', t: 'Ruidos internos del motor (golpeteo, taqués, cadena)', p: 3, n: 1 },
+    { id: 'mot_fugas_bajo', t: 'Fugas vistas desde abajo (cárter, retenes, caja)', p: 2, n: 2 },
+    { id: 'mot_turbo', t: 'Turbo — juego y fugas (si aplica)', p: 3, n: 2 },
+    { id: 'mot_soportes', t: 'Soportes de motor y caja', p: 2, n: 3 },
+    { id: 'mot_bujias', t: 'Bujías y bobinas — estado', p: 2, n: 3 },
+    { id: 'mot_presion_ref', t: 'Prueba de presión del sistema de refrigeración', p: 3, n: 3 },
+    { id: 'mot_gases_ref', t: 'Prueba de gases de combustión en el refrigerante (empaquetadura de culata)', p: 3, n: 3 },
+  ]},
+  { id: 'fre', sec: '🛑 Frenos', pExtra: 3, items: [
+    { id: 'fre_visual', t: 'Frenos — revisión visual a través de las llantas', p: 3, n: 1 },
+    { id: 'fre_pastillas_del', t: 'Pastillas delanteras — espesor', p: 3, n: 2 },
+    { id: 'fre_pastillas_tras', t: 'Pastillas traseras — espesor', p: 3, n: 3 },
+    { id: 'fre_discos_del', t: 'Discos delanteros — sin rayaduras ni deformación', p: 3, n: 2 },
+    { id: 'fre_discos_tras', t: 'Discos traseros — sin rayaduras ni deformación', p: 3, n: 3 },
+    { id: 'fre_mano', t: 'Freno de mano — efectivo', p: 2, n: 1 },
+    { id: 'fre_mangueras', t: 'Mangueras de freno — sin fisuras', p: 3, n: 2 },
+    { id: 'fre_bomba', t: 'Bomba de freno', p: 3, n: 1 },
+    { id: 'fre_abs', t: 'ABS — sin luz en tablero', p: 3, n: 1 },
+    { id: 'fre_humedad', t: 'Líquido de frenos — prueba de humedad', p: 2, n: 3 },
+    { id: 'fre_medicion', t: 'Medición de discos con pie de metro (espesor mínimo)', p: 2, n: 3 },
+  ]},
+  { id: 'sus', sec: '🏎 Suspensión y dirección', pExtra: 3, items: [
+    { id: 'sus_amort_del', t: 'Amortiguadores delanteros — sin fugas', p: 2, n: 1 },
+    { id: 'sus_amort_tras', t: 'Amortiguadores traseros — sin fugas', p: 2, n: 1 },
+    { id: 'sus_rotulas', t: 'Rótulas y terminales — holgura', p: 3, n: 2 },
+    { id: 'sus_bujes', t: 'Bujes y Silent block', p: 2, n: 3 },
+    { id: 'sus_cremallera', t: 'Cremallera de dirección', p: 3, n: 2 },
+    { id: 'sus_direccion', t: 'Dirección — sin vibraciones ni tirones', p: 3, n: 1 },
+    { id: 'sus_alineacion', t: 'Alineación — verificación visual', p: 1, n: 1 },
+    { id: 'sus_convergencia', t: 'Convergencia — desgaste uniforme', p: 1, n: 1 },
+    { id: 'sus_espirales', t: 'Espirales y resortes — sin quiebres', p: 3, n: 2 },
+    { id: 'sus_homocineticas', t: 'Homocinéticas y guardapolvos', p: 3, n: 2 },
+    { id: 'sus_bieletas', t: 'Barra estabilizadora y bieletas', p: 2, n: 3 },
+    { id: 'sus_rodamientos', t: 'Rodamientos de rueda — juego y ruido', p: 3, n: 3 },
+  ]},
+  { id: 'neu', sec: '🛞 Neumáticos y ruedas', pExtra: 3, items: [
+    { id: 'neu_dd', t: 'Neumático delantero derecho — banda rodadura', p: 3, n: 1 },
+    { id: 'neu_di', t: 'Neumático delantero izquierdo — banda rodadura', p: 3, n: 1 },
+    { id: 'neu_td', t: 'Neumático trasero derecho — banda rodadura', p: 3, n: 1 },
+    { id: 'neu_ti', t: 'Neumático trasero izquierdo — banda rodadura', p: 3, n: 1 },
+    { id: 'neu_repuesto', t: 'Neumático de repuesto — estado', p: 1, n: 1 },
+    { id: 'neu_rines', t: 'Rines — sin daños ni fisuras', p: 2, n: 1 },
+    { id: 'neu_tapas', t: 'Tapas de ruedas', p: 1, n: 1 },
+    { id: 'neu_dot', t: 'Antigüedad de los neumáticos (fecha DOT)', p: 2, n: 2 },
+    { id: 'neu_herramientas', t: 'Gata, llave de ruedas y triángulos', p: 1, n: 3 },
+  ]},
+  { id: 'car', sec: '🚘 Carrocería y estructura', pExtra: 1, items: [
+    { id: 'car_capot', t: 'Capot — sin golpes ni óxido', p: 1, n: 1 },
+    { id: 'car_guardafangos', t: 'Guardafangos delanteros', p: 1, n: 1 },
+    { id: 'car_puertas', t: 'Puertas — apertura, cierre y bisagras', p: 2, n: 1 },
+    { id: 'car_techo', t: 'Techo — sin abolladuras', p: 1, n: 1 },
+    { id: 'car_parachoques_del', t: 'Parachoques delantero', p: 1, n: 1 },
+    { id: 'car_parachoques_tras', t: 'Parachoques trasero', p: 1, n: 1 },
+    { id: 'car_parabrisas', t: 'Parabrisas — sin fisuras', p: 2, n: 1 },
+    { id: 'car_vidrios', t: 'Vidrios laterales — sin fisuras', p: 1, n: 1 },
+    { id: 'car_luneta', t: 'Luneta trasera', p: 1, n: 1 },
+    { id: 'car_pintura', t: 'Pintura — color uniforme sin retoques', p: 2, n: 1 },
+    { id: 'car_corrosion', t: 'Corrosión u óxido en estructura', p: 3, n: 1 },
+    { id: 'car_sellos', t: 'Sellos de puertas y techo', p: 1, n: 1 },
+    { id: 'car_maletero', t: 'Maletero — cierre y estado interior', p: 1, n: 1 },
+    { id: 'car_separacion', t: 'Separación entre paneles pareja (sin desalineaciones)', p: 2, n: 1 },
+    { id: 'car_opticos', t: 'Ópticos y focos — sin opacidad ni humedad', p: 1, n: 1 },
+    { id: 'car_choque', t: 'Huellas de choque: soldaduras, pernos movidos o sellos alterados', p: 3, n: 2 },
+    { id: 'car_chasis', t: 'Bajo el vehículo: chasis, largueros y piso sin reparaciones', p: 3, n: 2 },
+    { id: 'car_espesor', t: 'Espesor de pintura — capot, techo y puertas', p: 2, n: 2 },
+    { id: 'car_espesor_total', t: 'Espesor de pintura — todos los paneles (panel por panel)', p: 2, n: 3 },
+  ]},
+  { id: 'int', sec: '🪑 Interior', pExtra: 1, items: [
+    { id: 'int_tapiz', t: 'Tapiz y asientos — estado general', p: 1, n: 1 },
+    { id: 'int_cinturones', t: 'Cinturones de seguridad — funcionamiento', p: 3, n: 1 },
+    { id: 'int_airbag', t: 'Airbag — sin luz en tablero', p: 3, n: 1 },
+    { id: 'int_pedales', t: 'Pedales — estado y respuesta', p: 2, n: 1 },
+    { id: 'int_alfombras', t: 'Alfombras y tapizado suelo', p: 1, n: 1 },
+    { id: 'int_elevavidrios', t: 'Elevavidrios — todos funcionan', p: 1, n: 1 },
+    { id: 'int_espejos', t: 'Espejos — eléctricos y manuales', p: 1, n: 1 },
+    { id: 'int_aire', t: 'Aire acondicionado — enfría correctamente', p: 2, n: 1 },
+    { id: 'int_calefaccion', t: 'Calefacción — funciona', p: 1, n: 1 },
+    { id: 'int_limpia', t: 'Limpiaparabrisas — velocidades y agua', p: 2, n: 1 },
+    { id: 'int_sunroof', t: 'Sunroof / techo corredizo (si aplica)', p: 1, n: 1 },
+    { id: 'int_desgaste', t: 'Desgaste coherente con el kilometraje (volante, pomo, pedales, asiento)', p: 2, n: 1 },
+    { id: 'int_olores', t: 'Olores en la cabina (humedad, quemado, combustible)', p: 2, n: 1 },
+    { id: 'int_inundacion', t: 'Señales de inundación (barro u óxido bajo alfombras y en rieles de asientos)', p: 3, n: 2 },
+    { id: 'int_asientos', t: 'Regulación de asientos y apoyacabezas', p: 1, n: 3 },
+  ]},
+  { id: 'rut', sec: '🛣 Prueba en ruta', pExtra: 2, items: [
+    { id: 'rut_frio', t: 'Arranque en frío: enciende al primer intento, sin humo ni ruidos', p: 3, n: 1 },
+    { id: 'rut_aceleracion', t: 'Aceleración y respuesta del motor, sin tirones ni pérdida de potencia', p: 3, n: 1 },
+    { id: 'rut_caja', t: 'Caja de cambios: pasa todas las marchas suave, sin ruidos ni golpes', p: 3, n: 1 },
+    { id: 'rut_embrague', t: 'Embrague: acople, patinaje y recorrido del pedal (si es manual)', p: 3, n: 1 },
+    { id: 'rut_frenado', t: 'Frenado: recto, sin vibración en el pedal ni ruidos', p: 3, n: 1 },
+    { id: 'rut_direccion', t: 'Dirección centrada: el auto no se va hacia un lado', p: 2, n: 1 },
+    { id: 'rut_baches', t: 'Suspensión en baches y lomos de toro: sin golpes ni ruidos', p: 2, n: 1 },
+    { id: 'rut_rodado', t: 'Ruido de rodado o zumbidos a velocidad', p: 2, n: 1 },
+    { id: 'rut_temperatura', t: 'Temperatura del motor estable durante toda la prueba', p: 3, n: 1 },
+    { id: 'rut_testigos', t: 'Ningún testigo del panel se enciende en marcha', p: 3, n: 1 },
+    { id: 'rut_olores', t: 'Olores en marcha (quemado, combustible, refrigerante)', p: 2, n: 1 },
+    { id: 'rut_vibraciones', t: 'Vibraciones en volante o cabina entre 60 y 100 km/h', p: 2, n: 2 },
+    { id: 'rut_reversa', t: 'Marcha atrás: entra sin ruido ni golpes', p: 2, n: 2 },
+    { id: 'rut_humo', t: 'Humo al acelerar a fondo', p: 3, n: 2 },
+    { id: 'rut_post', t: 'Después de la prueba: sin fugas ni olores bajo el capot', p: 2, n: 2 },
+    { id: 'rut_curvas', t: 'Estabilidad en curvas y cambios de pista', p: 2, n: 3 },
+    { id: 'rut_carretera', t: 'Prueba en carretera a velocidad sostenida: estabilidad y ruido', p: 2, n: 3 },
+    { id: 'rut_abs', t: 'Frenada fuerte: el ABS actúa y el auto no se desvía', p: 3, n: 3 },
+    { id: 'rut_freno_motor', t: 'Freno motor y respuesta al reducir marchas', p: 1, n: 3 },
+    { id: 'rut_asistencias', t: 'Control crucero y asistencias de manejo (si aplica)', p: 1, n: 3 },
+  ]},
+];
+
 const INSP_ESTADOS = {
   ok:   { label: 'Bien',     badge: 'badge-green' },
   warn: { label: 'Atención', badge: 'badge-yellow' },
@@ -109,38 +293,86 @@ const INSP_ESTADOS = {
   na:   { label: 'N/A',      badge: 'badge-gray' },
 };
 
-// Importancia de cada ítem en el puntaje (p en INSP_CHECKLIST)
+// Importancia de cada ítem en el puntaje
 const INSP_IMPORTANCIA = {
   3: { label: 'Crítico',    badge: 'badge-red',    ayuda: 'seguridad o reparación costosa' },
   2: { label: 'Importante', badge: 'badge-yellow', ayuda: 'funcionamiento, exigencia legal o costo medio' },
   1: { label: 'Menor',      badge: 'badge-gray',   ayuda: 'confort o estética' },
 };
 const INSP_PESO_EXTRA = 2;   // ítems agregados a mano, si la sección no define otro (pExtra)
-
-// Importancia con que se evalúa cada ítem (de lo más específico a lo general):
-//   1. el ajuste hecho en ESTA inspección según la causa encontrada  → datos[k + '_p']
-//   2. el estándar del taller (Configuración → Criterios de inspección) → inspPesosTaller[título]
-//   3. el estándar de la app                                          → p de INSP_CHECKLIST
-let inspPesosTaller = {};   // { 'Título del ítem': 1 | 2 | 3 }; lo carga cada página desde taller_config.insp_pesos
+const INSP_MODOS_DATO = { dtc: 'Códigos de falla', km: 'Kilometraje', texto: 'Dato a anotar' };
 const inspPesoValido = (p) => [1, 2, 3].includes(Number(p)) ? Number(p) : null;
-function inspPesoEstandar(titulo, pBase) {
-  return inspPesoValido(inspPesosTaller && inspPesosTaller[titulo]) || pBase;
+const inspEsc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+// Configuración del taller: taller_config.insp_planes = { trabajos: { idPlan: idTrabajo }, planes: { idPlan: { lema,
+// destacado } }, secciones: [...] } (las secciones solo si se editaron en Configuración). Cada página la carga.
+let inspPlanesTaller = {};
+// Criterios de importancia anteriores a v60 (taller_config.insp_pesos: { título: 1|2|3, 'seccion:<título>': 1|2|3 }):
+// se aplican al estándar de la app mientras el taller no haya guardado sus propios planes
+let inspPesosTaller = {};
+
+// Puntos vigentes (todas las secciones, con el plan desde el que se revisa cada uno)
+function inspSeccionesVigentes() {
+  const guardadas = inspPlanesTaller && Array.isArray(inspPlanesTaller.secciones) && inspPlanesTaller.secciones.length
+    ? inspPlanesTaller.secciones : null;
+  if (guardadas) return JSON.parse(JSON.stringify(guardadas));
+  const pesos = inspPesosTaller || {};
+  return INSP_SECCIONES_BASE.map(s => ({
+    ...s,
+    pExtra: inspPesoValido(pesos['seccion:' + s.sec]) || s.pExtra,
+    items: s.items.map(it => (it.mode ? { ...it } : { ...it, p: inspPesoValido(pesos[it.t]) || it.p })),
+  }));
 }
-function inspPesoItem(datos, k, titulo, pBase) {
-  return inspPesoValido(datos[k + '_p']) || inspPesoEstandar(titulo, pBase);
+
+// Planes vigentes con su nombre, precio, descripción y duración desde el catálogo (trabajos: filas de `trabajos`)
+function inspPlanesVigentes(trabajos, valorHora) {
+  const cfg = inspPlanesTaller || {};
+  const vinculos = cfg.trabajos || {}, extras = cfg.planes || {};
+  return INSP_PLANES_BASE.map(base => {
+    const trabajoId = vinculos[base.id] || null;
+    const t = trabajoId ? (trabajos || []).find(x => x.id === trabajoId) : null;
+    const ex = extras[base.id] || {};
+    const precioCat = t && typeof precioNetoTrabajo === 'function' ? precioNetoTrabajo(t, valorHora) : null;
+    return {
+      ...base,
+      lema: ex.lema != null ? ex.lema : base.lema,
+      destacado: ex.destacado != null ? !!ex.destacado : !!base.destacado,
+      nombre: (t && t.nombre) || base.nombre,
+      descripcion: t ? (t.descripcion || '') : base.descripcion,
+      horas: t && Number(t.horas_estimadas) > 0 ? Number(t.horas_estimadas) : base.horas,
+      precio: precioCat != null ? precioCat : base.precio,
+      trabajo_id: t ? t.id : null,
+      trabajo_activo: t ? t.activo !== false : null,
+      vinculo: t ? 'ok' : (trabajoId ? 'perdido' : 'sin'),
+    };
+  });
 }
-// Criterio de los ítems agregados a mano: el de la sección donde se agregan (estándar del taller, guardado como
-// 'seccion:<título>' en insp_pesos, o el de la app: pExtra de la sección)
-function inspPesoExtraSeccion(si) {
-  const sec = INSP_CHECKLIST[si] || {};
-  return inspPesoValido(inspPesosTaller && inspPesosTaller['seccion:' + sec.sec]) || sec.pExtra || INSP_PESO_EXTRA;
+
+// Puntos que revisa un plan (nivel 1, 2 o 3): las secciones con sus ítems incluidos
+function inspChecklistDePlan(nivel, secciones) {
+  return (secciones || inspSeccionesVigentes()).map(s => ({
+    id: s.id, sec: s.sec, pExtra: inspPesoValido(s.pExtra) || INSP_PESO_EXTRA,
+    items: (s.items || []).filter(it => (Number(it.n) || 1) <= nivel).map(it => {
+      const item = { id: it.id, t: it.t, mode: it.mode || 'std' };
+      if (item.mode === 'std') item.p = inspPesoValido(it.p) || 2;
+      if (it.rol) item.rol = it.rol;
+      return item;
+    }),
+  })).filter(s => s.items.length);
 }
-// Al terminar la inspección se guarda la importancia usada en cada hallazgo (atención/malo), para que el
-// informe no cambie si después se modifica el estándar
-function inspFijarPesos(datos) {
-  const copia = { ...datos };
-  inspItemsEvaluables(datos).forEach(it => { if (it.v === 'warn' || it.v === 'bad') copia[it.k + '_p'] = it.p; });
-  return copia;
+function inspContarPuntos(nivel, secciones) {
+  return inspChecklistDePlan(nivel, secciones).reduce((n, s) => n + s.items.length, 0);
+}
+// Duración en texto: 1.5 → "1 h 30 min"
+function inspFmtHoras(h) {
+  const min = Math.round(Number(h || 0) * 60);
+  if (!min) return '';
+  const hh = Math.floor(min / 60), mm = min % 60;
+  return [hh ? `${hh} h` : '', mm ? `${mm} min` : ''].filter(Boolean).join(' ');
+}
+// Id nuevo para un punto o sección agregados (nunca se reutiliza)
+function inspNuevoId(prefijo) {
+  return (prefijo || 'u') + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 }
 
 const INSP_NIVELES = {
@@ -157,37 +389,50 @@ function inspBadgeImportancia(p) {
   return ` <span class="badge ${imp.badge}" title="${imp.ayuda}" style="font-size:0.68rem;">${imp.label}</span>`;
 }
 
-// Texto libre de un ítem dtc/km (compatible con los datos migrados)
+// Texto libre de un ítem de dato (compatible con los datos migrados)
 function inspTexto(datos, k) {
   return datos[k + '_txt'] || datos[k + '_dtc'] || datos[k + '_km'] || '';
 }
 
-// Todos los ítems con estado (estándar y extra): { k, t, p, si, v }
+// Estructura de una inspección: { id, sec, pExtra, items: [{ k, t, mode, p, rol, extra }] } por sección.
+// La guardada en la inspección (v60) o, en las antiguas, el checklist fijo con claves por posición.
+const INSP_ROL_ANTIGUO = { 'DTC Activos (códigos de falla)': 'dtc', 'Km Panel': 'km_panel', 'Km Real (verificado)': 'km_real' };
+function inspEstructura(datos) {
+  datos = datos || {};
+  if (Array.isArray(datos._secciones)) {
+    return datos._secciones.map(s => ({
+      id: s.id, sec: s.sec, pExtra: inspPesoValido(s.pExtra) || INSP_PESO_EXTRA,
+      items: (s.items || []).map(it => ({ k: it.id, t: it.t, mode: it.mode || 'std', p: inspPesoValido(it.p) || 2, rol: it.rol || '', extra: !!it.extra })),
+    }));
+  }
+  return INSP_CHECKLIST.map((sec, si) => ({
+    id: 'L' + si, sec: sec.sec, pExtra: sec.pExtra || INSP_PESO_EXTRA,
+    items: [
+      ...sec.items.map((it, ii) => ({ k: si + '_' + ii, t: it.t, mode: it.mode, p: it.p || 2, rol: INSP_ROL_ANTIGUO[it.t] || '', extra: false })),
+      ...((datos._custom && datos._custom[si]) || []).map((nombre, ci) => ({ k: 'c_' + si + '_' + ci, t: nombre, mode: 'std', p: sec.pExtra || INSP_PESO_EXTRA, extra: true })),
+    ],
+  }));
+}
+
+// Todos los ítems con estado: { k, t, p, si, v }. La importancia es la ajustada en este caso (datos[k_p]) o la del punto.
 function inspItemsEvaluables(datos) {
   const items = [];
-  INSP_CHECKLIST.forEach((sec, si) => {
-    sec.items.forEach((item, ii) => {
-      if (item.mode !== 'std') return;
-      const k = si + '_' + ii;
-      items.push({ k, t: item.t, p: inspPesoItem(datos, k, item.t, item.p || 2), si, v: datos[k] || '' });
-    });
-    const customs = (datos._custom && datos._custom[si]) || [];
-    customs.forEach((nombre, ci) => {
-      const k = 'c_' + si + '_' + ci;
-      items.push({ k, t: nombre, p: inspPesoItem(datos, k, nombre, inspPesoExtraSeccion(si)), si, v: datos[k] || '' });
+  inspEstructura(datos).forEach((sec, si) => {
+    sec.items.forEach(it => {
+      if (it.mode !== 'std') return;
+      items.push({ k: it.k, t: it.t, p: inspPesoValido(datos[it.k + '_p']) || it.p, si, v: datos[it.k] || '' });
     });
   });
   return items;
 }
 
-// Clave del ítem de texto (dtc / km) según su título
-function inspClaveTexto(titulo) {
-  for (let si = 0; si < INSP_CHECKLIST.length; si++) {
-    const ii = INSP_CHECKLIST[si].items.findIndex(it => it.t === titulo);
-    if (ii >= 0) return si + '_' + ii;
-  }
-  return null;
+// Al terminar la inspección se guarda la importancia usada en cada hallazgo (atención/malo)
+function inspFijarPesos(datos) {
+  const copia = { ...datos };
+  inspItemsEvaluables(datos).forEach(it => { if (it.v === 'warn' || it.v === 'bad') copia[it.k + '_p'] = it.p; });
+  return copia;
 }
+
 const inspNumeroKm = (txt) => { const n = String(txt || '').replace(/[^\d]/g, ''); return n ? Number(n) : null; };
 const inspMiles = (n) => Number(n).toLocaleString('es-CL');
 
@@ -203,7 +448,8 @@ const inspMiles = (n) => Number(n).toLocaleString('es-CL');
 function inspCalcular(datos) {
   let ok = 0, warn = 0, bad = 0, na = 0, total = 0, sumaPesos = 0, sumaPuntos = 0;
   const criticosMalos = [], criticosAtencion = [], importantesMalos = [], importantesAtencion = [];
-  const secciones = INSP_CHECKLIST.map(s => ({ sec: s.sec, pesos: 0, puntos: 0, malos: 0, atencion: 0, criticos: 0 }));
+  const estructura = inspEstructura(datos);
+  const secciones = estructura.map(s => ({ sec: s.sec, pesos: 0, puntos: 0, malos: 0, atencion: 0, criticos: 0 }));
   inspItemsEvaluables(datos).forEach(it => {
     total++;
     if (it.v === 'na') { na++; return; }
@@ -224,12 +470,15 @@ function inspCalcular(datos) {
 
   // Señales que no son de un ítem: kilometraje y códigos de falla
   const alertas = [];
-  const kmPanel = inspNumeroKm(inspTexto(datos, inspClaveTexto('Km Panel')));
-  const kmReal = inspNumeroKm(inspTexto(datos, inspClaveTexto('Km Real (verificado)')));
+  const todos = estructura.flatMap(s => s.items);
+  const textoRol = (rol) => { const it = todos.find(x => x.rol === rol); return it ? inspTexto(datos, it.k) : ''; };
+  const kmPanel = inspNumeroKm(textoRol('km_panel'));
+  const kmReal = inspNumeroKm(textoRol('km_real'));
   if (kmPanel && kmReal && Math.abs(kmReal - kmPanel) > Math.max(2000, kmPanel * 0.05)) {
     alertas.push({ tipo: 'km', texto: `El kilometraje del panel (${inspMiles(kmPanel)} km) no coincide con el verificado (${inspMiles(kmReal)} km): posible adulteración.` });
   }
-  const dtc = String(inspTexto(datos, inspClaveTexto('DTC Activos (códigos de falla)')) || '').toUpperCase();
+  // Códigos de falla de cualquier dato de escáner (motor y demás módulos)
+  const dtc = todos.filter(it => it.mode === 'dtc' || it.rol === 'dtc').map(it => inspTexto(datos, it.k)).join(' ').toUpperCase();
   const codigos = [...new Set(dtc.match(/\b[PBCU][0-9][0-9A-F]{3}\b/g) || [])];
   if (codigos.length) alertas.push({ tipo: 'dtc', texto: `Códigos de falla activos: ${codigos.join(', ')}.` });
 
@@ -276,11 +525,11 @@ function inspRenderResumen(datos) {
   if (!e || e.metodo !== 2) return '';
   const color = { ok: '#1b6e3c', warn: '#92600a', bad: '#a93b33' }[e.visual] || '#333';
   const lista = (titulo, items, estilo) => items.length
-    ? `<div style="margin:0.4rem 0;"><strong style="${estilo}">${titulo}</strong><ul style="margin:0.2rem 0 0; padding-left:1.2rem;">${items.map(t => `<li>${t}</li>`).join('')}</ul></div>` : '';
+    ? `<div style="margin:0.4rem 0;"><strong style="${estilo}">${titulo}</strong><ul style="margin:0.2rem 0 0; padding-left:1.2rem;">${items.map(t => `<li>${inspEsc(t)}</li>`).join('')}</ul></div>` : '';
   const filas = (e.secciones || []).map(s => {
     // Una sección con falla en un componente crítico sale en rojo aunque su promedio sea alto
     const c = s.criticos ? '#a93b33' : (s.score >= 85 ? '#1b6e3c' : (s.score >= 60 ? '#92600a' : '#a93b33'));
-    return `<tr><td>${s.sec}${s.criticos ? ' ⛔' : ''}</td><td style="text-align:center; font-weight:700; color:${c};">${s.score}</td><td style="text-align:center;">${s.malos || '–'}</td><td style="text-align:center;">${s.atencion || '–'}</td></tr>`;
+    return `<tr><td>${inspEsc(s.sec)}${s.criticos ? ' ⛔' : ''}</td><td style="text-align:center; font-weight:700; color:${c};">${s.score}</td><td style="text-align:center;">${s.malos || '–'}</td><td style="text-align:center;">${s.atencion || '–'}</td></tr>`;
   }).join('');
   return `
     <div class="insp-resumen" style="border:1px solid var(--color-border); border-left:4px solid ${color}; border-radius:8px; padding:0.75rem 1rem; margin:0.75rem 0 1rem;">
@@ -298,47 +547,108 @@ function inspRenderResumen(datos) {
     </div>`;
 }
 
-// Observación + fotos asociadas a un ítem (cuando hay atención/malo).
+// Observación + fotos de un ítem (obligatorias con atención/malo, opcionales con «Bien» y en los datos)
 function inspEvidencia(datos, k) {
   const obs = datos[k + '_obs'];
   const fotos = datos[k + '_fotos'] || [];
   if (!obs && !fotos.length) return '';
   let html = '';
-  if (obs) html += `<div style="font-size:0.82rem; color:var(--color-text-muted); margin-top:3px;">${obs}</div>`;
+  if (obs) html += `<div style="font-size:0.82rem; color:var(--color-text-muted); margin-top:3px;">${inspEsc(obs)}</div>`;
   if (fotos.length) {
     html += `<div class="fotos-grid" style="margin-top:5px;">` +
-      fotos.map(u => `<div class="foto-item"><a href="${u}" target="_blank"><img src="${u}" /></a></div>`).join('') +
+      fotos.map(u => `<div class="foto-item"><a href="${inspEsc(u)}" target="_blank"><img src="${inspEsc(u)}" /></a></div>`).join('') +
       `</div>`;
   }
   return html;
 }
 
 // Render de solo lectura del checklist respondido (detalle interno e informe público). Muestra solo ítems con
-// respuesta o texto; los componentes críticos con atención/malo llevan su etiqueta.
+// respuesta o texto, las observaciones de cada sección y, en los críticos con atención/malo, su etiqueta.
 function inspRenderDetalle(datos) {
+  datos = datos || {};
   const etiquetaCritico = (p, v) => (p >= 3 && (v === 'warn' || v === 'bad')) ? inspBadgeImportancia(3) : '';
-  return INSP_CHECKLIST.map((sec, si) => {
+  const obsSec = datos._obsSec || {};
+  return inspEstructura(datos).map(sec => {
     const filas = [];
-    sec.items.forEach((item, ii) => {
-      const k = si + '_' + ii;
-      if (item.mode === 'std') {
+    sec.items.forEach(it => {
+      const k = it.k;
+      const nombre = inspEsc(it.t) + (it.extra ? ' <span class="badge">extra</span>' : '');
+      if (it.mode === 'std') {
         const v = datos[k];
         if (!v || !INSP_ESTADOS[v]) return;
-        filas.push(`<tr><td>${item.t}${etiquetaCritico(inspPesoValido(datos[k + '_p']) || item.p, v)}${inspEvidencia(datos, k)}</td><td><span class="badge ${INSP_ESTADOS[v].badge}">${INSP_ESTADOS[v].label}</span></td></tr>`);
+        filas.push(`<tr><td>${nombre}${etiquetaCritico(inspPesoValido(datos[k + '_p']) || it.p, v)}${v !== 'na' ? inspEvidencia(datos, k) : ''}</td><td><span class="badge ${INSP_ESTADOS[v].badge}">${INSP_ESTADOS[v].label}</span></td></tr>`);
       } else {
         const txt = inspTexto(datos, k);
-        if (!txt) return;
-        filas.push(`<tr><td>${item.t}</td><td>${txt}</td></tr>`);
+        const fotos = inspEvidencia({ [k + '_fotos']: datos[k + '_fotos'] }, k);
+        if (!txt && !fotos) return;
+        filas.push(`<tr><td>${nombre}${fotos}</td><td>${inspEsc(txt) || '–'}</td></tr>`);
       }
     });
-    const customs = (datos._custom && datos._custom[si]) || [];
-    customs.forEach((nombre, ci) => {
-      const k = 'c_' + si + '_' + ci;
-      const v = datos[k];
-      if (!v || !INSP_ESTADOS[v]) return;
-      filas.push(`<tr><td>${nombre} <span class="badge">extra</span>${etiquetaCritico(inspPesoValido(datos[k + '_p']) || sec.pExtra || INSP_PESO_EXTRA, v)}${inspEvidencia(datos, k)}</td><td><span class="badge ${INSP_ESTADOS[v].badge}">${INSP_ESTADOS[v].label}</span></td></tr>`);
-    });
+    const obs = String(obsSec[sec.id] || '').trim();
+    if (obs) filas.push(`<tr><td colspan="2" style="background:#f6f7f9;"><strong>Observaciones de la sección:</strong> ${inspEsc(obs).replace(/\n/g, '<br>')}</td></tr>`);
     if (!filas.length) return '';
-    return `<h3>${sec.sec}</h3><table><tbody>${filas.join('')}</tbody></table>`;
+    return `<h3>${inspEsc(sec.sec)}</h3><table><tbody>${filas.join('')}</tbody></table>`;
   }).join('');
+}
+
+// Plan con que se hizo una inspección (solo las de v60 en adelante)
+function inspPlanDe(datos) {
+  const p = datos && datos._plan;
+  return p && p.nombre ? p : null;
+}
+
+// Folleto comercial de los planes (para imprimir o enviar en PDF): planes con precio IVA incluido, puntos, duración
+// y qué revisa cada uno, sección por sección.
+function inspFolletoPlanesHtml(planes, secciones, taller) {
+  taller = taller || {};
+  const iva = Number(taller.iva_pct ?? 19);
+  const conIva = (n) => Math.round(Number(n || 0) * (1 + iva / 100));
+  const moneda = (n) => (typeof fmtMoneda === 'function' ? fmtMoneda(n) : '$' + inspMiles(n));
+  const listas = planes.map(p => inspChecklistDePlan(p.nivel, secciones));
+  const tarjetas = planes.map((p, i) => `
+    <div style="flex:1 1 0; min-width:0; border:${p.destacado ? '2px solid #e1341e' : '1px solid #d9dde3'}; border-radius:10px; padding:12px; position:relative;">
+      ${p.destacado ? `<div style="position:absolute; top:-10px; right:10px; background:#e1341e; color:#fff; font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px;">${inspEsc(p.lema || 'Recomendado')}</div>` : ''}
+      <div style="font-weight:800; font-size:15px;">${inspEsc(p.nombre)}</div>
+      ${!p.destacado && p.lema ? `<div style="font-size:11px; color:#6a727f;">${inspEsc(p.lema)}</div>` : ''}
+      <div style="font-size:22px; font-weight:800; margin:6px 0 0;">${moneda(conIva(p.precio))}</div>
+      <div style="font-size:10px; color:#6a727f;">IVA incluido</div>
+      <div style="font-size:12px; font-weight:700; margin:6px 0;">${listas[i].reduce((n, s) => n + s.items.length, 0)} puntos${p.horas ? ` · ${inspFmtHoras(p.horas)} aprox.` : ''}</div>
+      <div style="font-size:11px; line-height:1.4;">${inspEsc(p.descripcion)}</div>
+    </div>`).join('');
+  return `
+    <div class="print-brand">
+      <img src="${taller.logo || '../assets/img/logo.png'}" alt="" onerror="this.style.display='none'" />
+      <span class="print-brand-name">${inspEsc(taller.nombre || '')}</span>
+    </div>
+    <h2 style="margin:6px 0 2px;">Inspección precompra: compra con seguridad</h2>
+    <p style="margin:0 0 12px; font-size:12px; color:#6a727f;">Revisamos el auto que quieres comprar y te entregamos un informe con puntaje, fotos, fallas críticas
+      y una recomendación clara. Todos los planes incluyen escáner, prueba en ruta e informe digital.</p>
+    <div style="display:flex; gap:10px; align-items:stretch; margin-bottom:14px;">${tarjetas}</div>
+    ${inspTablaComparativaHtml(planes, secciones, { fuente: '11px' })}
+    <p style="font-size:11px; color:#6a727f; margin-top:10px;">${inspEsc([taller.direccion, taller.telefono, taller.email].filter(Boolean).join(' · '))}</p>`;
+}
+
+// Tabla comparativa de los planes: cada punto con ✓ en los planes que lo revisan y, al final, el total de puntos
+function inspTablaComparativaHtml(planes, secciones, opciones) {
+  opciones = opciones || {};
+  const incluido = (it, p) => (Number(it.n) || 1) <= p.nivel;
+  const filas = secciones.filter(s => (s.items || []).length).map(s => {
+    const cab = `<tr class="tc-sec"><td colspan="${planes.length + 1}" style="background:#f2f4f7; font-weight:700; padding:5px 6px;">${inspEsc(s.sec)}</td></tr>`;
+    const items = (s.items || []).map(it => `<tr><td style="padding:3px 6px;">${inspEsc(it.t)}</td>${planes.map(p => `<td style="text-align:center; padding:3px 6px; color:${incluido(it, p) ? '#1b6e3c' : '#b5bac2'}; font-weight:700;">${incluido(it, p) ? '✓' : '—'}</td>`).join('')}</tr>`).join('');
+    return cab + items;
+  }).join('');
+  const totales = `<tr style="font-weight:700; border-top:2px solid #d9dde3;"><td style="padding:5px 6px;">Total de puntos</td>${planes.map(p => `<td style="text-align:center; padding:5px 6px;">${inspContarPuntos(p.nivel, secciones)}</td>`).join('')}</tr>`;
+  return `
+    <table class="tabla-comparativa" style="width:100%; border-collapse:collapse; font-size:${opciones.fuente || '0.82rem'};">
+      <thead><tr><th style="text-align:left; padding:4px 6px;">Qué revisamos</th>${planes.map(p => `<th style="padding:4px 6px; text-align:center;">${inspEsc(p.nombre)}</th>`).join('')}</tr></thead>
+      <tbody>${filas}${totales}</tbody>
+    </table>`;
+}
+
+// Nombre corto de cada plan, sin las palabras que comparten todos ("Compra Segura Pro" → "Pro")
+function inspNombresCortos(planes) {
+  const palabras = planes.map(p => String(p.nombre || '').trim().split(/\s+/));
+  let comun = 0;
+  while (palabras.length > 1 && palabras.every(w => w.length > comun + 1 && w[comun] === palabras[0][comun])) comun++;
+  return palabras.map((w, i) => w.slice(comun).join(' ') || planes[i].nombre || `Plan ${i + 1}`);
 }

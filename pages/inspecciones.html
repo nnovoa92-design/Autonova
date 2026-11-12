@@ -16,46 +16,93 @@
       </header>
       <div class="content">
 
-        <!-- Paso 1: datos del comprador y vehículo -->
+        <!-- Paso 1: plan, comprador y vehículo -->
         <div class="card" id="datos-card" style="display:none;">
           <h2 style="margin-top:0;">Nueva inspección precompra</h2>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="i-nombre">Cliente (comprador) *</label>
-              <input type="text" id="i-nombre" placeholder="Nombre del comprador" />
+
+          <h3 class="paso-titulo">1 · Elige el plan</h3>
+          <div class="planes-grid" id="planes-elegir"></div>
+          <div class="comparar-fila">
+            <details class="comparar-planes" id="comparar-planes">
+              <summary>Comparar los planes punto por punto</summary>
+              <div id="comparar-body"></div>
+            </details>
+            <button type="button" class="btn-secondary btn-mini folleto-btn">📄 Folleto para el cliente</button>
+          </div>
+
+          <div class="reconocer-cliente" style="margin-top:1rem;">
+            <h3>👤 2 · Comprador</h3>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="i-rut">RUT</label>
+                <input type="text" id="i-rut" placeholder="12.345.678-9" autocomplete="off" maxlength="12" />
+                <p class="reconocer-estado" id="i-rut-estado">Escribe el RUT: si ya es cliente, sus datos se cargan solos.</p>
+              </div>
+              <div class="form-group">
+                <label for="i-cliente">o elígelo de tus clientes</label>
+                <select id="i-cliente"><option value="">—</option></select>
+              </div>
             </div>
-            <div class="form-group">
-              <label for="i-wa">WhatsApp</label>
-              <input type="text" id="i-wa" placeholder="+56 9 1234 5678" />
-            </div>
-            <div class="form-group">
-              <label for="i-email">Correo (le llega el informe al terminar)</label>
-              <input type="email" id="i-email" placeholder="comprador@correo.cl" />
-            </div>
-            <div class="form-group">
-              <label for="i-pat">Patente</label>
-              <input type="text" id="i-pat" placeholder="CRZC88" style="text-transform:uppercase;" />
+            <div class="form-row">
+              <div class="form-group">
+                <label for="i-nombre">Nombre *</label>
+                <input type="text" id="i-nombre" placeholder="Nombre del comprador" autocomplete="off" />
+              </div>
+              <div class="form-group">
+                <label for="i-wa">WhatsApp</label>
+                <input type="tel" id="i-wa" placeholder="+56 9 1234 5678" autocomplete="off" />
+              </div>
+              <div class="form-group">
+                <label for="i-email">Correo (le llega el informe al terminar)</label>
+                <input type="email" id="i-email" placeholder="comprador@correo.cl" autocomplete="off" />
+              </div>
             </div>
           </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="i-marca">Marca</label>
-              <input type="text" id="i-marca" placeholder="Toyota" />
+
+          <div class="reconocer-cliente">
+            <h3>🚗 3 · Vehículo a inspeccionar</h3>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="i-pat">Patente</label>
+                <input type="text" id="i-pat" placeholder="ABCD12" maxlength="7" autocomplete="off" style="text-transform:uppercase;" />
+                <p class="reconocer-estado" id="i-pat-estado">Escribe la patente: si ya está registrada o en el registro público, los datos se cargan solos.</p>
+              </div>
+              <div class="form-group">
+                <label for="i-marca">Marca</label>
+                <input type="text" id="i-marca" placeholder="Toyota" />
+              </div>
+              <div class="form-group">
+                <label for="i-modelo">Modelo</label>
+                <input type="text" id="i-modelo" placeholder="Corolla" />
+              </div>
+              <div class="form-group">
+                <label for="i-anio">Año</label>
+                <input type="number" id="i-anio" min="1950" max="2100" />
+              </div>
             </div>
-            <div class="form-group">
-              <label for="i-modelo">Modelo y año</label>
-              <input type="text" id="i-modelo" placeholder="Corolla 2018" />
-            </div>
-            <div class="form-group">
-              <label for="i-km">Kilometraje</label>
-              <input type="text" id="i-km" placeholder="120.000 km" />
-            </div>
-            <div class="form-group">
-              <label for="i-precio">Precio pedido ($)</label>
-              <input type="number" id="i-precio" min="0" />
+            <div class="form-row">
+              <div class="form-group">
+                <label for="i-km">Kilometraje</label>
+                <input type="number" id="i-km" min="0" placeholder="km" />
+              </div>
+              <div class="form-group">
+                <label for="i-motor">Cilindrada / motor</label>
+                <input type="text" id="i-motor" placeholder="ej. 1.6" />
+              </div>
+              <div class="form-group">
+                <label for="i-combustible">Combustible</label>
+                <select id="i-combustible">
+                  <option value="">–</option><option>Gasolina</option><option>Diésel</option><option>Híbrido</option><option>Eléctrico</option><option>Gas</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="i-precio">Precio pedido ($)</label>
+                <input type="number" id="i-precio" min="0" />
+              </div>
             </div>
           </div>
-          <button type="button" id="iniciar-btn">Iniciar checklist →</button>
+
+          <button type="button" id="iniciar-btn">Iniciar inspección →</button>
           <button type="button" id="cancelar-datos-btn" class="btn-secondary">Cancelar</button>
           <p class="error-message" id="datos-error"></p>
         </div>
@@ -66,13 +113,16 @@
             <h2 style="margin:0;" id="checklist-title">Checklist</h2>
             <span class="badge badge-blue" id="progreso"></span>
           </div>
+          <div class="plan-en-curso" id="plan-en-curso"></div>
+          <div class="secciones-nav" id="secciones-nav"></div>
           <div id="checklist-body"></div>
           <div class="form-group" style="margin-top:1rem;">
-            <label for="i-obs">Observaciones generales</label>
-            <textarea id="i-obs" rows="3" placeholder="Detalles adicionales, ruidos, historial declarado..."></textarea>
+            <label for="i-obs">📝 Observaciones generales</label>
+            <textarea id="i-obs" rows="3" placeholder="Conclusiones, historial declarado por el vendedor, recomendaciones para negociar..."></textarea>
           </div>
           <button type="button" id="finalizar-btn">Finalizar inspección</button>
-          <button type="button" id="cancelar-cl-btn" class="btn-secondary">Cancelar</button>
+          <button type="button" id="pausar-btn" class="btn-secondary">Salir y continuar después</button>
+          <button type="button" id="cancelar-cl-btn" class="btn-secondary">Descartar</button>
           <p class="error-message" id="cl-error"></p>
         </div>
 
@@ -94,9 +144,13 @@
 
         <!-- Listado -->
         <div class="card" id="listado-card">
+          <div id="borrador-aviso"></div>
           <div class="toolbar">
             <h2 style="margin:0;">Listado</h2>
-            <input type="search" id="buscar" placeholder="Buscar por comprador o patente..." style="max-width:300px;" />
+            <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+              <button type="button" class="btn-secondary folleto-btn">📄 Planes y precios</button>
+              <input type="search" id="buscar" placeholder="Buscar por comprador o patente..." style="max-width:300px;" />
+            </div>
           </div>
           <table>
             <thead>
@@ -125,188 +179,587 @@
   <script src="../assets/js/checklist.js"></script>
   <script>
     let inspeccionesCache = [];
-    let datosActuales = {};   // respuestas del checklist en curso
+    let clientesCache = [];
+    let vehiculosCache = [];
+    let trabajosPlanes = [];  // servicios del catálogo vinculados a los planes
+    let datosActuales = {};   // respuestas del checklist en curso (incluye _plan y _secciones)
     let inspFolder = null;    // carpeta de fotos de la inspección en curso
-    let cabecera = null;      // datos comprador/vehículo en curso
+    let cabecera = null;      // comprador, vehículo y plan de la inspección en curso
     let inspActual = null;    // inspección abierta en detalle
     let config = null;
+    let planElegido = null;   // id del plan marcado en el paso 1
+    let clienteElegido = null, vehiculoElegido = null;   // fichas reconocidas (ids)
+    let datosPatente = null, consultaPatenteSeq = 0, rutTimer = null, patenteTimer = null;
+    const notasAbiertas = new Set();   // ítems «Bien» con la nota/foto opcional desplegada
+    const subiendo = new Set();        // ítems con fotos subiéndose
+    const CLAVE_BORRADOR = 'autonova-inspeccion-en-curso';
 
     function mostrar(cardId) {
       ['datos-card','checklist-card','detalle-card','listado-card'].forEach(id => {
         document.getElementById(id).style.display = id === cardId ? 'block' : 'none';
       });
-      if (cardId === 'listado-card') renderListado();
+      if (cardId === 'listado-card') { renderListado(); renderAvisoBorrador(); }
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
-    // ---------- Paso 1: datos ----------
-    document.getElementById('nueva-btn').addEventListener('click', () => {
-      ['i-nombre','i-wa','i-email','i-pat','i-marca','i-modelo','i-km','i-precio'].forEach(id => {
+    function setEstado(id, texto, clase, html) {
+      const el = document.getElementById(id);
+      el.className = 'reconocer-estado' + (clase ? ` ${clase}` : '');
+      if (html) el.innerHTML = texto; else el.textContent = texto;
+    }
+
+    // ---------- Planes ----------
+    function planesVigentes() {
+      return inspPlanesVigentes(trabajosPlanes, config && config.valor_hora);
+    }
+    const nombreSeccion = (sec) => String(sec || '').replace(/^[^\p{L}\p{N}]+/u, '');
+    const conIva = (n) => Math.round(Number(n || 0) * (1 + Number(config.iva_pct ?? 19) / 100));
+
+    // Lo que agrega un plan sobre el anterior, por sección: [{ sec, n }]
+    function novedadesPlan(nivelAnterior, nivel, secciones) {
+      return secciones.map(s => ({ sec: s.sec, n: (s.items || []).filter(it => (Number(it.n) || 1) > nivelAnterior && (Number(it.n) || 1) <= nivel).length }))
+        .filter(x => x.n);
+    }
+
+    function renderPlanesElegir() {
+      const planes = planesVigentes();
+      const secciones = inspSeccionesVigentes();
+      const cortos = inspNombresCortos(planes);
+      const chip = (texto) => `<span class="plan-chip">${texto}</span>`;
+      document.getElementById('planes-elegir').innerHTML = planes.map((p, i) => {
+        const puntos = inspContarPuntos(p.nivel, secciones);
+        const incluye = i === 0
+          ? `<span class="plan-incluye-tit">Revisa:</span>` + inspChecklistDePlan(p.nivel, secciones).map(s => chip(`${htmlSeguro(nombreSeccion(s.sec))} <b>${s.items.length}</b>`)).join('')
+          : `<span class="plan-incluye-tit">Todo lo del ${htmlSeguro(cortos[i - 1])}, más:</span>` + novedadesPlan(planes[i - 1].nivel, p.nivel, secciones).map(x => chip(`<b>+${x.n}</b> ${htmlSeguro(nombreSeccion(x.sec))}`)).join('');
+        return `
+          <button type="button" class="plan-card${planElegido === p.id ? ' elegido' : ''}${p.destacado ? ' destacado' : ''}" data-plan="${p.id}">
+            ${p.destacado ? `<span class="plan-cinta">★ ${htmlSeguro(p.lema || 'Recomendado')}</span>` : ''}
+            <span class="plan-nombre">${htmlSeguro(p.nombre)}</span>
+            ${!p.destacado && p.lema ? `<span class="plan-lema">${htmlSeguro(p.lema)}</span>` : ''}
+            <span class="plan-precio">${fmtMoneda(p.precio)} <small>+ IVA</small></span>
+            <span class="plan-total">${fmtMoneda(conIva(p.precio))} IVA incluido</span>
+            <span class="plan-puntos">${puntos} puntos${p.horas ? ` · ${inspFmtHoras(p.horas)}` : ''}</span>
+            <span class="plan-incluye">${incluye}</span>
+            ${p.vinculo !== 'ok' ? `<span class="plan-aviso">⚠ ${p.vinculo === 'perdido' ? 'El servicio vinculado ya no está en el catálogo' : 'Sin vincular al catálogo'}: revisa Configuración → Planes de inspección.</span>`
+              : (p.trabajo_activo === false ? '<span class="plan-aviso">⚠ Desactivado en el catálogo</span>' : '')}
+            <span class="plan-elegir">${planElegido === p.id ? '✓ Plan elegido' : 'Elegir este plan'}</span>
+          </button>`;
+      }).join('');
+      const comparar = document.getElementById('comparar-planes');
+      if (comparar.open) document.getElementById('comparar-body').innerHTML = inspTablaComparativaHtml(planes, secciones);
+    }
+
+    document.getElementById('planes-elegir').addEventListener('click', (e) => {
+      const card = e.target.closest('.plan-card');
+      if (!card) return;
+      planElegido = card.dataset.plan;
+      renderPlanesElegir();
+    });
+    document.getElementById('comparar-planes').addEventListener('toggle', (e) => {
+      if (e.target.open) document.getElementById('comparar-body').innerHTML = inspTablaComparativaHtml(planesVigentes(), inspSeccionesVigentes());
+    });
+    document.querySelectorAll('.folleto-btn').forEach(b => b.addEventListener('click', () => {
+      abrirVentanaImpresion(inspFolletoPlanesHtml(planesVigentes(), inspSeccionesVigentes(), config), 'Planes de inspección precompra');
+    }));
+
+    // ---------- Paso 1: comprador (por RUT o de la lista) ----------
+    function poblarClientes() {
+      const sel = document.getElementById('i-cliente');
+      sel.innerHTML = '<option value="">—</option>' + clientesCache.slice()
+        .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
+        .map(c => `<option value="${c.id}">${htmlSeguro(c.nombre)}${c.rut ? ' · ' + htmlSeguro(formatearRut(c.rut)) : ''}</option>`).join('');
+      sel.value = clienteElegido || '';
+    }
+
+    function seleccionarCliente(id) {
+      const c = clientesCache.find(x => x.id === id);
+      clienteElegido = c ? c.id : null;
+      document.getElementById('i-cliente').value = clienteElegido || '';
+      const nombre = document.getElementById('i-nombre');
+      if (!c) { nombre.readOnly = false; return; }
+      document.getElementById('i-rut').value = c.rut ? formatearRut(c.rut) : document.getElementById('i-rut').value;
+      nombre.value = c.nombre || '';
+      nombre.readOnly = true;   // el nombre se cambia en Clientes
+      document.getElementById('i-wa').value = c.telefono || '';
+      document.getElementById('i-email').value = c.email || '';
+      setEstado('i-rut-estado', `✅ Cliente reconocido: ${c.nombre}. Sus datos quedaron cargados${!c.telefono || !c.email ? ' (si completas lo que falta, se guarda en su ficha)' : ''}.`, 'ok');
+    }
+
+    function soltarCliente() {
+      if (!clienteElegido) return;
+      clienteElegido = null;
+      document.getElementById('i-cliente').value = '';
+      document.getElementById('i-nombre').readOnly = false;
+      ['i-nombre', 'i-wa', 'i-email'].forEach(id => { document.getElementById(id).value = ''; });
+    }
+
+    function buscarPorRut() {
+      const limpio = rutLimpio(document.getElementById('i-rut').value);
+      const actual = clientesCache.find(c => c.id === clienteElegido);
+      if (actual && actual.rut && rutLimpio(actual.rut) === limpio) return;   // sin cambios
+      soltarCliente();
+      if (!limpio) { setEstado('i-rut-estado', 'Sin RUT: completa los datos y se guarda como cliente nuevo.'); return; }
+      if (limpio.length < 7) { setEstado('i-rut-estado', 'Sigue escribiendo el RUT…'); return; }
+      const encontrado = clientesCache.find(c => c.rut && rutLimpio(c.rut) === limpio);
+      if (encontrado) { seleccionarCliente(encontrado.id); return; }
+      if (!rutValido(limpio)) {
+        setEstado('i-rut-estado', limpio.length >= 8 ? '⚠ El RUT no es válido: revisa el dígito verificador.' : 'Sigue escribiendo el RUT…', limpio.length >= 8 ? 'aviso' : '');
+        return;
+      }
+      setEstado('i-rut-estado', 'ℹ️ Cliente nuevo: completa sus datos. Queda guardado en Clientes al iniciar la inspección.', 'aviso');
+      document.getElementById('i-nombre').focus();
+    }
+
+    enlazarFormato('i-rut', formatearRut, () => {
+      clearTimeout(rutTimer);
+      rutTimer = setTimeout(buscarPorRut, 400);
+    });
+    document.getElementById('i-cliente').addEventListener('change', (e) => {
+      if (!e.target.value) { soltarCliente(); setEstado('i-rut-estado', 'Escribe el RUT: si ya es cliente, sus datos se cargan solos.'); return; }
+      seleccionarCliente(e.target.value);
+    });
+
+    // ---------- Paso 1: vehículo (ficha existente → registro público → a mano) ----------
+    function llenarVehiculo(v) {
+      document.getElementById('i-marca').value = v.marca || '';
+      document.getElementById('i-modelo').value = v.modelo || '';
+      document.getElementById('i-anio').value = v.anio || '';
+      if (v.kilometraje) document.getElementById('i-km').value = v.kilometraje;
+      if (v.motor || v.cilindrada) document.getElementById('i-motor').value = v.motor || v.cilindrada;
+      const comb = normalizarCombustible(v.combustible);
+      if (comb) {
+        const sel = document.getElementById('i-combustible');
+        if (![...sel.options].some(o => o.value === comb || o.text === comb)) sel.add(new Option(comb, comb));
+        sel.value = comb;
+      }
+    }
+
+    async function resolverPatente() {
+      const p = normalizarPatente(document.getElementById('i-pat').value);
+      const seq = ++consultaPatenteSeq;
+      datosPatente = null;
+      vehiculoElegido = null;
+      if (!p) { setEstado('i-pat-estado', 'Sin patente: la inspección se guarda sin ficha de vehículo.'); return; }
+      if (!patenteValida(p)) {
+        setEstado('i-pat-estado', p.length >= 6 ? '⚠ La patente no tiene un formato válido (ej. ABCD12 o AB1234).' : '', 'aviso');
+        return;
+      }
+      const existente = vehiculosCache.find(v => v.patente === p);
+      if (existente) {
+        vehiculoElegido = existente.id;
+        llenarVehiculo(existente);
+        const dueno = clientesCache.find(c => c.id === existente.cliente_id);
+        setEstado('i-pat-estado', `✅ Vehículo ya registrado${dueno ? ` (ficha de ${dueno.nombre})` : ''}: datos cargados. Si el kilometraje es mayor, se actualiza su ficha.`, 'ok');
+        return;
+      }
+      setEstado('i-pat-estado', 'Buscando los datos del vehículo…');
+      const r = await consultarPatente(p);
+      if (seq !== consultaPatenteSeq) return;   // mientras tanto escribieron otra patente
+      if (r.estado === 'ok') {
+        llenarVehiculo(r.datos);
+        datosPatente = { patente: p, ...r.datos };
+        setEstado('i-pat-estado', `✅ Datos del registro público: ${[r.datos.marca, r.datos.modelo, r.datos.anio].filter(Boolean).join(' ')}. Revísalos; el vehículo queda guardado al iniciar.`, 'ok');
+      } else if (r.estado === 'sin_clave') {
+        setEstado('i-pat-estado', 'Vehículo nuevo: completa marca, modelo y año. Queda guardado al iniciar.', 'aviso');
+      } else if (r.estado === 'no_encontrado') {
+        setEstado('i-pat-estado', 'No encontré esa patente en el registro público: completa los datos a mano.', 'aviso');
+      } else if (r.estado === 'limite') {
+        setEstado('i-pat-estado', 'Se alcanzó el límite de consultas de patentes de hoy: completa los datos a mano.', 'aviso');
+      } else if (r.estado === 'clave_invalida') {
+        setEstado('i-pat-estado', 'La clave de consulta de patentes no es válida (Configuración). Completa los datos a mano.', 'error');
+      } else {
+        setEstado('i-pat-estado', `No se pudo consultar la patente${r.mensaje ? ` (${r.mensaje})` : ''}. Completa los datos a mano.`, 'aviso');
+      }
+    }
+
+    enlazarFormato('i-pat', normalizarPatente, () => {
+      clearTimeout(patenteTimer);
+      // 6 caracteres = patente completa; con 5 (motos) se espera más para no gastar consultas mientras escribe
+      patenteTimer = setTimeout(resolverPatente, normalizarPatente(document.getElementById('i-pat').value).length >= 6 ? 350 : 1800);
+    });
+
+    function limpiarPaso1() {
+      ['i-rut','i-nombre','i-wa','i-email','i-pat','i-marca','i-modelo','i-anio','i-km','i-motor','i-combustible','i-precio'].forEach(id => {
         document.getElementById(id).value = '';
       });
+      document.getElementById('i-nombre').readOnly = false;
+      clienteElegido = null; vehiculoElegido = null; datosPatente = null; consultaPatenteSeq++;
+      poblarClientes();
+      setEstado('i-rut-estado', 'Escribe el RUT: si ya es cliente, sus datos se cargan solos.');
+      setEstado('i-pat-estado', 'Escribe la patente: si ya está registrada o en el registro público, los datos se cargan solos.');
       document.getElementById('datos-error').textContent = '';
+      const destacado = planesVigentes().find(p => p.destacado);
+      planElegido = destacado ? destacado.id : null;
+      renderPlanesElegir();
+    }
+
+    document.getElementById('nueva-btn').addEventListener('click', () => {
+      if (leerBorrador() && !confirm('Tienes una inspección sin terminar. ¿Descartarla y empezar una nueva?')) return;
+      borrarBorrador();
+      limpiarPaso1();
       mostrar('datos-card');
     });
     document.getElementById('cancelar-datos-btn').addEventListener('click', () => mostrar('listado-card'));
 
-    document.getElementById('iniciar-btn').addEventListener('click', () => {
-      const nombre = document.getElementById('i-nombre').value.trim();
-      if (!nombre) {
-        document.getElementById('datos-error').textContent = 'Ingresa el nombre del comprador.';
-        return;
+    // Crea o completa la ficha del comprador. Devuelve { error } o {}.
+    async function prepararCliente(nombre, rut, telefono, email) {
+      if (clienteElegido) {
+        const c = clientesCache.find(x => x.id === clienteElegido);
+        const cambios = {};
+        if (c && !c.telefono && telefono) cambios.telefono = telefono;
+        if (c && !c.email && email) cambios.email = email;
+        if (c && !c.rut && rut) cambios.rut = rut;
+        if (c && Object.keys(cambios).length) {
+          const { error } = await supabaseClient.from('clientes').update(cambios).eq('id', c.id);
+          if (!error) Object.assign(c, cambios);
+        }
+        return {};
       }
+      if (!rut && telefono) {
+        // Sin RUT: si ya existe alguien con ese teléfono, se evita duplicarlo
+        const tel = telefonoNacional(telefono);
+        const mismo = clientesCache.find(c => c.telefono && telefonoNacional(c.telefono) === tel);
+        if (mismo && confirm(`Ya existe «${mismo.nombre}» con ese teléfono.\n\n¿Es la misma persona?\n\nAceptar: usar ese cliente.\nCancelar: crear un cliente nuevo.`)) {
+          clienteElegido = mismo.id;
+          return prepararCliente(nombre, rut, telefono, email);
+        }
+      }
+      const { data, error } = await supabaseClient.from('clientes')
+        .insert({ nombre, rut: rut || null, telefono: telefono || null, email: email || null })
+        .select('id, nombre, rut, telefono, email')
+        .single();
+      if (error) {
+        return { error: /duplicate|unique|23505/i.test(`${error.code || ''} ${error.message || ''}`)
+          ? `Ya existe un cliente con el RUT ${rut} (puede estar desactivado: revísalo en Clientes).`
+          : `No se pudo guardar el cliente: ${error.message}` };
+      }
+      clientesCache.push(data);
+      clienteElegido = data.id;
+      poblarClientes();
+      return {};
+    }
+
+    // Crea la ficha del vehículo (a nombre del comprador) o completa la existente. Devuelve { error } o {}.
+    async function prepararVehiculo(patente, v) {
+      if (!patente) return {};
+      if (!patenteValida(patente)) return { error: 'La patente no tiene un formato válido (ej. ABCD12 o AB1234).' };
+      const existente = vehiculosCache.find(x => x.patente === patente);
+      if (existente) {
+        vehiculoElegido = existente.id;
+        const cambios = {};
+        if (v.kilometraje && v.kilometraje > (Number(existente.kilometraje) || 0)) cambios.kilometraje = v.kilometraje;
+        ['marca', 'modelo', 'anio', 'motor', 'combustible'].forEach(c => { if (!existente[c] && v[c]) cambios[c] = v[c]; });
+        if (Object.keys(cambios).length) {
+          let { error } = await supabaseClient.from('vehiculos').update(cambios).eq('id', existente.id);
+          if (faltaColumnaNueva(error)) { delete cambios.combustible; if (Object.keys(cambios).length) ({ error } = await supabaseClient.from('vehiculos').update(cambios).eq('id', existente.id)); }
+          if (!error) Object.assign(existente, cambios);
+        }
+        return {};
+      }
+      const ficha = (datosPatente && datosPatente.patente === patente) ? fichaDesdeRegistro(datosPatente) : { columnas: {}, notas: '' };
+      const columnas = { ...ficha.columnas };
+      if (v.kilometraje) columnas.kilometraje = v.kilometraje;
+      if (v.motor) columnas.motor = v.motor;
+      if (v.combustible) columnas.combustible = v.combustible;
+      const basico = { cliente_id: clienteElegido, patente, marca: v.marca || null, modelo: v.modelo || null, anio: v.anio || null };
+      let { data, error } = await supabaseClient.from('vehiculos')
+        .insert({ ...basico, ...columnas, notas: ficha.notas || null }).select('*').single();
+      if (faltaColumnaNueva(error)) {
+        const { propias, texto } = columnasConocidasHoy(columnas);
+        ({ data, error } = await supabaseClient.from('vehiculos')
+          .insert({ ...basico, ...propias, notas: [texto, ficha.notas].filter(Boolean).join(' · ') || null }).select('*').single());
+      }
+      if (error) {
+        return { error: /duplicate|unique|23505/i.test(`${error.code || ''} ${error.message || ''}`)
+          ? `La patente ${patente} ya existe en el sistema (puede estar desactivada: revísala en Vehículos).`
+          : `No se pudo guardar el vehículo: ${error.message}` };
+      }
+      vehiculosCache.push(data);
+      vehiculoElegido = data.id;
+      return {};
+    }
+
+    document.getElementById('iniciar-btn').addEventListener('click', async () => {
+      const errorEl = document.getElementById('datos-error');
+      errorEl.textContent = '';
+      const plan = planesVigentes().find(p => p.id === planElegido);
+      if (!plan) { errorEl.textContent = 'Elige el plan de inspección.'; return; }
+      const nombre = document.getElementById('i-nombre').value.trim();
+      const rutTxt = document.getElementById('i-rut').value.trim();
+      const rut = rutTxt ? formatearRut(rutTxt) : '';
+      const telefonoTxt = document.getElementById('i-wa').value.trim();
+      const telefono = telefonoTxt ? formatearTelefonoCL(telefonoTxt) : '';
+      const email = document.getElementById('i-email').value.trim().toLowerCase();
+      if (!nombre) { errorEl.textContent = 'Ingresa el nombre del comprador.'; return; }
+      if (rut && !rutValido(rut)) { errorEl.textContent = 'El RUT no es válido: revisa el dígito verificador (o déjalo vacío).'; return; }
+      if (telefono && !telefonoValidoCL(telefono)) { errorEl.textContent = 'El WhatsApp no es válido (9 dígitos, ej. +56 9 1234 5678).'; return; }
+      if (email && !correoValido(email)) { errorEl.textContent = 'El correo no es válido: corrígelo o déjalo vacío.'; return; }
+      const patente = normalizarPatente(document.getElementById('i-pat').value);
+      const veh = {
+        marca: document.getElementById('i-marca').value.trim(),
+        modelo: document.getElementById('i-modelo').value.trim(),
+        anio: Number(document.getElementById('i-anio').value) || null,
+        kilometraje: Math.round(Number(document.getElementById('i-km').value)) || null,
+        motor: document.getElementById('i-motor').value.trim(),
+        combustible: document.getElementById('i-combustible').value,
+      };
+
+      const btn = document.getElementById('iniciar-btn');
+      btn.disabled = true;
+      try {
+        let r = await prepararCliente(nombre, rut, telefono, email);
+        if (r.error) { errorEl.textContent = r.error; return; }
+        r = await prepararVehiculo(patente, veh);
+        if (r.error) { errorEl.textContent = r.error; return; }
+      } finally {
+        btn.disabled = false;
+      }
+
       cabecera = {
         nombre_comprador: nombre,
-        telefono: document.getElementById('i-wa').value.trim() || null,
-        email: document.getElementById('i-email').value.trim().toLowerCase() || null,
-        patente: document.getElementById('i-pat').value.trim().toUpperCase() || null,
-        marca: document.getElementById('i-marca').value.trim() || null,
-        modelo: document.getElementById('i-modelo').value.trim() || null,
-        km: document.getElementById('i-km').value.trim() || null,
+        telefono: telefono || null,
+        email: email || null,
+        patente: patente || null,
+        marca: veh.marca || null,
+        modelo: [veh.modelo, veh.anio].filter(Boolean).join(' ') || null,
+        km: veh.kilometraje ? `${veh.kilometraje.toLocaleString('es-CL')} km` : null,
         precio_pedido: Number(document.getElementById('i-precio').value) || null,
+        cliente_id: clienteElegido,
+        vehiculo_id: vehiculoElegido,
+        plan: plan.id,
+        valor: plan.precio,
       };
-      datosActuales = {};
+      // La lista de puntos queda guardada en la inspección: si después se editan los planes, este informe no cambia
+      datosActuales = { _plan: datosDePlan(plan), _secciones: inspChecklistDePlan(plan.nivel), _obsSec: {} };
+      const kmPanel = itemsDe(datosActuales).find(it => it.rol === 'km_panel');
+      if (kmPanel && veh.kilometraje) datosActuales[kmPanel.id + '_txt'] = veh.kilometraje.toLocaleString('es-CL');
       inspFolder = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : 'ins-' + Date.now();
       document.getElementById('i-obs').value = '';
+      notasAbiertas.clear();
+      abrirChecklist();
+      guardarBorrador();
+    });
+
+    const datosDePlan = (p) => ({ id: p.id, nombre: p.nombre, nivel: p.nivel, precio: p.precio, trabajo_id: p.trabajo_id });
+    const itemsDe = (d) => (d._secciones || []).flatMap(s => s.items);
+
+    // ---------- Inspección en curso guardada en este equipo (por si se cierra la app a mitad) ----------
+    let borradorTimer = null;
+    function guardarBorrador() {
+      clearTimeout(borradorTimer);
+      borradorTimer = setTimeout(() => {
+        if (!cabecera) return;
+        try {
+          localStorage.setItem(CLAVE_BORRADOR, JSON.stringify({ cabecera, datos: datosActuales, inspFolder, obs: document.getElementById('i-obs').value, ts: Date.now() }));
+        } catch (e) { /* sin almacenamiento: sigue funcionando, solo no se recupera */ }
+      }, 400);
+    }
+    function leerBorrador() {
+      try {
+        const b = JSON.parse(localStorage.getItem(CLAVE_BORRADOR) || 'null');
+        return b && b.cabecera && b.datos && Array.isArray(b.datos._secciones) ? b : null;
+      } catch (e) { return null; }
+    }
+    function borrarBorrador() {
+      clearTimeout(borradorTimer);
+      try { localStorage.removeItem(CLAVE_BORRADOR); } catch (e) { /* ok */ }
+    }
+    function renderAvisoBorrador() {
+      const b = leerBorrador();
+      const cont = document.getElementById('borrador-aviso');
+      if (!b) { cont.innerHTML = ''; return; }
+      const r = inspCalcular(b.datos);
+      cont.innerHTML = `
+        <div class="borrador-aviso">
+          <div>⏸ <strong>Inspección sin terminar:</strong> ${htmlSeguro(b.cabecera.nombre_comprador)}${b.cabecera.patente ? ' · ' + htmlSeguro(b.cabecera.patente) : ''}
+            · ${htmlSeguro((b.datos._plan || {}).nombre || '')} · ${r.ok + r.warn + r.bad + r.na} de ${r.total} evaluados · ${haceTiempo(new Date(b.ts).toISOString())}</div>
+          <div style="display:flex; gap:0.4rem;">
+            <button type="button" id="continuar-borrador-btn">Continuar</button>
+            <button type="button" id="descartar-borrador-btn" class="btn-secondary">Descartar</button>
+          </div>
+        </div>`;
+      document.getElementById('continuar-borrador-btn').addEventListener('click', () => {
+        cabecera = b.cabecera; datosActuales = b.datos; inspFolder = b.inspFolder;
+        document.getElementById('i-obs').value = b.obs || '';
+        notasAbiertas.clear();
+        abrirChecklist();
+      });
+      document.getElementById('descartar-borrador-btn').addEventListener('click', () => {
+        if (!confirm('¿Descartar la inspección sin terminar? Se pierde lo evaluado.')) return;
+        borrarBorrador();
+        renderAvisoBorrador();
+      });
+    }
+
+    // ---------- Paso 2: checklist ----------
+    function abrirChecklist() {
+      document.getElementById('cl-error').textContent = '';
       document.getElementById('checklist-title').textContent =
         `Checklist — ${cabecera.patente ?? 'sin patente'} ${cabecera.marca ?? ''} ${cabecera.modelo ?? ''}`;
       renderChecklist();
       mostrar('checklist-card');
-    });
+    }
 
-    // ---------- Paso 2: checklist ----------
-    // Render de un ítem evaluable. Si está en "Atención" o "Malo",
-    // exige observación + foto (cámara o galería).
-    // pEstandar: importancia por defecto del ítem (estándar del taller o de la app)
-    function clItemHtml(k, label, pEstandar = INSP_PESO_EXTRA) {
-      const val = datosActuales[k] || '';
-      const requiere = (val === 'warn' || val === 'bad');
+    function renderPlanEnCurso() {
+      const p = datosActuales._plan || {};
+      const otros = planesVigentes().filter(x => x.id !== p.id);
+      document.getElementById('plan-en-curso').innerHTML = `
+        <span>📋 <strong>${htmlSeguro(p.nombre || '')}</strong> · ${itemsDe(datosActuales).length} puntos</span>
+        ${otros.length ? `<label style="display:flex; align-items:center; gap:0.35rem; margin:0; font-size:0.8rem;">Cambiar a
+          <select id="cambiar-plan" style="width:auto; padding:0.2rem 0.4rem; font-size:0.8rem;"><option value="">—</option>${otros.map(x => `<option value="${x.id}">${htmlSeguro(x.nombre)} (${fmtMoneda(x.precio)} + IVA)</option>`).join('')}</select></label>` : ''}`;
+    }
+
+    // Cambia el plan en curso (p. ej. el cliente decide ampliar a uno mayor): las respuestas se mantienen
+    function cambiarPlan(id) {
+      const plan = planesVigentes().find(p => p.id === id);
+      if (!plan) return;
+      const nuevas = inspChecklistDePlan(plan.nivel);
+      const ids = new Set(nuevas.flatMap(s => s.items.map(it => it.id)));
+      const perdidos = itemsDe(datosActuales).filter(it => !it.extra && !ids.has(it.id) && (datosActuales[it.id] || datosActuales[it.id + '_txt']));
+      if (perdidos.length && !confirm(`El plan ${plan.nombre} no incluye ${perdidos.length} punto(s) que ya evaluaste; no aparecerán en el informe. ¿Cambiar igual?`)) {
+        renderPlanEnCurso();
+        return;
+      }
+      // Los ítems agregados a mano se mantienen en su sección
+      (datosActuales._secciones || []).forEach(s => {
+        const extras = s.items.filter(it => it.extra);
+        if (!extras.length) return;
+        let destino = nuevas.find(x => x.id === s.id);
+        if (!destino) { destino = { id: s.id, sec: s.sec, pExtra: s.pExtra, items: [] }; nuevas.push(destino); }
+        destino.items.push(...extras);
+      });
+      datosActuales._secciones = nuevas;
+      datosActuales._plan = datosDePlan(plan);
+      cabecera.plan = plan.id;
+      cabecera.valor = plan.precio;
+      renderChecklist();
+      guardarBorrador();
+    }
+
+    const botonesEstado = (k) => Object.entries(INSP_ESTADOS).map(([v, e]) =>
+      `<button type="button" data-v="${v}" class="${datosActuales[k] === v ? 'sel-' + v : ''}">${e.label}</button>`).join('');
+
+    function fotosHtml(k) {
       const fotos = datosActuales[k + '_fotos'] || [];
-      const botones = Object.entries(INSP_ESTADOS).map(([v, e]) =>
-        `<button type="button" data-v="${v}" class="${val === v ? 'sel-' + v : ''}">${e.label}</button>`).join('');
-      return `
-        <div class="cl-item" style="flex-direction:column; align-items:stretch;">
-          <div style="display:flex; align-items:center; justify-content:space-between; gap:0.75rem; flex-wrap:wrap;">
-            <div class="cl-label">${label}${inspBadgeImportancia(inspPesoValido(datosActuales[k + '_p']) || pEstandar)}</div>
-            <div class="cl-botones" data-k="${k}">${botones}</div>
-          </div>
-          ${requiere ? `
-          <div style="margin-top:0.5rem; padding:0.6rem; background:#fff7f6; border:1px solid #f3c9c4; border-radius:8px;">
+      return `${subiendo.has(k) ? '<div class="cl-subiendo">Subiendo foto…</div>' : ''}
+        ${fotos.length ? `<div class="fotos-grid">${fotos.map((u, fi) => `<div class="foto-item"><img src="${htmlSeguro(u)}" /><button type="button" class="cl-foto-del" data-k="${k}" data-fi="${fi}">✕</button></div>`).join('')}</div>` : ''}`;
+    }
+    const botonFoto = (k, texto) => `<label class="btn btn-secondary cl-foto-btn">${texto}<input type="file" class="cl-foto" data-k="${k}" accept="image/*" multiple style="display:none;" /></label>`;
+
+    // Un punto del checklist. Con «Atención» o «Malo» exige observación + foto; con «Bien» se pueden agregar (opcional).
+    function itemHtml(it, sec) {
+      const k = it.id;
+      if (it.mode !== 'std') {
+        const ph = it.mode === 'dtc' ? 'P0301, P0420… o «sin códigos»' : (it.mode === 'km' ? 'Km' : 'Anota el dato');
+        return `
+          <div class="cl-item cl-dato" data-k="${k}">
+            <div class="cl-fila">
+              <div class="cl-label">${htmlSeguro(it.t)}${it.extra ? ' <span class="badge">extra</span>' : ''}</div>
+              <div class="cl-dato-ctrl">
+                <input type="text" class="cl-txt" data-k="${k}" value="${htmlSeguro(datosActuales[k + '_txt'] ?? '')}" placeholder="${ph}"${it.mode === 'km' ? ' inputmode="numeric"' : ''} />
+                ${botonFoto(k, '📷')}
+              </div>
+            </div>
+            ${fotosHtml(k)}
+          </div>`;
+      }
+      const v = datosActuales[k] || '';
+      const pEstandar = inspPesoValido(it.p) || sec.pExtra || INSP_PESO_EXTRA;
+      const pCaso = inspPesoValido(datosActuales[k + '_p']) || pEstandar;
+      const fotos = datosActuales[k + '_fotos'] || [];
+      const obs = datosActuales[k + '_obs'] || '';
+      let evidencia = '';
+      if (v === 'warn' || v === 'bad') {
+        evidencia = `
+          <div class="cl-evidencia obligatoria">
             <div style="display:flex; gap:0.4rem; align-items:center; flex-wrap:wrap; margin-bottom:0.5rem;">
               <span style="font-size:0.78rem; color:var(--color-text-muted);" title="Según la causa encontrada: p. ej. el motor falla pero es una manguera de vacío (menor), o la radio falla por la computadora (crítico)">Importancia en este caso:</span>
-              <div class="cl-imp" data-k="${k}" data-estandar="${pEstandar}">${[3, 2, 1].map(p => `<button type="button" data-p="${p}" class="${(inspPesoValido(datosActuales[k + '_p']) || pEstandar) === p ? 'sel-imp-' + p : ''}">${INSP_IMPORTANCIA[p].label}${p === pEstandar ? ' · estándar' : ''}</button>`).join('')}</div>
+              <div class="cl-imp" data-k="${k}" data-estandar="${pEstandar}">${[3, 2, 1].map(p => `<button type="button" data-p="${p}" class="${pCaso === p ? 'sel-imp-' + p : ''}">${INSP_IMPORTANCIA[p].label}${p === pEstandar ? ' · estándar' : ''}</button>`).join('')}</div>
             </div>
             <label style="font-size:0.78rem; color:var(--color-danger); margin:0 0 0.25rem;">Observación obligatoria *</label>
-            <input type="text" class="cl-obs" data-k="${k}" value="${(datosActuales[k+'_obs']||'').replace(/"/g,'&quot;')}" placeholder="Describe el problema encontrado..." />
+            <input type="text" class="cl-obs" data-k="${k}" value="${htmlSeguro(obs)}" placeholder="Describe el problema encontrado..." />
             <div style="margin-top:0.5rem; display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap;">
-              <label class="btn btn-secondary" style="cursor:pointer; padding:0.35rem 0.8rem; font-size:0.8rem;">
-                📷 Tomar foto / Galería *
-                <input type="file" class="cl-foto" data-k="${k}" accept="image/*" multiple style="display:none;" />
-              </label>
+              ${botonFoto(k, '📷 Tomar foto / Galería *')}
               <span style="font-size:0.78rem; color:${fotos.length ? '#1b6e3c' : 'var(--color-danger)'};">${fotos.length ? fotos.length + ' foto(s) adjunta(s)' : 'Sin fotos'}</span>
             </div>
-            ${fotos.length ? `<div class="fotos-grid">${fotos.map((u, fi) => `<div class="foto-item"><img src="${u}" /><button type="button" class="cl-foto-del" data-k="${k}" data-fi="${fi}">✕</button></div>`).join('')}</div>` : ''}
-          </div>` : ''}
+            ${fotosHtml(k)}
+          </div>`;
+      } else if (v === 'ok' && (notasAbiertas.has(k) || obs || fotos.length || subiendo.has(k))) {
+        evidencia = `
+          <div class="cl-evidencia opcional">
+            <input type="text" class="cl-obs" data-k="${k}" value="${htmlSeguro(obs)}" placeholder="Nota (opcional): p. ej. neumático nuevo, mantención reciente…" />
+            <div style="margin-top:0.4rem;">${botonFoto(k, '📷 Foto (opcional)')}</div>
+            ${fotosHtml(k)}
+          </div>`;
+      } else if (v === 'ok') {
+        evidencia = `<button type="button" class="cl-nota-btn" data-k="${k}">＋ Nota o foto (opcional)</button>`;
+      }
+      return `
+        <div class="cl-item" data-k="${k}">
+          <div class="cl-fila">
+            <div class="cl-label">${htmlSeguro(it.t)}${it.extra ? ` <span class="badge">extra</span> <button type="button" class="cl-quitar-extra" data-k="${k}" title="Quitar este ítem">✕</button>` : ''}${inspBadgeImportancia(pCaso)}</div>
+            <div class="cl-botones" data-k="${k}">${botonesEstado(k)}</div>
+          </div>
+          ${evidencia}
         </div>`;
     }
 
-    async function subirFotosInsp(k, files) {
-      const estado = document.getElementById('cl-error');
-      for (const file of files) {
-        const nombre = `${k}_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9_.-]/g, '_')}`;
-        const path = `inspeccion/${inspFolder}/${nombre}`;
-        const { error } = await supabaseClient.storage.from('fotos-ot').upload(path, file);
-        if (error) { estado.textContent = `Error al subir foto: ${error.message}`; continue; }
-        const url = supabaseClient.storage.from('fotos-ot').getPublicUrl(path).data.publicUrl;
-        (datosActuales[k + '_fotos'] ||= []).push(url);
-      }
-      renderChecklist();
+    // Avance de una sección: puntos evaluados (o datos anotados) / total
+    function avanceSeccion(sec) {
+      const hechos = sec.items.filter(it => it.mode === 'std' ? !!datosActuales[it.id] : !!String(datosActuales[it.id + '_txt'] || '').trim()).length;
+      return { hechos, total: sec.items.length };
+    }
+
+    function seccionHtml(sec, si) {
+      const a = avanceSeccion(sec);
+      const pExtra = inspPesoValido(sec.pExtra) || INSP_PESO_EXTRA;
+      return `
+        <section class="cl-seccion" id="sec-${sec.id}" data-si="${si}">
+          <h3 class="cl-sec-titulo">${htmlSeguro(sec.sec)} <span class="cl-sec-avance${a.hechos === a.total ? ' completa' : ''}" data-avance="${si}">${a.hechos}/${a.total}</span></h3>
+          ${sec.items.map(it => itemHtml(it, sec)).join('')}
+          <button type="button" class="btn-secondary agregar-custom-btn" data-si="${si}">+ Agregar ítem <span style="opacity:0.75;">(entra como ${INSP_IMPORTANCIA[pExtra].label})</span></button>
+          <div class="form-group cl-obs-sec-box">
+            <label>📝 Observaciones de ${htmlSeguro(nombreSeccion(sec.sec))}</label>
+            <textarea class="cl-obs-sec" data-sec="${htmlSeguro(sec.id)}" rows="2" placeholder="Detalles específicos de esta sección (opcional)">${htmlSeguro((datosActuales._obsSec || {})[sec.id] || '')}</textarea>
+          </div>
+        </section>`;
+    }
+
+    function renderNav() {
+      const nav = document.getElementById('secciones-nav');
+      nav.innerHTML = datosActuales._secciones.map((sec, si) => {
+        const a = avanceSeccion(sec);
+        const icono = (String(sec.sec).match(/^[^\p{L}\p{N}]+/u) || [''])[0].trim();
+        return `<button type="button" class="nav-sec${a.hechos === a.total ? ' completa' : ''}" data-sec="${sec.id}" title="${htmlSeguro(nombreSeccion(sec.sec))}">${icono || '•'} ${a.hechos}/${a.total}</button>`;
+      }).join('');
+      const topbar = document.querySelector('.topbar');
+      nav.style.top = (topbar ? topbar.offsetHeight : 0) + 'px';
     }
 
     function renderChecklist() {
-      const body = document.getElementById('checklist-body');
-      body.innerHTML = INSP_CHECKLIST.map((sec, si) => {
-        const items = sec.items.map((item, ii) => {
-          const k = `${si}_${ii}`;
-          if (item.mode !== 'std') {
-            return `
-            <div class="cl-item">
-              <div class="cl-label">${item.t}</div>
-              <input type="text" class="cl-txt" data-k="${k}" value="${datosActuales[k + '_txt'] ?? ''}"
-                placeholder="${item.mode === 'dtc' ? 'P0301, P0420... o ninguno' : 'Km'}" style="max-width:240px;" />
-            </div>`;
-          }
-          return clItemHtml(k, item.t, inspPesoEstandar(item.t, item.p));   // crítico / importante pesan más en el puntaje
-        }).join('');
-
-        const customs = (datosActuales._custom && datosActuales._custom[si]) || [];
-        const customsHtml = customs.map((nombre, ci) => {
-          const k = `c_${si}_${ci}`;
-          return clItemHtml(k, `${nombre} <span class="badge">extra</span>`, inspPesoExtraSeccion(si));   // toma el criterio de su sección
-        }).join('');
-
-        return `
-        <h3>${sec.sec}</h3>
-        ${items}
-        ${customsHtml}
-        <button type="button" class="btn-secondary agregar-custom-btn" data-si="${si}"
-          style="margin:0.5rem 0 1rem; padding:0.3rem 0.7rem; font-size:0.78rem;">+ Agregar ítem <span style="opacity:0.75;">(entra como ${INSP_IMPORTANCIA[inspPesoExtraSeccion(si)].label})</span></button>`;
-      }).join('');
-
-      body.querySelectorAll('.cl-botones button').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const k = btn.parentElement.dataset.k;
-          const v = btn.dataset.v;
-          datosActuales[k] = datosActuales[k] === v ? '' : v;
-          // Sin hallazgo (bien / n/a / sin marcar) vuelve a su importancia estándar
-          if (datosActuales[k] !== 'warn' && datosActuales[k] !== 'bad') delete datosActuales[k + '_p'];
-          renderChecklist(); // re-render: muestra/oculta el bloque de evidencia
-        });
-      });
-
-      // Importancia de este hallazgo según la causa (el estándar queda sin ajuste)
-      body.querySelectorAll('.cl-imp button').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const caja = btn.parentElement, k = caja.dataset.k, p = Number(btn.dataset.p);
-          if (p === Number(caja.dataset.estandar)) delete datosActuales[k + '_p']; else datosActuales[k + '_p'] = p;
-          renderChecklist();
-        });
-      });
-
-      body.querySelectorAll('.cl-txt').forEach(inp => {
-        inp.addEventListener('input', () => { datosActuales[inp.dataset.k + '_txt'] = inp.value; actualizarProgreso(); });   // km y códigos de falla también influyen
-      });
-
-      body.querySelectorAll('.cl-obs').forEach(inp => {
-        inp.addEventListener('input', () => { datosActuales[inp.dataset.k + '_obs'] = inp.value; });
-      });
-
-      body.querySelectorAll('.cl-foto').forEach(inp => {
-        inp.addEventListener('change', () => {
-          if (inp.files && inp.files.length) subirFotosInsp(inp.dataset.k, inp.files);
-        });
-      });
-
-      body.querySelectorAll('.cl-foto-del').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const arr = datosActuales[btn.dataset.k + '_fotos'] || [];
-          arr.splice(Number(btn.dataset.fi), 1);
-          renderChecklist();
-        });
-      });
-
-      body.querySelectorAll('.agregar-custom-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const nombre = prompt('Nombre del ítem extra:');
-          if (!nombre || !nombre.trim()) return;
-          datosActuales._custom = datosActuales._custom || {};
-          datosActuales._custom[btn.dataset.si] = datosActuales._custom[btn.dataset.si] || [];
-          datosActuales._custom[btn.dataset.si].push(nombre.trim());
-          renderChecklist();
-        });
-      });
-
+      renderPlanEnCurso();
+      document.getElementById('checklist-body').innerHTML = datosActuales._secciones.map(seccionHtml).join('');
+      renderNav();
       actualizarProgreso();
+    }
+
+    // Vuelve a dibujar solo un punto (más rápido en el celular y no mueve la pantalla)
+    function refrescarItem(k) {
+      const el = document.querySelector(`#checklist-body .cl-item[data-k="${CSS.escape(k)}"]`);
+      const si = datosActuales._secciones.findIndex(s => s.items.some(it => it.id === k));
+      if (!el || si < 0) { renderChecklist(); return; }
+      const sec = datosActuales._secciones[si];
+      el.outerHTML = itemHtml(sec.items.find(it => it.id === k), sec);
+      refrescarAvance(si);
+    }
+    function refrescarAvance(si) {
+      const sec = datosActuales._secciones[si];
+      const a = avanceSeccion(sec);
+      const span = document.querySelector(`[data-avance="${si}"]`);
+      if (span) { span.textContent = `${a.hechos}/${a.total}`; span.classList.toggle('completa', a.hechos === a.total); }
+      renderNav();
+      actualizarProgreso();
+      guardarBorrador();
     }
 
     function actualizarProgreso() {
@@ -317,8 +770,138 @@
         + (evaluados ? ` · Puntaje provisorio: ${r.score} · ${(INSP_NIVELES[r.evaluacion.nivel] || {}).label || ''}` : '');
     }
 
+    // Fotos más livianas (máx. 1600 px): suben más rápido con datos móviles
+    async function comprimirFoto(file) {
+      if (!/^image\//i.test(file.type || '') || /gif|svg/i.test(file.type)) return file;
+      try {
+        const url = URL.createObjectURL(file);
+        const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = url; });
+        URL.revokeObjectURL(url);
+        const escala = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+        if (escala === 1 && file.size < 700000) return file;
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.naturalWidth * escala);
+        c.height = Math.round(img.naturalHeight * escala);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.82));
+        if (!blob || blob.size >= file.size) return file;
+        return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+      } catch (e) {
+        return file;
+      }
+    }
+
+    async function subirFotosInsp(k, files) {
+      const estado = document.getElementById('cl-error');
+      subiendo.add(k);
+      refrescarItem(k);
+      for (const original of files) {
+        const file = await comprimirFoto(original);
+        const nombre = `${k}_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9_.-]/g, '_')}`;
+        const path = `inspeccion/${inspFolder}/${nombre}`;
+        const { error } = await supabaseClient.storage.from('fotos-ot').upload(path, file);
+        if (error) { estado.textContent = `Error al subir foto: ${error.message}`; continue; }
+        const url = supabaseClient.storage.from('fotos-ot').getPublicUrl(path).data.publicUrl;
+        (datosActuales[k + '_fotos'] ||= []).push(url);
+      }
+      subiendo.delete(k);
+      refrescarItem(k);
+    }
+
+    // Un solo manejador para todo el checklist (los puntos se redibujan por separado)
+    const cuerpo = document.getElementById('checklist-body');
+    cuerpo.addEventListener('click', (e) => {
+      const estadoBtn = e.target.closest('.cl-botones button');
+      if (estadoBtn) {
+        const k = estadoBtn.parentElement.dataset.k, v = estadoBtn.dataset.v;
+        datosActuales[k] = datosActuales[k] === v ? '' : v;
+        // Sin hallazgo (bien / n/a / sin marcar) vuelve a su importancia estándar
+        if (datosActuales[k] !== 'warn' && datosActuales[k] !== 'bad') delete datosActuales[k + '_p'];
+        refrescarItem(k);
+        return;
+      }
+      const impBtn = e.target.closest('.cl-imp button');
+      if (impBtn) {
+        // Importancia de este hallazgo según la causa (el estándar queda sin ajuste)
+        const caja = impBtn.parentElement, k = caja.dataset.k, p = Number(impBtn.dataset.p);
+        if (p === Number(caja.dataset.estandar)) delete datosActuales[k + '_p']; else datosActuales[k + '_p'] = p;
+        refrescarItem(k);
+        return;
+      }
+      const notaBtn = e.target.closest('.cl-nota-btn');
+      if (notaBtn) {
+        notasAbiertas.add(notaBtn.dataset.k);
+        refrescarItem(notaBtn.dataset.k);
+        const inp = document.querySelector(`.cl-obs[data-k="${CSS.escape(notaBtn.dataset.k)}"]`);
+        if (inp) inp.focus();
+        return;
+      }
+      const delBtn = e.target.closest('.cl-foto-del');
+      if (delBtn) {
+        const arr = datosActuales[delBtn.dataset.k + '_fotos'] || [];
+        arr.splice(Number(delBtn.dataset.fi), 1);
+        refrescarItem(delBtn.dataset.k);
+        return;
+      }
+      const quitar = e.target.closest('.cl-quitar-extra');
+      if (quitar) {
+        if (!confirm('¿Quitar este ítem agregado?')) return;
+        const k = quitar.dataset.k;
+        datosActuales._secciones.forEach(s => { s.items = s.items.filter(it => it.id !== k); });
+        Object.keys(datosActuales).forEach(c => { if (c === k || c.startsWith(k + '_')) delete datosActuales[c]; });
+        renderChecklist();
+        guardarBorrador();
+        return;
+      }
+      const agregar = e.target.closest('.agregar-custom-btn');
+      if (agregar) {
+        const nombre = prompt('Nombre del ítem extra:');
+        if (!nombre || !nombre.trim()) return;
+        const sec = datosActuales._secciones[Number(agregar.dataset.si)];
+        // Toma el criterio (importancia) de la sección donde se agrega
+        sec.items.push({ id: inspNuevoId('x'), t: nombre.trim(), mode: 'std', p: inspPesoValido(sec.pExtra) || INSP_PESO_EXTRA, extra: true });
+        renderChecklist();
+        guardarBorrador();
+      }
+    });
+    cuerpo.addEventListener('input', (e) => {
+      const t = e.target;
+      if (t.matches('.cl-txt')) {
+        datosActuales[t.dataset.k + '_txt'] = t.value;   // km y códigos de falla también influyen
+        refrescarAvance(datosActuales._secciones.findIndex(s => s.items.some(it => it.id === t.dataset.k)));
+      } else if (t.matches('.cl-obs')) {
+        datosActuales[t.dataset.k + '_obs'] = t.value;
+        guardarBorrador();
+      } else if (t.matches('.cl-obs-sec')) {
+        (datosActuales._obsSec ||= {})[t.dataset.sec] = t.value;
+        guardarBorrador();
+      }
+    });
+    cuerpo.addEventListener('change', (e) => {
+      const t = e.target;
+      if (t.matches('.cl-foto') && t.files && t.files.length) subirFotosInsp(t.dataset.k, [...t.files]);
+    });
+    document.getElementById('i-obs').addEventListener('input', guardarBorrador);
+    document.getElementById('secciones-nav').addEventListener('click', (e) => {
+      const b = e.target.closest('.nav-sec');
+      if (!b) return;
+      const sec = document.getElementById('sec-' + b.dataset.sec);
+      const nav = document.getElementById('secciones-nav');
+      if (sec) window.scrollTo({ top: sec.getBoundingClientRect().top + window.scrollY - nav.offsetHeight - parseInt(nav.style.top || '0', 10) - 8, behavior: 'smooth' });
+    });
+    document.getElementById('plan-en-curso').addEventListener('change', (e) => {
+      if (e.target.id === 'cambiar-plan' && e.target.value) cambiarPlan(e.target.value);
+    });
+
+    document.getElementById('pausar-btn').addEventListener('click', () => {
+      guardarBorrador();
+      setTimeout(() => mostrar('listado-card'), 450);   // espera a que quede guardada
+    });
     document.getElementById('cancelar-cl-btn').addEventListener('click', () => {
-      if (confirm('¿Descartar esta inspección?')) mostrar('listado-card');
+      if (!confirm('¿Descartar esta inspección? Se pierde lo evaluado.')) return;
+      borrarBorrador();
+      cabecera = null;
+      mostrar('listado-card');
     });
 
     document.getElementById('finalizar-btn').addEventListener('click', async () => {
@@ -332,53 +915,56 @@
 
       // Evidencia obligatoria (observación + foto) en ítems con atención o malo
       const faltantes = [];
-      const revisar = (k, etiqueta) => {
-        const v = datosActuales[k];
-        if (v === 'warn' || v === 'bad') {
-          const tieneObs = (datosActuales[k + '_obs'] || '').trim();
-          const tieneFoto = (datosActuales[k + '_fotos'] || []).length > 0;
-          if (!tieneObs || !tieneFoto) faltantes.push(etiqueta);
-        }
-      };
-      INSP_CHECKLIST.forEach((sec, si) => {
-        sec.items.forEach((item, ii) => { if (item.mode === 'std') revisar(`${si}_${ii}`, item.t); });
-        const customs = (datosActuales._custom && datosActuales._custom[si]) || [];
-        customs.forEach((nombre, ci) => revisar(`c_${si}_${ci}`, nombre));
+      itemsDe(datosActuales).forEach(it => {
+        const v = datosActuales[it.id];
+        if (it.mode !== 'std' || (v !== 'warn' && v !== 'bad')) return;
+        const tieneObs = (datosActuales[it.id + '_obs'] || '').trim();
+        const tieneFoto = (datosActuales[it.id + '_fotos'] || []).length > 0;
+        if (!tieneObs || !tieneFoto) faltantes.push(it.t);
       });
       if (faltantes.length) {
         errorEl.textContent = `Falta observación y/o foto en: ${faltantes.join(', ')}.`;
-        window.scrollTo({ top: 0, behavior: 'smooth' });
         return;
       }
+      if (subiendo.size) { errorEl.textContent = 'Espera a que terminen de subir las fotos.'; return; }
+      const pendientes = r.total - (r.ok + r.warn + r.bad + r.na);
+      if (pendientes > 0 && !confirm(`Quedan ${pendientes} punto(s) sin evaluar: no aparecerán en el informe.\n\n¿Finalizar igual?`)) return;
 
       const obs = document.getElementById('i-obs').value.trim() || null;
       datosActuales._obs = obs ?? undefined;
-
       if (cabecera.email && !correoValido(cabecera.email)) {
         errorEl.textContent = 'El correo del comprador no es válido: corrígelo en los datos o déjalo vacío.';
         return;
       }
       const fila = {
         ...cabecera,
-        // Se guarda la evaluación tal como se calculó hoy (si mañana cambian los pesos, el informe no cambia)
+        // Se guarda la evaluación tal como se calculó hoy (si mañana cambian los planes, el informe no cambia)
         datos: { ...inspFijarPesos(datosActuales), _eval: r.evaluacion },
         score: r.score,
         ok: r.ok, warn: r.warn, bad: r.bad, na: r.na, total: r.total,
         recomendacion: r.rec,
         observaciones: obs,
       };
+      const btn = document.getElementById('finalizar-btn');
+      btn.disabled = true;
       let { data, error } = await supabaseClient.from('inspecciones').insert(fila).select('*').single();
-      if (error && /email/.test(error.message || '')) {
-        // Aún no se ejecutó v58 (correo en inspecciones): se guarda sin el correo
-        delete fila.email;
+      let avisoSql = '';
+      if (error && faltaColumnaNueva(error)) {
+        // Aún no se ejecutó v60 (cliente, vehículo y plan) o v58 (correo): se guarda igual, sin esas columnas
+        ['cliente_id', 'vehiculo_id', 'plan', 'valor', 'email'].forEach(c => delete fila[c]);
         ({ data, error } = await supabaseClient.from('inspecciones').insert(fila).select('*').single());
+        avisoSql = 'Inspección guardada, pero falta ejecutar sql/actualizacion-v60-planes-de-inspeccion.sql para asociarla al cliente y al vehículo.';
       }
+      btn.disabled = false;
       if (error) {
-        errorEl.textContent = `Error al guardar: ${error.message}`;
+        errorEl.textContent = `Error al guardar (la inspección sigue guardada en este equipo, vuelve a intentar): ${error.message}`;
         return;
       }
+      borrarBorrador();
+      cabecera = null;
       await loadInspecciones();
       abrirDetalle(data.id);
+      if (avisoSql) mostrarToast(avisoSql, 'error', 9000);
       // Inspección terminada: aviso automático con el informe al correo del comprador (el WhatsApp sigue manual)
       if (data.email) correoAutomatico('inspeccion', { para: data.email, ...correoInspeccion(data) });
     });
@@ -386,11 +972,13 @@
     // Texto del correo con el resultado de la inspección y el link al informe completo
     function correoInspeccion(i) {
       const modelo = [i.marca, i.modelo].filter(Boolean).join(' ');
+      const plan = inspPlanDe(i.datos);
       return armarCorreo('inspeccion', {
         nombre: i.nombre_comprador,
         numero: fmtNumero('INS', i.numero),
         vehiculo: `el vehículo${i.patente ? ' ' + i.patente : ''}${modelo ? ` (${modelo})` : ''}`,
         patente: i.patente || '',
+        plan: plan ? plan.nombre : '',
         puntaje: i.score,
         resumen: `${i.ok} bien, ${i.warn} con atención, ${i.bad} malos`,
         recomendacion: i.recomendacion || '',
@@ -417,6 +1005,7 @@
       if (!inspActual) return;
       const i = inspActual;
       const nivel = inspNivelDe(i);
+      const plan = inspPlanDe(i.datos);
 
       document.getElementById('detalle-title').textContent =
         `${fmtNumero('INS', i.numero)} — ${i.patente ?? 'sin patente'}`;
@@ -428,9 +1017,10 @@
           </div>
           <div style="flex:1; min-width:260px;">
             <p style="margin:0 0 0.4rem;">
-              <strong>${i.nombre_comprador}</strong>${i.telefono ? ' · ' + i.telefono : ''}<br>
-              ${[i.marca, i.modelo].filter(Boolean).join(' ')}${i.km ? ' · ' + i.km : ''}
+              <strong>${htmlSeguro(i.nombre_comprador)}</strong>${i.telefono ? ' · ' + htmlSeguro(i.telefono) : ''}<br>
+              ${htmlSeguro([i.marca, i.modelo].filter(Boolean).join(' '))}${i.km ? ' · ' + htmlSeguro(i.km) : ''}
               ${i.precio_pedido ? ' · Precio pedido: ' + fmtMoneda(i.precio_pedido) : ''}<br>
+              ${plan ? `<span class="badge badge-blue">📋 ${htmlSeguro(plan.nombre)}</span>${i.valor != null || plan.precio != null ? ` <small style="color:var(--color-text-muted);">${fmtMoneda(i.valor ?? plan.precio)} + IVA</small>` : ''}<br>` : ''}
               <span style="color:var(--color-text-muted); font-size:0.85rem;">Inspeccionado el ${fmtFechaHora(i.fecha)}</span>
             </p>
             <p style="margin:0.4rem 0;">
@@ -439,12 +1029,12 @@
               <span class="badge badge-red">${i.bad} malo</span>
               <span class="badge badge-gray">${i.na} n/a</span>
             </p>
-            <p style="margin:0.4rem 0; font-weight:600;">${i.recomendacion ?? ''}</p>
+            <p style="margin:0.4rem 0; font-weight:600;">${htmlSeguro(i.recomendacion ?? '')}</p>
           </div>
         </div>
         ${inspRenderResumen(i.datos || {})}
         ${inspRenderDetalle(i.datos || {})}
-        ${i.observaciones ? `<h3>Observaciones</h3><p>${i.observaciones}</p>` : ''}
+        ${i.observaciones ? `<h3>Observaciones generales</h3><p>${htmlSeguroMulti(i.observaciones)}</p>` : ''}
       `;
       mostrar('detalle-card');
     }
@@ -455,13 +1045,14 @@
       if (!inspActual) return;
       const i = inspActual;
       if (!i.telefono) { alert('Esta inspección no tiene teléfono registrado.'); return; }
+      const plan = inspPlanDe(i.datos);
       const mensaje =
         `Hola ${i.nombre_comprador}, le saluda ${config.nombre}.\n` +
-        `Resultado de la inspección precompra ${fmtNumero('INS', i.numero)}` +
+        `Resultado de la inspección precompra ${fmtNumero('INS', i.numero)}${plan ? ` (${plan.nombre})` : ''}` +
         `${i.patente ? ' del vehículo ' + i.patente : ''} (${[i.marca, i.modelo].filter(Boolean).join(' ')}):\n` +
         `Puntaje: ${i.score}/100 — ${i.ok} bien, ${i.warn} con atención, ${i.bad} malos.\n` +
         `${i.recomendacion}\n` +
-        `Informe completo: ${window.location.origin}/inspeccion.html?id=${i.id}`;
+        `Informe completo, con fotos: ${window.location.origin}/inspeccion.html?id=${i.id}`;
       abrirEnlace(linkWhatsApp(i.telefono, mensaje));
     });
 
@@ -487,32 +1078,34 @@
     });
 
     function construirPrintInspeccion(i) {
+      const plan = inspPlanDe(i.datos);
       return `
         <div class="print-brand">
           <img src="../assets/img/logo.png" alt="" onerror="this.style.display='none'" />
-          <span class="print-brand-name">${config.nombre}</span>
+          <span class="print-brand-name">${htmlSeguro(config.nombre)}</span>
         </div>
         <div class="print-header">
           <div>
-            <div>${config.direccion ?? ''}</div>
-            <div>${config.telefono ?? ''}</div>
+            <div>${htmlSeguro(config.direccion ?? '')}</div>
+            <div>${htmlSeguro(config.telefono ?? '')}</div>
           </div>
           <div style="text-align:right;">
             <h2 style="margin:0;">INSPECCIÓN ${fmtNumero('INS', i.numero)}</h2>
             <div>Fecha: ${fmtFecha(i.fecha)}</div>
+            ${plan ? `<div>Plan: ${htmlSeguro(plan.nombre)}</div>` : ''}
           </div>
         </div>
         <p>
-          <strong>Comprador:</strong> ${i.nombre_comprador}<br>
-          <strong>Vehículo:</strong> ${[i.patente, i.marca, i.modelo].filter(Boolean).join(' · ')}${i.km ? ' · ' + i.km : ''}
+          <strong>Comprador:</strong> ${htmlSeguro(i.nombre_comprador)}<br>
+          <strong>Vehículo:</strong> ${htmlSeguro([i.patente, i.marca, i.modelo].filter(Boolean).join(' · '))}${i.km ? ' · ' + htmlSeguro(i.km) : ''}
           ${i.precio_pedido ? '<br><strong>Precio pedido:</strong> ' + fmtMoneda(i.precio_pedido) : ''}
         </p>
         <h2>Puntaje: ${i.score}/100</h2>
         <p>${i.ok} bien · ${i.warn} con atención · ${i.bad} malos · ${i.na} no aplica</p>
-        <p><strong>${i.recomendacion ?? ''}</strong></p>
+        <p><strong>${htmlSeguro(i.recomendacion ?? '')}</strong></p>
         ${inspRenderResumen(i.datos || {})}
         ${inspRenderDetalle(i.datos || {})}
-        ${i.observaciones ? `<h3>Observaciones</h3><p>${i.observaciones}</p>` : ''}
+        ${i.observaciones ? `<h3>Observaciones generales</h3><p>${htmlSeguroMulti(i.observaciones)}</p>` : ''}
       `;
     }
 
@@ -531,12 +1124,13 @@
       }
       tbody.innerHTML = lista.map(i => {
         const nivel = { ok: 'badge-green', warn: 'badge-yellow', bad: 'badge-red' }[inspNivelDe(i)];
+        const plan = inspPlanDe(i.datos);
         return `
         <tr>
           <td style="white-space:nowrap;">${fmtNumero('INS', i.numero)}</td>
           <td style="white-space:nowrap;">${fmtFecha(i.fecha)}</td>
-          <td>${i.nombre_comprador}</td>
-          <td>${[i.patente, i.marca, i.modelo].filter(Boolean).join(' ') || '–'}</td>
+          <td>${htmlSeguro(i.nombre_comprador)}</td>
+          <td>${htmlSeguro([i.patente, i.marca, i.modelo].filter(Boolean).join(' ') || '–')}${plan ? `<br><small style="color:var(--color-text-muted);">📋 ${htmlSeguro(plan.nombre)}</small>` : ''}</td>
           <td style="white-space:nowrap;"><span class="badge ${nivel}">${i.score ?? '–'}/100</span></td>
           <td class="table-actions">
             <button type="button" class="btn-secondary ver-btn" data-id="${i.id}">Ver</button>
@@ -565,10 +1159,27 @@
         .order('fecha', { ascending: false });
       if (error) {
         document.getElementById('inspecciones-body').innerHTML =
-          `<tr><td colspan="6">Error: ${error.message} (¿ejecutaste sql/actualizacion-v2.sql?)</td></tr>`;
+          `<tr><td colspan="6">Error: ${htmlSeguro(error.message)} (¿ejecutaste sql/actualizacion-v2.sql?)</td></tr>`;
         return;
       }
       inspeccionesCache = data;
+    }
+
+    // Clientes, vehículos y servicios de los planes (para reconocer y para los precios)
+    async function loadFichas() {
+      const [cli, veh] = await Promise.all([
+        supabaseClient.from('clientes').select('id, nombre, rut, telefono, email').eq('activo', true).order('nombre'),
+        supabaseClient.from('vehiculos').select('*').eq('activo', true),
+      ]);
+      clientesCache = cli.data || [];
+      vehiculosCache = veh.data || [];
+      poblarClientes();
+    }
+    async function loadPlanes() {
+      const ids = Object.values((inspPlanesTaller && inspPlanesTaller.trabajos) || {}).filter(Boolean);
+      if (!ids.length) { trabajosPlanes = []; return; }
+      const { data } = await supabaseClient.from('trabajos').select('*').in('id', ids);
+      trabajosPlanes = data || [];
     }
 
     document.getElementById('buscar').addEventListener('input', renderListado);
@@ -577,9 +1188,11 @@
       const session = await initLayout('inspecciones');
       if (!session) return;
       config = await getTallerConfig();
-      inspPesosTaller = (config && config.insp_pesos && typeof config.insp_pesos === 'object') ? config.insp_pesos : {};   // estándar del taller
-      await loadInspecciones();
+      inspPesosTaller = (config && config.insp_pesos && typeof config.insp_pesos === 'object') ? config.insp_pesos : {};   // criterios anteriores a v60
+      inspPlanesTaller = (config && config.insp_planes && typeof config.insp_planes === 'object') ? config.insp_planes : {};
+      await Promise.all([loadInspecciones(), loadFichas(), loadPlanes()]);
       renderListado();
+      renderAvisoBorrador();
     })();
   </script>
 </body>

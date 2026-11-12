@@ -49,6 +49,7 @@
           </div>
           <div style="flex:1; min-width:260px;">
             <h2 style="margin:0 0 0.4rem;">Inspección ${fmtNumero('INS', d.numero)}</h2>
+            ${inspPlanDe(d.datos) ? `<p style="margin:0 0 0.4rem;"><span class="badge badge-blue">📋 ${inspEsc(inspPlanDe(d.datos).nombre)}</span></p>` : ''}
             <p style="margin:0 0 0.4rem;">
               <strong>${d.nombre_comprador ?? ''}</strong><br>
               ${[d.patente, d.marca, d.modelo].filter(Boolean).join(' · ')}${d.km ? ' · ' + d.km : ''}
@@ -66,7 +67,7 @@
         </div>
         ${inspRenderResumen(d.datos || {})}
         ${inspRenderDetalle(d.datos || {})}
-        ${d.observaciones ? `<h3>Observaciones</h3><p>${d.observaciones}</p>` : ''}
+        ${d.observaciones ? `<h3>Observaciones generales</h3><p>${inspEsc(d.observaciones).replace(/\n/g, '<br>')}</p>` : ''}
         ${d.taller ? `<p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:1.5rem;">
           ${d.taller.nombre} · ${d.taller.direccion ?? ''} · ${d.taller.telefono ?? ''}
         </p>` : ''}
