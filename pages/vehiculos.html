@@ -89,25 +89,18 @@
           </form>
         </div>
 
-        <div class="card" id="historial-card" style="display:none; margin-top:1rem;">
+        <!-- Expediente: todo lo que se ha hecho con el vehículo -->
+        <div class="card" id="expediente-card" style="display:none; margin-top:1rem;">
           <div class="toolbar">
-            <h2 style="margin:0;" id="historial-title">Historial</h2>
-            <button type="button" id="cerrar-historial-btn" class="btn-secondary">Cerrar</button>
+            <h2 style="margin:0;" id="exp-titulo">Expediente</h2>
+            <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+              <button type="button" id="exp-pdf-btn" class="btn-secondary">📄 PDF del historial</button>
+              <button type="button" id="exp-cerrar-btn" class="btn-secondary">Cerrar</button>
+            </div>
           </div>
-          <p id="historial-resumen" style="color:var(--color-text-muted); font-size:0.88rem;"></p>
-          <table>
-            <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>OT</th>
-                <th>Km</th>
-                <th>Trabajos realizados</th>
-                <th>Total</th>
-                <th>Estado</th>
-              </tr>
-            </thead>
-            <tbody id="historial-body"></tbody>
-          </table>
+          <div id="exp-resumen"></div>
+          <div id="exp-filtros" class="exp-filtros"></div>
+          <div id="exp-lista" class="exp-lista"></div>
         </div>
 
         <div class="card" style="margin-top:1rem;">
@@ -144,56 +137,260 @@
     let clientesCache = [];
     let config = null;
 
-    async function verHistorial(vehiculoId) {
+    // ---------- Expediente del vehículo ----------
+    // Todo lo que se ha hecho con el vehículo, del más reciente al más antiguo: citas (también canceladas o sin
+    // asistencia), diagnósticos, cotizaciones (también rechazadas o vencidas), OT con sus pagos e inspección de
+    // ingreso, inspecciones precompra, recordatorios y correos enviados.
+    const TIPOS_EXPEDIENTE = {
+      cita:         { icono: '📅', label: 'Agenda' },
+      diagnostico:  { icono: '🩺', label: 'Diagnósticos' },
+      cotizacion:   { icono: '📝', label: 'Cotizaciones' },
+      ot:           { icono: '🔧', label: 'Órdenes de trabajo' },
+      inspeccion:   { icono: '🔍', label: 'Inspecciones precompra' },
+      recordatorio: { icono: '⏰', label: 'Recordatorios' },
+      correo:       { icono: '✉️', label: 'Correos' },
+    };
+    const ESTADOS_CITA_EXP = {
+      pendiente:  { label: 'Por confirmar', badge: 'badge-yellow' },
+      confirmado: { label: 'Confirmada', badge: 'badge-blue' },
+      completado: { label: 'Atendida', badge: 'badge-green' },
+      cancelado:  { label: 'Cancelada', badge: 'badge-red' },
+      ausente:    { label: 'No asistió', badge: 'badge-gray' },
+    };
+    let expediente = null;     // { vehiculo, eventos, resumen }
+    const fmtHora = (iso) => new Date(iso).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Santiago' });
+    let filtroExpediente = '';
+
+    const badge = (texto, clase) => `<span class="badge ${clase || ''}">${htmlSeguro(texto)}</span>`;
+    const conIvaDe = (neto, conIva) => conIva === false ? neto : neto * (1 + Number(config.iva_pct ?? 19) / 100);
+    const listaItems = (items) => (items || []).map(i => i.descripcion).filter(Boolean).join(' · ');
+
+    async function cargarExpediente(v) {
+      const pat = normalizarPatente(v.patente);
+      const q = (p) => p.then(r => r.data || []).catch(() => []);
+      const [citas, diags, cots, ots, insps, recs, correos] = await Promise.all([
+        q(supabaseClient.from('citas').select('*, trabajos(nombre), clientes(nombre)').or(`vehiculo_id.eq.${v.id},patente_contacto.ilike.${pat}`)),
+        q(supabaseClient.from('diagnosticos').select('*, diagnostico_items(*), clientes(nombre)').eq('vehiculo_id', v.id)),
+        q(supabaseClient.from('cotizaciones').select('*, cotizacion_items(*), clientes(nombre), ordenes(id, numero, estado, descuento_tipo, descuento_pct, descuento_monto, descuento_base, con_iva, orden_items(cantidad, precio_unitario, tipo, tipo_otro))').eq('vehiculo_id', v.id)),
+        q(supabaseClient.from('ordenes').select('*, orden_items(*), pagos(monto), abonos(monto), clientes(nombre)').eq('vehiculo_id', v.id)),
+        q(supabaseClient.from('inspecciones').select('*').or(`vehiculo_id.eq.${v.id},patente.ilike.${pat}`)),
+        q(supabaseClient.from('recordatorios').select('*').eq('vehiculo_id', v.id)),
+        q(supabaseClient.from('correos_enviados').select('*').eq('vehiculo_id', v.id)),
+      ]);
+      const hoy = hoyChile();
+      const eventos = [];
+      const quien = (c) => (c && c.clientes && c.clientes.nombre && c.cliente_id !== v.cliente_id) ? c.clientes.nombre : '';
+
+      citas.forEach(c => {
+        const e = ESTADOS_CITA_EXP[c.estado] || { label: c.estado, badge: '' };
+        const futura = new Date(c.fecha_hora) > new Date() && (c.estado === 'confirmado' || c.estado === 'pendiente');
+        eventos.push({
+          tipo: 'cita', fecha: c.fecha_hora, futura,
+          titulo: `Cita ${fmtHora(c.fecha_hora)}${c.origen === 'online' ? ' · reserva web' : ''}`,
+          estado: badge(e.label, e.badge),
+          detalle: [c.trabajos ? c.trabajos.nombre : (c.descripcion || ''), c.notas, c.modalidad === 'terreno' ? 'A domicilio' : ''].filter(Boolean).join(' · '),
+          persona: quien(c) || (!c.cliente_id && c.nombre_contacto ? c.nombre_contacto : ''),
+          link: `agenda.html?fecha=${ymdChile(c.fecha_hora)}`,
+        });
+      });
+
+      diags.forEach(d => {
+        const monto = (Number(d.horas_diagnostico) || 0) * (Number(d.valor_hora_diagnostico) || 0);
+        const resp = d.cotizacion_id ? badge('Cotizado', 'badge-blue')
+          : d.respuesta === 'aceptado' ? badge('Aceptado', 'badge-green')
+          : d.respuesta === 'rechazado' ? badge('Rechazado', 'badge-red') : badge('Sin respuesta', 'badge-gray');
+        eventos.push({
+          tipo: 'diagnostico', fecha: d.fecha || d.creado_en, km: d.km,
+          titulo: fmtNumero('DIAG', d.numero), estado: resp,
+          detalle: [d.motivo ? `Motivo: ${d.motivo}` : '', d.conclusion ? `Conclusión: ${d.conclusion}` : '', (d.hallazgos || []).length ? `${d.hallazgos.length} prueba(s)` : '', listaItems(d.diagnostico_items) ? `Recomienda: ${listaItems(d.diagnostico_items)}` : ''].filter(Boolean).join(' · '),
+          montos: monto > 0 ? `Valor del diagnóstico: ${fmtMoneda(monto)} + IVA` : '',
+          ingreso: (d.checklist_recepcion || []).length ? `📋 Inspección de ingreso (${d.checklist_recepcion.length} punto${d.checklist_recepcion.length === 1 ? '' : 's'}${d.checklist_firma_fecha ? ', firmada' : ''})` : '',
+          persona: quien(d),
+          link: `diagnosticos.html?id=${d.id}`,
+        });
+      });
+
+      cots.forEach(c => {
+        const vence = sumarDiasYmd(String(c.fecha || c.creado_en).slice(0, 10), Number(c.validez_dias) || 15);
+        const vencida = c.estado === 'enviada' && vence < hoy;
+        const e = ESTADOS_COTIZACION[c.estado] || { label: c.estado, badge: '' };
+        eventos.push({
+          tipo: 'cotizacion', fecha: c.creado_en || c.fecha,
+          titulo: fmtNumero('COT', c.numero),
+          estado: badge(e.label, e.badge) + (vencida ? ' ' + badge('Vencida', 'badge-gray') : ''),
+          detalle: listaItems(c.cotizacion_items),
+          montos: `Total ${fmtMoneda(totalVigenteCotizacion(c, config.iva_pct))}${c.estado === 'enviada' && !vencida ? ` · válida hasta el ${fmtFecha(vence + 'T12:00:00')}` : ''}`,
+          persona: quien(c),
+          link: `cotizaciones.html?id=${c.id}`,
+        });
+      });
+
+      let gastado = 0, saldo = 0;
+      ots.forEach(o => {
+        const total = conIvaDe(descuentoDeItems(o.orden_items, o).neto, o.con_iva);
+        const pagado = [...(o.pagos || []), ...(o.abonos || [])].reduce((s, p) => s + Number(p.monto || 0), 0);
+        if (o.estado !== 'cancelado') { gastado += total; saldo += Math.max(0, total - pagado); }
+        const e = ESTADOS_ORDEN[o.estado] || { label: o.estado, badge: '' };
+        eventos.push({
+          tipo: 'ot', fecha: o.fecha_ingreso || o.creado_en, km: o.km_ingreso,
+          titulo: fmtNumero('OT', o.numero),
+          estado: badge(e.label, e.badge) + (o.estado !== 'cancelado' && total - pagado > 1 ? ' ' + badge('Saldo pendiente', 'badge-yellow') : ''),
+          detalle: [o.diagnostico ? `Motivo: ${o.diagnostico}` : '', listaItems(o.orden_items)].filter(Boolean).join(' · '),
+          montos: `Total ${fmtMoneda(total)} · Pagado ${fmtMoneda(pagado)}${total - pagado > 1 ? ` · Saldo ${fmtMoneda(total - pagado)}` : ''}${o.fecha_entrega ? ` · Entregado el ${fmtFecha(o.fecha_entrega)}` : ''}`,
+          ingreso: (o.checklist_recepcion || []).length ? `📋 Inspección de ingreso (${o.checklist_recepcion.length} punto${o.checklist_recepcion.length === 1 ? '' : 's'}${o.checklist_firma_fecha || o.firma_cliente_url ? ', firmada' : ''})` : '',
+          persona: quien(o),
+          link: `ordenes.html?id=${o.id}`,
+        });
+      });
+
+      insps.forEach(i => {
+        const plan = typeof inspPlanDe === 'function' ? inspPlanDe(i.datos) : (i.datos && i.datos._plan);
+        const nivel = { ok: 'badge-green', warn: 'badge-yellow', bad: 'badge-red' }[i.score >= 85 ? 'ok' : (i.score >= 60 ? 'warn' : 'bad')];
+        eventos.push({
+          tipo: 'inspeccion', fecha: i.fecha, km: i.km ? String(i.km).replace(/[^\d]/g, '') : null,
+          titulo: `${fmtNumero('INS', i.numero)}${plan ? ` · ${plan.nombre}` : ''}`,
+          estado: badge(`${i.score ?? '–'}/100`, nivel),
+          detalle: [i.nombre_comprador ? `Comprador: ${i.nombre_comprador}` : '', i.recomendacion].filter(Boolean).join(' · '),
+          link: `inspecciones.html?id=${i.id}`,
+        });
+      });
+
+      recs.forEach(r => {
+        eventos.push({
+          tipo: 'recordatorio', fecha: r.fecha_objetivo + 'T12:00:00', futura: !r.enviado && r.fecha_objetivo >= hoy,
+          titulo: r.tipo === 'revision_tecnica' ? 'Recordatorio de revisión técnica' : 'Recordatorio de mantención',
+          estado: r.enviado ? badge('Enviado', 'badge-green') : badge(r.fecha_objetivo >= hoy ? 'Programado' : 'Sin enviar', r.fecha_objetivo >= hoy ? 'badge-blue' : 'badge-gray'),
+          detalle: r.detalle || '',
+        });
+      });
+
+      correos.forEach(c => {
+        eventos.push({
+          tipo: 'correo', fecha: c.creado_en,
+          titulo: c.asunto || 'Correo',
+          estado: c.estado === 'enviado' ? badge('Enviado', 'badge-green') : badge(c.estado === 'error' ? 'Falló' : 'Sin confirmar', c.estado === 'error' ? 'badge-red' : 'badge-yellow'),
+          detalle: `Para ${c.para}`,
+          texto: c.texto,
+        });
+      });
+
+      eventos.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+      const kms = eventos.map(e => Number(e.km)).filter(n => n > 0);
+      const atendidas = eventos.filter(e => e.tipo === 'ot');
+      const proxima = eventos.filter(e => e.futura && e.tipo === 'cita').sort((a, b) => new Date(a.fecha) - new Date(b.fecha))[0];
+      return {
+        vehiculo: v, eventos,
+        resumen: {
+          kmActual: Math.max(Number(v.kilometraje) || 0, ...kms, 0),
+          gastado, saldo,
+          visitas: atendidas.length,
+          ultima: atendidas.length ? atendidas[0].fecha : null,
+          proxima: proxima ? proxima.fecha : null,
+          cotPendientes: cots.filter(c => c.estado === 'enviada').length,
+        },
+      };
+    }
+
+    async function verExpediente(vehiculoId) {
       const v = vehiculosCache.find(x => x.id === vehiculoId);
       if (!v) return;
-      const cliente = clientesCache.find(c => c.id === v.cliente_id);
-
-      document.getElementById('historial-card').style.display = 'block';
-      document.getElementById('historial-title').textContent =
-        `Historial de ${v.patente} · ${[v.marca, v.modelo].filter(Boolean).join(' ')}`;
-      const tbody = document.getElementById('historial-body');
-      const resumen = document.getElementById('historial-resumen');
-      tbody.innerHTML = '<tr><td colspan="6">Cargando...</td></tr>';
-      resumen.textContent = '';
-
-      const { data: ots, error } = await supabaseClient
-        .from('ordenes')
-        .select('*, orden_items(*)')
-        .eq('vehiculo_id', vehiculoId)
-        .order('fecha_ingreso', { ascending: false });
-      if (error) {
-        tbody.innerHTML = `<tr><td colspan="6">Error: ${error.message}</td></tr>`;
-        return;
-      }
-      if (!ots.length) {
-        tbody.innerHTML = '<tr><td colspan="6">Este vehículo aún no tiene órdenes de trabajo.</td></tr>';
-        resumen.textContent = cliente ? `Cliente: ${cliente.nombre}` : '';
-        return;
-      }
-
-      // Total real de la OT: subtotal - descuento (solo sobre mano de obra), más IVA si corresponde.
-      const totalOT = o => {
-        const neto = descuentoDeItems(o.orden_items, o).neto;
-        return o.con_iva === false ? neto : neto * (1 + Number(config.iva_pct) / 100);
-      };
-
-      tbody.innerHTML = ots.map(o => `
-        <tr>
-          <td style="white-space:nowrap;">${fmtFecha(o.fecha_ingreso)}</td>
-          <td style="white-space:nowrap;">${fmtNumero('OT', o.numero)}</td>
-          <td style="white-space:nowrap;">${o.km_ingreso != null ? Number(o.km_ingreso).toLocaleString('es-CL') : '–'}</td>
-          <td>${(o.orden_items || []).map(i => i.descripcion).join(', ') || '–'}</td>
-          <td style="white-space:nowrap;">${fmtMoneda(totalOT(o))}</td>
-          <td style="white-space:nowrap;">${badgeEstado(o.estado, ESTADOS_ORDEN)}</td>
-        </tr>`).join('');
-
-      const gastado = ots.filter(o => o.estado !== 'cancelado').reduce((s, o) => s + totalOT(o), 0);
-      resumen.innerHTML =
-        `${cliente ? `Cliente: <strong>${cliente.nombre}</strong> · ` : ''}` +
-        `${ots.length} visita(s) · Total histórico: ${fmtMoneda(gastado)} · Última visita: ${fmtFecha(ots[0].fecha_ingreso)}`;
-      document.getElementById('historial-card').scrollIntoView({ behavior: 'smooth' });
+      const card = document.getElementById('expediente-card');
+      card.style.display = 'block';
+      document.getElementById('exp-titulo').textContent = `Expediente ${v.patente} · ${[v.marca, v.modelo, v.anio].filter(Boolean).join(' ')}`;
+      document.getElementById('exp-resumen').innerHTML = '';
+      document.getElementById('exp-filtros').innerHTML = '';
+      document.getElementById('exp-lista').innerHTML = '<p style="color:var(--color-text-muted);">Cargando el historial…</p>';
+      card.scrollIntoView({ behavior: 'smooth' });
+      expediente = await cargarExpediente(v);
+      filtroExpediente = '';
+      renderExpediente();
     }
+
+    function renderExpediente() {
+      if (!expediente) return;
+      const { vehiculo: v, eventos, resumen: r } = expediente;
+      const cliente = clientesCache.find(c => c.id === v.cliente_id);
+      const dato = (etiqueta, valor) => valor ? `<div class="exp-dato"><span>${etiqueta}</span><strong>${valor}</strong></div>` : '';
+      document.getElementById('exp-resumen').innerHTML = `
+        <div class="exp-resumen">
+          ${dato('Dueño', cliente ? htmlSeguro(cliente.nombre) + (cliente.telefono ? `<small>${htmlSeguro(cliente.telefono)}</small>` : '') : '–')}
+          ${dato('Kilometraje', r.kmActual ? `${r.kmActual.toLocaleString('es-CL')} km` : '–')}
+          ${dato('Visitas al taller', String(r.visitas))}
+          ${dato('Total en trabajos', fmtMoneda(r.gastado))}
+          ${r.saldo > 1 ? dato('Saldo pendiente', `<span style="color:#a93b33;">${fmtMoneda(r.saldo)}</span>`) : ''}
+          ${dato('Última visita', r.ultima ? fmtFecha(r.ultima) : '–')}
+          ${r.proxima ? dato('Próxima cita', `${fmtFecha(r.proxima)} ${fmtHora(r.proxima)}`) : ''}
+          ${r.cotPendientes ? dato('Cotizaciones por responder', String(r.cotPendientes)) : ''}
+        </div>`;
+      const cuenta = (t) => eventos.filter(e => e.tipo === t).length;
+      document.getElementById('exp-filtros').innerHTML =
+        `<button type="button" class="exp-filtro${!filtroExpediente ? ' activo' : ''}" data-tipo="">Todo (${eventos.length})</button>` +
+        Object.entries(TIPOS_EXPEDIENTE).filter(([t]) => cuenta(t)).map(([t, info]) =>
+          `<button type="button" class="exp-filtro${filtroExpediente === t ? ' activo' : ''}" data-tipo="${t}">${info.icono} ${info.label} (${cuenta(t)})</button>`).join('');
+      const lista = eventos.filter(e => !filtroExpediente || e.tipo === filtroExpediente);
+      document.getElementById('exp-lista').innerHTML = lista.length ? lista.map(e => `
+        <div class="exp-evento${e.futura ? ' futura' : ''}">
+          <div class="exp-icono" title="${TIPOS_EXPEDIENTE[e.tipo].label}">${TIPOS_EXPEDIENTE[e.tipo].icono}</div>
+          <div class="exp-cuerpo">
+            <div class="exp-cab">
+              <span class="exp-fecha">${fmtFecha(e.fecha)}</span>
+              <strong>${htmlSeguro(e.titulo)}</strong>
+              ${e.estado || ''}
+              ${e.km ? `<span class="exp-km">${Number(e.km).toLocaleString('es-CL')} km</span>` : ''}
+            </div>
+            ${e.persona ? `<div class="exp-persona">👤 ${htmlSeguro(e.persona)}</div>` : ''}
+            ${e.detalle ? `<div class="exp-detalle">${htmlSeguro(e.detalle)}</div>` : ''}
+            ${e.ingreso ? `<div class="exp-detalle">${htmlSeguro(e.ingreso)}</div>` : ''}
+            ${e.montos ? `<div class="exp-montos">${htmlSeguro(e.montos)}</div>` : ''}
+            ${e.texto ? `<details class="exp-texto"><summary>Ver correo</summary><div>${htmlSeguroMulti(e.texto)}</div></details>` : ''}
+            ${e.link ? `<a class="exp-abrir" href="${e.link}">Abrir →</a>` : ''}
+          </div>
+        </div>`).join('')
+        : '<p style="color:var(--color-text-muted);">Este vehículo aún no tiene movimientos registrados.</p>';
+    }
+
+    // PDF del historial (sirve también para entregarlo al cliente o al vender el auto). Sin correos internos.
+    function construirPdfExpediente() {
+      const { vehiculo: v, eventos, resumen: r } = expediente;
+      const cliente = clientesCache.find(c => c.id === v.cliente_id);
+      const filas = eventos.filter(e => e.tipo !== 'correo').map(e => `
+        <tr>
+          <td style="white-space:nowrap; vertical-align:top;">${fmtFecha(e.fecha)}</td>
+          <td style="vertical-align:top;">${TIPOS_EXPEDIENTE[e.tipo].icono} <strong>${htmlSeguro(e.titulo)}</strong> ${e.estado || ''}
+            ${e.detalle ? `<div style="font-size:11px; color:#4b5563;">${htmlSeguro(e.detalle)}</div>` : ''}
+            ${e.montos ? `<div style="font-size:11px;">${htmlSeguro(e.montos)}</div>` : ''}</td>
+          <td style="white-space:nowrap; vertical-align:top; text-align:right;">${e.km ? Number(e.km).toLocaleString('es-CL') + ' km' : ''}</td>
+        </tr>`).join('');
+      return `
+        <div class="print-brand">
+          <img src="../assets/img/logo.png" alt="" onerror="this.style.display='none'" />
+          <span class="print-brand-name">${htmlSeguro(config.nombre || '')}</span>
+        </div>
+        <h2 style="margin:0.5rem 0 0.25rem;">Historial del vehículo ${htmlSeguro(v.patente)}</h2>
+        <p style="margin:0 0 0.75rem;">
+          ${htmlSeguro([v.marca, v.modelo, v.anio].filter(Boolean).join(' '))}${v.vin ? ` · VIN ${htmlSeguro(v.vin)}` : ''}${r.kmActual ? ` · ${r.kmActual.toLocaleString('es-CL')} km` : ''}<br>
+          ${cliente ? `Dueño: ${htmlSeguro(cliente.nombre)} · ` : ''}${r.visitas} visita(s) al taller · Emitido el ${fmtFecha(new Date().toISOString())}
+        </p>
+        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+          <thead><tr><th style="text-align:left;">Fecha</th><th style="text-align:left;">Movimiento</th><th style="text-align:right;">Km</th></tr></thead>
+          <tbody>${filas || '<tr><td colspan="3">Sin movimientos.</td></tr>'}</tbody>
+        </table>
+        <p style="font-size:11px; color:#6b7280; margin-top:0.75rem;">${htmlSeguro([config.direccion, config.telefono, config.email].filter(Boolean).join(' · '))}</p>`;
+    }
+
+    document.getElementById('exp-filtros').addEventListener('click', (e) => {
+      const b = e.target.closest('.exp-filtro');
+      if (!b) return;
+      filtroExpediente = b.dataset.tipo;
+      renderExpediente();
+    });
+    document.getElementById('exp-cerrar-btn').addEventListener('click', () => {
+      document.getElementById('expediente-card').style.display = 'none';
+      expediente = null;
+    });
+    document.getElementById('exp-pdf-btn').addEventListener('click', () => {
+      if (expediente) abrirVentanaImpresion(construirPdfExpediente(), `Historial ${expediente.vehiculo.patente}`);
+    });
 
     function clearForm() {
       ['vehiculo-id','patente','marca','modelo','anio','kilometraje','motor','vin','combustible','tipo_vehiculo','numero_motor','color','transmision','notas'].forEach(id => {
@@ -239,21 +436,21 @@
         const cliente = clientesCache.find(c => c.id === v.cliente_id);
         return `
         <tr>
-          <td><strong>${v.patente}</strong></td>
+          <td><button type="button" class="exp-patente" data-id="${v.id}" title="Ver expediente">${htmlSeguro(v.patente)}</button></td>
           <td>${[v.marca, v.modelo].filter(Boolean).join(' ') || '–'}</td>
           <td>${v.anio ?? '–'}</td>
           <td>${v.kilometraje != null ? Number(v.kilometraje).toLocaleString('es-CL') : '–'}</td>
           <td>${cliente ? cliente.nombre : '–'}</td>
           <td class="table-actions">
-            <button type="button" class="btn-secondary historial-btn" data-id="${v.id}">Historial</button>
+            <button type="button" class="btn-secondary historial-btn" data-id="${v.id}">📋 Expediente</button>
             <button type="button" class="btn-secondary edit-btn" data-id="${v.id}">Editar</button>
             <button type="button" class="btn-danger delete-btn" data-id="${v.id}">Desactivar</button>
           </td>
         </tr>`;
       }).join('');
 
-      tbody.querySelectorAll('.historial-btn').forEach(btn => {
-        btn.addEventListener('click', () => verHistorial(btn.dataset.id));
+      tbody.querySelectorAll('.historial-btn, .exp-patente').forEach(btn => {
+        btn.addEventListener('click', () => verExpediente(btn.dataset.id));
       });
 
       tbody.querySelectorAll('.edit-btn').forEach(btn => {
@@ -286,7 +483,7 @@
     }
 
     async function loadClientes() {
-      const { data } = await supabaseClient.from('clientes').select('id, nombre').eq('activo', true).order('nombre');
+      const { data } = await supabaseClient.from('clientes').select('id, nombre, telefono, email').eq('activo', true).order('nombre');
       clientesCache = data || [];
       document.getElementById('cliente_id').innerHTML =
         '<option value="">Seleccionar cliente...</option>' +
@@ -305,9 +502,6 @@
 
     document.getElementById('buscar').addEventListener('input', applyFilter);
     document.getElementById('cancel-btn').addEventListener('click', clearForm);
-    document.getElementById('cerrar-historial-btn').addEventListener('click', () => {
-      document.getElementById('historial-card').style.display = 'none';
-    });
 
     document.getElementById('vehiculo-form').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -366,6 +560,9 @@
       config = await getTallerConfig();
       await loadClientes();
       await loadVehiculos();
+      // Desde una OT, una cotización, un cliente…: vehiculos.html?expediente=<id del vehículo>
+      const expParam = new URLSearchParams(window.location.search).get('expediente');
+      if (expParam && vehiculosCache.some(v => v.id === expParam)) verExpediente(expParam);
     })();
   </script>
 </body>

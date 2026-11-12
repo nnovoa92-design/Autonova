@@ -81,6 +81,7 @@
               <button type="button" id="whatsapp-ot-btn" class="btn-secondary">Avisar por WhatsApp</button>
               <button type="button" id="email-ot-btn" class="btn-secondary">Avisar por correo</button>
               <button type="button" id="expediente-btn" class="btn-secondary" title="Documento interno completo, con todo el respaldo, para uso judicial si fuese necesario">📁 Expediente</button>
+              <a id="historial-vehiculo-link" class="btn btn-secondary" href="#" title="Todo lo que se ha hecho con este vehículo">🚗 Historial del vehículo</a>
               <button type="button" id="eliminar-ot-btn" class="btn-danger" title="Eliminar esta OT (ej. un duplicado)">🗑 Eliminar OT</button>
               <button type="button" id="cerrar-detalle-btn" class="btn-secondary">Volver al listado</button>
             </div>
@@ -717,6 +718,10 @@
 
       const o = ordenActual;
       document.getElementById('detalle-title').textContent = fmtNumero('OT', o.numero);
+      // Enlace al expediente del vehículo (todo su historial)
+      const linkHist = document.getElementById('historial-vehiculo-link');
+      linkHist.style.display = o.vehiculo_id ? '' : 'none';
+      if (o.vehiculo_id) linkHist.href = `vehiculos.html?expediente=${o.vehiculo_id}`;
       const vehiculo = o.vehiculos ? `${o.vehiculos.patente} · ${[o.vehiculos.marca, o.vehiculos.modelo].filter(Boolean).join(' ')}` : 'Sin vehículo';
       const origen = o.cotizacion_id ? diagPorCotizacion[o.cotizacion_id] : null;
       document.getElementById('detalle-info').innerHTML =

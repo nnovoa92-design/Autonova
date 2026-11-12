@@ -1020,6 +1020,7 @@
               ${i.precio_pedido ? ' · Precio pedido: ' + fmtMoneda(i.precio_pedido) : ''}<br>
               ${plan ? `<span class="badge badge-blue">📋 ${htmlSeguro(plan.nombre)}</span>${i.valor != null || plan.precio != null ? ` <small style="color:var(--color-text-muted);">${fmtMoneda(i.valor ?? plan.precio)} + IVA</small>` : ''}<br>` : ''}
               <span style="color:var(--color-text-muted); font-size:0.85rem;">Inspeccionado el ${fmtFechaHora(i.fecha)}</span>
+              ${i.vehiculo_id ? `<br><a href="vehiculos.html?expediente=${i.vehiculo_id}" style="font-size:0.85rem;">🚗 Ver el historial de este vehículo</a>` : ''}
             </p>
             <p style="margin:0.4rem 0;">
               <span class="badge badge-green">${i.ok} bien</span>
@@ -1191,6 +1192,9 @@
       await Promise.all([loadInspecciones(), loadFichas(), loadPlanes()]);
       renderListado();
       renderAvisoBorrador();
+      // Desde el expediente del vehículo: inspecciones.html?id=<inspección>
+      const idParam = new URLSearchParams(window.location.search).get('id');
+      if (idParam && inspeccionesCache.some(i => i.id === idParam)) abrirDetalle(idParam);
     })();
   </script>
 </body>
