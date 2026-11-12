@@ -44,7 +44,7 @@ begin
   for r in
     select * from (values
       ('esencial', 'Compra Segura Esencial', 45000::numeric, 1.0::numeric,
-       'Revisión visual y funcional de todo el auto, sin elevador: documentos, luces y electrónica, testigos y medidores del panel, niveles, fugas visibles, frenos, neumáticos, carrocería e interior, lectura de códigos de falla con escáner y prueba en ruta urbana. Ideal para autos recientes o de bajo kilometraje, o para descartar entre varias opciones.'),
+       'Revisión visual y funcional de todo el auto: documentos, luces y electrónica, testigos y medidores del panel, niveles, fugas visibles, frenos, neumáticos, carrocería e interior, lectura de códigos de falla con escáner y prueba en ruta urbana. Ideal para autos recientes o de bajo kilometraje, o para descartar entre varias opciones.'),
       ('pro', 'Compra Segura Pro', 55000::numeric, 1.5::numeric,
        'Todo lo del Esencial, más: revisión bajo el vehículo (chasis, fugas, rótulas, homocinéticas, espirales y cremallera), medición de pastillas y discos delanteros, espesor de pintura en capot, techo y puertas, búsqueda de choques e inundación, verificación del kilometraje y del VIN, y prueba en ruta ampliada. Ideal para la mayoría de los autos usados.'),
       ('total', 'Compra Segura 360°', 70000::numeric, 2.0::numeric,

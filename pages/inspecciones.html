@@ -213,7 +213,6 @@
       return inspPlanesVigentes(trabajosPlanes, config && config.valor_hora);
     }
     const nombreSeccion = (sec) => String(sec || '').replace(/^[^\p{L}\p{N}]+/u, '');
-    const conIva = (n) => Math.round(Number(n || 0) * (1 + Number(config.iva_pct ?? 19) / 100));
 
     // Lo que agrega un plan sobre el anterior, por sección: [{ sec, n }]
     function novedadesPlan(nivelAnterior, nivel, secciones) {
@@ -237,7 +236,6 @@
             <span class="plan-nombre">${htmlSeguro(p.nombre)}</span>
             ${!p.destacado && p.lema ? `<span class="plan-lema">${htmlSeguro(p.lema)}</span>` : ''}
             <span class="plan-precio">${fmtMoneda(p.precio)} <small>+ IVA</small></span>
-            <span class="plan-total">${fmtMoneda(conIva(p.precio))} IVA incluido</span>
             <span class="plan-puntos">${puntos} puntos${p.horas ? ` · ${inspFmtHoras(p.horas)}` : ''}</span>
             <span class="plan-incluye">${incluye}</span>
             ${p.vinculo !== 'ok' ? `<span class="plan-aviso">⚠ ${p.vinculo === 'perdido' ? 'El servicio vinculado ya no está en el catálogo' : 'Sin vincular al catálogo'}: revisa Configuración → Planes de inspección.</span>`

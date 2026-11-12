@@ -114,13 +114,13 @@ const INSP_CHECKLIST = [
 const INSP_PLANES_BASE = [
   { id: 'esencial', nivel: 1, nombre: 'Compra Segura Esencial', precio: 45000, horas: 1,
     lema: 'Lo indispensable antes de decidir',
-    descripcion: 'Revisión visual y funcional de todo el auto, sin elevador: documentos, luces y electrónica, testigos y medidores del panel, niveles, fugas visibles, frenos, neumáticos, carrocería e interior, lectura de códigos de falla con escáner y prueba en ruta urbana. Ideal para autos recientes o de bajo kilometraje, o para descartar entre varias opciones.' },
+    descripcion: 'Revisión visual y funcional de todo el auto: documentos, luces y electrónica, testigos y medidores del panel, niveles, fugas visibles, frenos, neumáticos, carrocería e interior, lectura de códigos de falla con escáner y prueba en ruta urbana. Ideal para autos recientes o de bajo kilometraje, o para descartar entre varias opciones.' },
   { id: 'pro', nivel: 2, nombre: 'Compra Segura Pro', precio: 55000, horas: 1.5, destacado: true,
     lema: 'La más elegida',
     descripcion: 'Todo lo del Esencial, más: revisión bajo el vehículo (chasis, fugas, rótulas, homocinéticas, espirales y cremallera), medición de pastillas y discos delanteros, espesor de pintura en capot, techo y puertas, búsqueda de choques e inundación, verificación del kilometraje y del VIN, y prueba en ruta ampliada. Ideal para la mayoría de los autos usados.' },
-  { id: 'total', nivel: 3, nombre: 'Compra Segura 360°', precio: 70000, horas: 2,
+  { id: 'total', nivel: 3, nombre: 'Compra Segura 360°', precio: 75000, horas: 2,
     lema: 'Máxima tranquilidad',
-    descripcion: 'Todo lo del Pro, más: escáner de todos los módulos con datos en vivo y kilometraje cruzado entre módulos, prueba de batería, de humedad del líquido de frenos y de presión y gases del sistema de refrigeración (empaquetadura de culata), frenos traseros y discos medidos, pintura panel por panel, anotaciones vigentes y recalls, y prueba en carretera con frenada de emergencia. Ideal para autos de alto valor, con más de 100.000 km o cuando hay dudas.' },
+    descripcion: 'Todo lo del Pro, más: certificado de anotaciones vigentes y de multas impagas (incluidos en el valor), escáner de todos los módulos con datos en vivo y kilometraje cruzado entre módulos, prueba de batería, de humedad del líquido de frenos y de presión y gases del sistema de refrigeración (empaquetadura de culata), frenos traseros y discos medidos, pintura panel por panel, recalls y prueba en carretera con frenada de emergencia. Ideal para autos de alto valor, con más de 100.000 km o cuando hay dudas.' },
 ];
 
 // Puntos de inspección. n = plan desde el que se revisa (1 Esencial, 2 Pro, 3 360°); p = importancia en el
@@ -135,7 +135,8 @@ const INSP_SECCIONES_BASE = [
     { id: 'doc_vin', t: 'VIN y N° de motor sin adulteraciones (grabados originales)', p: 3, n: 2 },
     { id: 'doc_mant', t: 'Historial de mantenciones (libro o facturas)', p: 1, n: 2 },
     { id: 'doc_grabado', t: 'Patente grabada en vidrios y espejos', p: 1, n: 3 },
-    { id: 'doc_anot', t: 'Certificado de anotaciones: sin prendas, embargos ni prohibiciones', p: 3, n: 3 },
+    { id: 'doc_anot', t: 'Certificado de anotaciones vigentes: sin prendas, embargos ni prohibiciones', p: 3, n: 3 },
+    { id: 'doc_multas', t: 'Multas de tránsito impagas (certificado del Registro de Multas)', p: 2, n: 3 },
     { id: 'doc_recall', t: 'Campañas de revisión (recall) pendientes del fabricante', p: 2, n: 3 },
   ]},
   { id: 'ele', sec: '💻 Electrónica y diagnóstico', pExtra: 2, items: [
@@ -597,12 +598,10 @@ function inspPlanDe(datos) {
   return p && p.nombre ? p : null;
 }
 
-// Folleto comercial de los planes (para imprimir o enviar en PDF): planes con precio IVA incluido, puntos, duración
+// Folleto comercial de los planes (para imprimir o enviar en PDF): planes con su precio + IVA, puntos, duración
 // y qué revisa cada uno, sección por sección.
 function inspFolletoPlanesHtml(planes, secciones, taller) {
   taller = taller || {};
-  const iva = Number(taller.iva_pct ?? 19);
-  const conIva = (n) => Math.round(Number(n || 0) * (1 + iva / 100));
   const moneda = (n) => (typeof fmtMoneda === 'function' ? fmtMoneda(n) : '$' + inspMiles(n));
   const listas = planes.map(p => inspChecklistDePlan(p.nivel, secciones));
   const tarjetas = planes.map((p, i) => `
@@ -610,8 +609,7 @@ function inspFolletoPlanesHtml(planes, secciones, taller) {
       ${p.destacado ? `<div style="position:absolute; top:-10px; right:10px; background:#e1341e; color:#fff; font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px;">${inspEsc(p.lema || 'Recomendado')}</div>` : ''}
       <div style="font-weight:800; font-size:15px;">${inspEsc(p.nombre)}</div>
       ${!p.destacado && p.lema ? `<div style="font-size:11px; color:#6a727f;">${inspEsc(p.lema)}</div>` : ''}
-      <div style="font-size:22px; font-weight:800; margin:6px 0 0;">${moneda(conIva(p.precio))}</div>
-      <div style="font-size:10px; color:#6a727f;">IVA incluido</div>
+      <div style="font-size:22px; font-weight:800; margin:6px 0 0;">${moneda(p.precio)} <span style="font-size:12px; font-weight:600; color:#6a727f;">+ IVA</span></div>
       <div style="font-size:12px; font-weight:700; margin:6px 0;">${listas[i].reduce((n, s) => n + s.items.length, 0)} puntos${p.horas ? ` · ${inspFmtHoras(p.horas)} aprox.` : ''}</div>
       <div style="font-size:11px; line-height:1.4;">${inspEsc(p.descripcion)}</div>
     </div>`).join('');

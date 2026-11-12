@@ -355,6 +355,7 @@ function escribirDescuentoUI(idValor, idTipo, d) {
   tipoEl.value = n.tipo;
   tipoEl.dataset.tipoPrevio = n.tipo;     // para convertir bien si luego se cambia de unidad
   const el = document.getElementById(idValor);
+  activarPesos(el, n.tipo === 'monto');   // en pesos se ve "$5.000"; en % queda como número
   el.value = n.tipo === 'monto' ? Math.round(n.monto) : n.pct;
   el.max = n.tipo === 'monto' ? '' : '100';
   el.step = n.tipo === 'monto' ? '1' : '0.5';
@@ -886,6 +887,120 @@ document.addEventListener('input', (e) => {
 document.addEventListener('focusin', (e) => {
   if (e.target.value) aplicarFormatoChile(e.target, false);
 });
+
+// ---------- Montos en pesos: "$45.000" mientras se escribe ----------
+// Toda casilla de precio (id o clase con precio / monto / costo / valor, o data-formato="precio") muestra el
+// signo peso y los puntos de miles, pero su .value sigue entregando el número limpio ("45000", "1234.5"),
+// así el código de cada página no cambia. data-formato="ninguno" la deja como número normal.
+const VALOR_INPUT = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+
+// "$1.234,5" → "1234.5"  ('' si no hay número)
+function montoDesdeTexto(txt) {
+  const s = String(txt == null ? '' : txt).trim();
+  const negativo = /^-|^\$\s*-/.test(s);
+  const partes = s.replace(/[^\d,]/g, '').split(',');
+  const entero = partes[0].replace(/^0+(?=\d)/, '');
+  const decimales = partes.length > 1 ? partes.slice(1).join('').slice(0, 2) : '';
+  if (!entero && !decimales) return '';
+  return (negativo ? '-' : '') + (entero || '0') + (decimales ? '.' + decimales : '');
+}
+// "1234.5" → "$1.234,5"
+function textoDeMonto(n) {
+  if (n === '' || n == null) return '';
+  const negativo = String(n).startsWith('-');
+  const [entero, decimales] = String(n).replace('-', '').split('.');
+  return (negativo ? '-' : '') + '$' + (entero || '0').replace(/\B(?=(\d{3})+(?!\d))/g, '.') + (decimales ? ',' + decimales : '');
+}
+// Mientras se escribe se respeta la coma de decimales recién tecleada ("$1.234,")
+function textoMontoEscribiendo(txt) {
+  const s = String(txt == null ? '' : txt);
+  const n = montoDesdeTexto(s);
+  if (!n) return '';
+  const coma = s.indexOf(',');
+  if (coma >= 0 && !n.includes('.')) return textoDeMonto(n) + ',';
+  return textoDeMonto(n);
+}
+
+function esCampoPrecio(el) {
+  if (!el || el.tagName !== 'INPUT' || el.dataset.montoListo) return false;
+  const f = el.dataset.formato;
+  if (f === 'precio') return true;
+  if (f === 'ninguno' || el.type !== 'number') return false;
+  const patron = /(^|[-_])(precio|monto|costo|valor)([-_]|$)/;
+  return patron.test(el.id || '') || [...el.classList].some(c => patron.test(c));
+}
+
+function campoEnPesos(el) {
+  return el.dataset.formato !== 'ninguno';
+}
+
+// Convierte la casilla: su .value entrega el número limpio y lo que se ve lleva $ y puntos
+function prepararCampoPrecio(el) {
+  if (!el || el.dataset.montoListo) return;
+  el.dataset.montoListo = '1';
+  const inicial = VALOR_INPUT.get.call(el);
+  Object.defineProperty(el, 'value', {
+    configurable: true,
+    get() {
+      const visto = VALOR_INPUT.get.call(this);
+      return campoEnPesos(this) ? montoDesdeTexto(visto) : visto;
+    },
+    set(v) {
+      if (!campoEnPesos(this)) { VALOR_INPUT.set.call(this, v); return; }
+      let n = '';
+      if (v !== '' && v != null) n = Number.isFinite(Number(v)) ? String(Math.round(Number(v) * 100) / 100) : montoDesdeTexto(v);
+      VALOR_INPUT.set.call(this, textoDeMonto(n));
+    },
+  });
+  el.addEventListener('input', () => {
+    if (!campoEnPesos(el)) return;
+    const visto = VALOR_INPUT.get.call(el);
+    const pos = el.selectionStart == null ? visto.length : el.selectionStart;
+    const cifrasAntes = visto.slice(0, pos).replace(/[^\d,]/g, '').length;
+    const nuevo = textoMontoEscribiendo(visto);
+    if (nuevo === visto) return;
+    VALOR_INPUT.set.call(el, nuevo);
+    // El cursor queda después de la misma cantidad de cifras que había antes
+    let i = nuevo.indexOf('$') + 1, c = 0;
+    while (i < nuevo.length && c < cifrasAntes) { if (/[\d,]/.test(nuevo[i])) c++; i++; }
+    try { el.setSelectionRange(i, i); } catch (e) { /* algunos tipos no admiten cursor */ }
+  });
+  activarPesos(el, true, inicial);
+}
+
+// Casillas que cambian de unidad (descuento en % o en $): activo = muestra pesos
+function activarPesos(el, activo, valor) {
+  if (!el) return;
+  if (!el.dataset.montoListo) { if (!activo) return; prepararCampoPrecio(el); }
+  const crudo = valor !== undefined ? valor : el.value;
+  if (activo) {
+    el.dataset.formato = 'precio';
+    if (el.type !== 'text') el.type = 'text';
+    el.inputMode = 'numeric';
+    el.autocomplete = 'off';
+  } else {
+    el.dataset.formato = 'ninguno';
+    if (el.type !== 'number') el.type = 'number';
+    el.removeAttribute('inputmode');
+  }
+  el.value = crudo;
+}
+
+function prepararCamposPrecio(raiz) {
+  (raiz || document).querySelectorAll('input').forEach(el => { if (esCampoPrecio(el)) prepararCampoPrecio(el); });
+}
+// Las casillas que aparecen después (tablas, ventanas) también se convierten
+new MutationObserver((cambios) => {
+  for (const m of cambios) {
+    for (const n of m.addedNodes) {
+      if (n.nodeType !== 1) continue;
+      if (n.tagName === 'INPUT') { if (esCampoPrecio(n)) prepararCampoPrecio(n); }
+      else if (n.querySelector && n.querySelector('input')) prepararCamposPrecio(n);
+    }
+  }
+}).observe(document.documentElement, { childList: true, subtree: true });
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => prepararCamposPrecio());
+else prepararCamposPrecio();
 
 // ---------- Fechas en hora de Chile ----------
 // new Date().toISOString() entrega la fecha en UTC: después de las 21:00 en Chile ya es «mañana».
