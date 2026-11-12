@@ -21,25 +21,8 @@
           <h2 id="editor-title" style="margin-top:0;">Nueva cotización</h2>
           <div id="origen-diagnostico"></div>
           <input type="hidden" id="cotizacion-id" />
+          <div id="selector-cliente"></div>
           <div class="form-row">
-            <div class="form-group">
-              <label for="cliente-buscar">Cliente *</label>
-              <div class="combobox-wrap">
-                <div class="select-con-boton">
-                  <input type="text" id="cliente-buscar" placeholder="Escribe para buscar..." autocomplete="off" />
-                  <button type="button" class="btn-secondary btn-mini" id="nuevo-cliente-btn">+ Nuevo</button>
-                </div>
-                <div class="combobox-lista" id="cliente-lista" style="display:none;"></div>
-              </div>
-              <select id="cliente_id" style="display:none;"></select>
-            </div>
-            <div class="form-group">
-              <label for="vehiculo_id">Vehículo</label>
-              <div class="select-con-boton">
-                <select id="vehiculo_id"><option value="">Sin vehículo</option></select>
-                <button type="button" class="btn-secondary btn-mini" id="nuevo-vehiculo-btn">+ Nuevo</button>
-              </div>
-            </div>
             <div class="form-group">
               <label for="validez_dias">Validez (días)</label>
               <input type="number" id="validez_dias" value="15" min="1" />
@@ -66,70 +49,7 @@
           </div>
 
           <h3>Ítems</h3>
-          <div class="form-row" style="align-items:end;">
-            <div class="form-group">
-              <label for="item-tipo">Tipo de ítem</label>
-              <select id="item-tipo">
-                <option value="mano_obra">Trabajo del catálogo (carga insumos)</option>
-                <option value="repuesto">Repuesto del inventario</option>
-                <option value="insumo_taller">Insumo de taller (libre)</option>
-                <option value="insumo_vehiculo">Insumo de vehículo (libre)</option>
-                <option value="otro">Otro (libre)</option>
-              </select>
-            </div>
-            <div class="form-group" id="grupo-trabajo">
-              <label for="trabajo-buscar">Trabajo precargado</label>
-              <div class="combobox-wrap">
-                <div class="select-con-boton">
-                  <input type="text" id="trabajo-buscar" placeholder="Escribe para buscar..." autocomplete="off" />
-                  <button type="button" class="btn-secondary btn-mini" id="nuevo-trabajo-btn">+ Nuevo</button>
-                </div>
-                <div class="combobox-lista" id="trabajo-lista" style="display:none;"></div>
-              </div>
-              <select id="item-trabajo" style="display:none;"></select>
-            </div>
-            <div class="form-group" id="grupo-repuesto" style="display:none;">
-              <label for="repuesto-buscar">Repuesto</label>
-              <div class="combobox-wrap">
-                <div class="select-con-boton">
-                  <input type="text" id="repuesto-buscar" placeholder="Escribe para buscar..." autocomplete="off" />
-                  <button type="button" class="btn-secondary btn-mini" id="nuevo-repuesto-btn">+ Nuevo</button>
-                </div>
-                <div class="combobox-lista" id="repuesto-lista" style="display:none;"></div>
-              </div>
-              <select id="item-repuesto" style="display:none;"></select>
-            </div>
-            <div class="form-group" id="grupo-descripcion" style="display:none;">
-              <label for="item-descripcion">Descripción</label>
-              <input type="text" id="item-descripcion" />
-            </div>
-            <div class="form-group" id="grupo-tipo-otro" style="display:none; max-width:150px;">
-              <label for="item-tipo-otro">Clasificar como</label>
-              <select id="item-tipo-otro">
-                <option value="">Otro</option>
-                <option value="repuesto">Repuesto</option>
-                <option value="trabajo">Trabajo externo</option>
-                <option value="mano_obra">Mano de obra</option>
-                <option value="insumo">Insumo</option>
-              </select>
-            </div>
-            <div class="form-group" style="max-width:110px;">
-              <label for="item-cantidad" id="item-cantidad-label">Horas</label>
-              <input type="number" id="item-cantidad" value="1" min="0" step="0.25" />
-            </div>
-            <div class="form-group" id="grupo-horas-trabajo" style="display:none; max-width:140px;">
-              <label for="item-horas">Horas por trabajo</label>
-              <input type="number" id="item-horas" min="0" step="any" />
-            </div>
-            <div class="form-group" style="max-width:150px;">
-              <label for="item-precio">Precio unitario</label>
-              <input type="number" id="item-precio" min="0" step="1" />
-            </div>
-            <div class="form-group" style="flex:0;">
-              <button type="button" id="agregar-item-btn">Agregar</button>
-            </div>
-          </div>
-          <p id="item-preview" style="color:var(--color-text-muted); font-weight:600; margin:0.4rem 0 0;"></p>
+          <div id="editor-items"></div>
 
           <p style="color:var(--color-text-muted); font-size:0.82rem; margin:0.5rem 0 0.25rem;">
             Al elegir un trabajo se cargan su mano de obra y los insumos que requiere.
@@ -201,58 +121,30 @@
     </div>
   </div>
 
-  <!-- Modal genérico -->
-  <div class="modal-backdrop" id="modal-backdrop">
-    <div class="modal" id="modal"></div>
-  </div>
-
   <script src="../assets/vendor/supabase.min.js"></script>
   <script src="../assets/js/supabaseClient.js"></script>
   <script src="../assets/js/layout.js"></script>
+  <script src="../assets/js/documentos.js"></script>
   <script>
     let clientesCache = [], vehiculosCache = [], trabajosCache = [], repuestosCache = [], categoriasCache = [];
     let cotizacionesCache = [], itemsActuales = [];
     let config = null;
 
-    // Busca un repuesto del inventario cuyo nombre coincida con la descripción
-    // del insumo, para precargar su precio de venta (sin IVA).
-    function matchInventario(desc) {
-      const d = (desc || '').toLowerCase();
-      const r = repuestosCache.find(x => {
-        const n = (x.nombre || '').toLowerCase();
-        return n && (d.includes(n) || n.includes(d));
-      });
-      return r ? { repuesto_id: r.id, precio: Number(r.precio_venta || 0) } : { repuesto_id: null, precio: 0 };
-    }
+    let selectorCliente = null, editorItems = null;   // piezas compartidas (assets/js/documentos.js)
 
-    // Carga un trabajo del catálogo (n veces) como líneas: mano de obra + sus insumos.
-    // Si el trabajo tiene opciones obligatorias (combos), antes pregunta con cuál: la línea sale con
-    // el precio cerrado de esa combinación.
-    async function agregarTrabajoCompleto(t, n = 1, horasPorTrabajo = null) {
-      n = Math.max(1, Number(n) || 1);
-      let opcion = null;
-      if (opcionesDeTrabajo(t).length) {
-        opcion = await elegirOpcionTrabajo(t);
-        if (!opcion) return;
-      }
-      const sufijo = n > 1 ? ` (x${n})` : '';
-      const nombreLinea = opcion ? `${t.nombre} — ${opcion.nombre}` : t.nombre;
-      // cantidad × precio_unitario = total; horas / por_hora detallan la mano de obra para el cliente
-      itemsActuales.push({ tipo: 'mano_obra', trabajo_id: t.id, repuesto_id: null, descripcion: nombreLinea + sufijo, ...datosManoObra(t, n, config.valor_hora, { opcion, horasPorTrabajo }) });
+    // Líneas que entrega el editor de ítems (el mismo de diagnósticos y OT)
+    function agregarLineas(lineas, { trabajo } = {}) {
+      itemsActuales.push(...lineas);
       // La descripción larga del trabajo (qué incluye, etc.) siempre queda
       // registrada en Notas, para que el cliente vea el detalle de la
       // mano de obra y no solo el nombre corto del ítem en la tabla.
-      if (t.descripcion) {
+      if (trabajo && trabajo.descripcion) {
         const notasEl = document.getElementById('notas');
-        const linea = `${t.nombre}: ${t.descripcion}`;
+        const linea = `${trabajo.nombre}: ${trabajo.descripcion}`;
         if (!notasEl.value.includes(linea)) {
           notasEl.value = notasEl.value ? `${notasEl.value}\n${linea}` : linea;
         }
       }
-      (t.insumos || []).forEach(ins => {
-        const m = matchInventario(ins.descripcion);
-        itemsActuales.push({ tipo: ins.categoria || 'otro', trabajo_id: null, repuesto_id: m.repuesto_id, descripcion: ins.descripcion, cantidad: n, precio_unitario: m.precio });
-      });
       renderItems();
     }
 
@@ -402,10 +294,7 @@
       if (cot) {
         document.getElementById('editor-title').textContent = `Editar ${fmtNumero('COT', cot.numero)}`;
         document.getElementById('cotizacion-id').value = cot.id;
-        document.getElementById('cliente_id').value = cot.cliente_id;
-        document.getElementById('cliente-buscar').value = cot.clientes ? cot.clientes.nombre : (clientesCache.find(c => c.id === cot.cliente_id) || {}).nombre || '';
-        actualizarVehiculos();
-        document.getElementById('vehiculo_id').value = cot.vehiculo_id ?? '';
+        selectorCliente.fijar(cot.cliente_id, cot.vehiculo_id);
         document.getElementById('validez_dias').value = cot.validez_dias;
         escribirDescuentoUI('descuento_pct', 'descuento_tipo', cot);
         document.getElementById('con_iva').value = (cot.con_iva === false) ? 'false' : 'true';
@@ -414,9 +303,7 @@
       } else {
         document.getElementById('editor-title').textContent = 'Nueva cotización';
         document.getElementById('cotizacion-id').value = '';
-        document.getElementById('cliente_id').value = '';
-        document.getElementById('cliente-buscar').value = '';
-        document.getElementById('vehiculo_id').innerHTML = '<option value="">Sin vehículo</option>';
+        selectorCliente.limpiar();
         document.getElementById('validez_dias').value = '15';
         escribirDescuentoUI('descuento_pct', 'descuento_tipo', { tipo: 'pct', pct: 0, monto: 0 });
         document.getElementById('con_iva').value = 'true';
@@ -430,123 +317,6 @@
     function cerrarEditor() {
       document.getElementById('editor-card').style.display = 'none';
       itemsActuales = [];
-    }
-
-    function actualizarVehiculos() {
-      const clienteId = document.getElementById('cliente_id').value;
-      const propios = vehiculosCache.filter(v => v.cliente_id === clienteId);
-      document.getElementById('vehiculo_id').innerHTML =
-        '<option value="">Sin vehículo</option>' +
-        propios.map(v => `<option value="${v.id}">${v.patente} · ${[v.marca, v.modelo].filter(Boolean).join(' ')}</option>`).join('');
-    }
-
-    function onTipoChange() {
-      const tipo = document.getElementById('item-tipo').value;
-      const libre = (tipo === 'otro' || tipo === 'insumo_taller' || tipo === 'insumo_vehiculo');
-      document.getElementById('grupo-trabajo').style.display = tipo === 'mano_obra' ? 'block' : 'none';
-      document.getElementById('grupo-repuesto').style.display = tipo === 'repuesto' ? 'block' : 'none';
-      document.getElementById('grupo-descripcion').style.display = libre ? 'block' : 'none';
-      document.getElementById('grupo-tipo-otro').style.display = tipo === 'otro' ? 'block' : 'none';
-      // Para un trabajo del catálogo, la cantidad = N° de trabajos; el precio se calcula solo.
-      document.getElementById('item-cantidad').parentElement.style.display = 'block';
-      document.getElementById('item-precio').parentElement.style.display = tipo === 'mano_obra' ? 'none' : 'block';
-      document.getElementById('item-cantidad-label').textContent = 'Cantidad';
-      if (tipo === 'mano_obra') document.getElementById('item-cantidad').value = '1';
-      else if (tipo === 'repuesto') onRepuestoChange();
-      else if (libre) {
-        document.getElementById('item-cantidad').value = '1';
-        document.getElementById('item-precio').value = '';
-      }
-      actualizarCamposTrabajo();
-    }
-
-    function onTrabajoChange() {
-      const t = trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value);
-      if (!t) return;
-      // Cantidad siempre parte en 1 (una unidad del trabajo); si quiere más
-      // de uno, se sube acá y las horas/precio se multiplican al agregar.
-      document.getElementById('item-cantidad').value = '1';
-      // Si tiene precio fijo, el precio es el total; si no, es valor hora (se multiplica por horas)
-      if (t.precio_fijo != null) {
-        document.getElementById('item-precio').value = Number(t.precio_fijo);
-      } else {
-        document.getElementById('item-precio').value = Number(config.valor_hora);
-        document.getElementById('item-horas').value = Number(t.horas_estimadas || 0);
-      }
-      actualizarCamposTrabajo();
-    }
-
-    // El campo "Horas por trabajo" solo tiene sentido si el trabajo se
-    // cobra por hora (sin precio fijo) — con precio fijo la cantidad ya
-    // multiplica el total directo, sin pasar por horas.
-    function actualizarCamposTrabajo() {
-      const tipo = document.getElementById('item-tipo').value;
-      const t = tipo === 'mano_obra' ? trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value) : null;
-      const mostrarHoras = !!(t && t.precio_fijo == null && !opcionesDeTrabajo(t).length);
-      document.getElementById('grupo-horas-trabajo').style.display = mostrarHoras ? 'block' : 'none';
-      actualizarPreviewTrabajo();
-    }
-
-    function actualizarPreviewTrabajo() {
-      const previewEl = document.getElementById('item-preview');
-      const tipo = document.getElementById('item-tipo').value;
-      if (tipo !== 'mano_obra') { previewEl.textContent = ''; return; }
-      const t = trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value);
-      if (!t) { previewEl.textContent = ''; return; }
-      const cantidad = Math.max(1, Number(document.getElementById('item-cantidad').value) || 1);
-      const ops = opcionesDeTrabajo(t);
-      if (ops.length) {
-        previewEl.textContent = `Este servicio no se realiza solo: al agregarlo se elige una opción (desde ${fmtMoneda(precioNetoTrabajo(t, config.valor_hora))} + IVA).`;
-      } else if (t.precio_fijo != null) {
-        previewEl.textContent = `Total: ${cantidad} × ${fmtMoneda(t.precio_fijo)} = ${fmtMoneda(Number(t.precio_fijo) * cantidad)}`;
-      } else {
-        const horas = Math.max(0, Number(document.getElementById('item-horas').value) || 0);
-        const totalHoras = horas * cantidad;
-        previewEl.textContent = `Total: ${cantidad} × ${horas} h = ${totalHoras} h · ${fmtMoneda(totalHoras * Number(config.valor_hora))}`;
-      }
-    }
-
-    function onRepuestoChange() {
-      const r = repuestosCache.find(x => x.id === document.getElementById('item-repuesto').value);
-      if (!r) return;
-      document.getElementById('item-cantidad').value = '1';
-      document.getElementById('item-precio').value = r.precio_venta != null ? Number(r.precio_venta) : '';
-    }
-
-    function agregarItem() {
-      const tipo = document.getElementById('item-tipo').value;
-
-      if (tipo === 'mano_obra') {
-        const t = trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value);
-        if (!t) return;
-        const n = Math.max(1, Number(document.getElementById('item-cantidad').value) || 1);
-        const horasPorTrabajo = t.precio_fijo != null ? null : Math.max(0, Number(document.getElementById('item-horas').value) || 0);
-        agregarTrabajoCompleto(t, n, horasPorTrabajo);
-        document.getElementById('item-preview').textContent = '';
-        return;
-      }
-
-      const cantidad = Number(document.getElementById('item-cantidad').value) || 0;
-      const precio = Number(document.getElementById('item-precio').value) || 0;
-      let descripcion = '', repuesto_id = null, tipo_otro = null;
-
-      if (tipo === 'repuesto') {
-        const r = repuestosCache.find(x => x.id === document.getElementById('item-repuesto').value);
-        if (!r) return;
-        descripcion = r.nombre;
-        repuesto_id = r.id;
-      } else {
-        descripcion = document.getElementById('item-descripcion').value.trim();
-        if (!descripcion) return;
-        if (tipo === 'otro') {
-          tipo_otro = document.getElementById('item-tipo-otro').value || 'otro';
-        }
-      }
-
-      itemsActuales.push({ tipo, trabajo_id: null, repuesto_id, descripcion, cantidad, precio_unitario: precio, tipo_otro });
-      document.getElementById('item-descripcion').value = '';
-      document.getElementById('item-tipo-otro').value = '';
-      renderItems();
     }
 
     function renderItems() {
@@ -606,14 +376,15 @@
     async function guardarCotizacion() {
       const errorEl = document.getElementById('editor-error');
       errorEl.textContent = '';
-      const clienteId = document.getElementById('cliente_id').value;
-      if (!clienteId) { errorEl.textContent = 'Selecciona un cliente.'; return; }
       if (!itemsActuales.length) { errorEl.textContent = 'Agrega al menos un ítem.'; return; }
+      // Cliente y vehículo nuevos se crean recién al guardar
+      const fichas = await selectorCliente.preparar();
+      if (fichas.error) { errorEl.textContent = fichas.error; return; }
 
       const id = document.getElementById('cotizacion-id').value;
       const payload = {
-        cliente_id: clienteId,
-        vehiculo_id: document.getElementById('vehiculo_id').value || null,
+        cliente_id: fichas.clienteId,
+        vehiculo_id: fichas.vehiculoId || null,
         validez_dias: document.getElementById('validez_dias').value || 15,
         ...campoDescuentoItems(leerDescuentoUI('descuento_pct', 'descuento_tipo'), itemsActuales),
         con_iva: document.getElementById('con_iva').value === 'true',
@@ -969,37 +740,6 @@
       renderCotizaciones();
     }
 
-    // ---------- Repoblar desplegables ----------
-    function poblarClientes(sel) {
-      document.getElementById('cliente_id').innerHTML =
-        '<option value="">Seleccionar cliente...</option>' +
-        clientesCache.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
-      if (sel) {
-        document.getElementById('cliente_id').value = sel;
-        const c = clientesCache.find(x => x.id === sel);
-        document.getElementById('cliente-buscar').value = c ? c.nombre : '';
-      }
-    }
-    function poblarTrabajos(sel) {
-      document.getElementById('item-trabajo').innerHTML =
-        trabajosCache.map(t => `<option value="${t.id}">${t.nombre} (${t.horas_estimadas} h)</option>`).join('');
-      if (sel) {
-        document.getElementById('item-trabajo').value = sel;
-        const t = trabajosCache.find(x => x.id === sel);
-        document.getElementById('trabajo-buscar').value = t ? `${t.nombre} (${t.horas_estimadas} h)` : '';
-      }
-    }
-    function poblarRepuestos(sel) {
-      document.getElementById('item-repuesto').innerHTML =
-        repuestosCache.map(r => `<option value="${r.id}">${r.sku ? r.sku + ' · ' : ''}${r.nombre} — ${fmtMoneda(r.precio_venta)}</option>`).join('');
-      if (sel) {
-        document.getElementById('item-repuesto').value = sel;
-        const r = repuestosCache.find(x => x.id === sel);
-        document.getElementById('repuesto-buscar').value = r ? `${r.sku ? r.sku + ' · ' : ''}${r.nombre}` : '';
-      }
-    }
-
-
     // Trabajos y repuestos nuevos o editados en el catálogo/inventario aparecen aquí al volver
     // a la pestaña, sin recargar la página ni perder lo que se está editando.
     async function recargarCatalogo() {
@@ -1008,123 +748,14 @@
         supabaseClient.from('repuestos').select('*').eq('activo', true).order('nombre'),
       ]);
       if (t.error || r.error) return;
-      const selT = document.getElementById('item-trabajo'), selR = document.getElementById('item-repuesto');
-      const vT = selT.value, vR = selR.value;
       reemplazarEnSitio(trabajosCache, t.data);
       reemplazarEnSitio(repuestosCache, r.data);
-      poblarTrabajos(); poblarRepuestos();
-      if (vT) selT.value = vT;
-      if (vR) selR.value = vR;
+      if (editorItems) editorItems.recargar();
     }
-
-    // ---------- Modales "+ Nuevo" ----------
-    const $backdrop = document.getElementById('modal-backdrop');
-    const val = (id) => { const e = document.getElementById(id); return e && e.value.trim() ? e.value.trim() : null; };
-    const modalError = (m) => { document.getElementById('modal-error').textContent = m; };
-    const campo = (id, label, type = 'text', extra = '') => `<div class="form-group"><label for="m-${id}">${label}</label><input type="${type}" id="m-${id}" ${extra} /></div>`;
-    function cerrarModal() { $backdrop.classList.remove('abierto'); document.getElementById('modal').innerHTML = ''; }
-    function abrirModal(titulo, camposHtml, onGuardar) {
-      document.getElementById('modal').innerHTML = `
-        <h3>${titulo}</h3>
-        ${camposHtml}
-        <p class="error-message" id="modal-error"></p>
-        <div class="modal-acciones">
-          <button type="button" id="modal-guardar">Guardar</button>
-          <button type="button" class="btn-secondary" id="modal-cancelar">Cancelar</button>
-        </div>`;
-      $backdrop.classList.add('abierto');
-      document.getElementById('modal-cancelar').addEventListener('click', cerrarModal);
-      document.getElementById('modal-guardar').addEventListener('click', onGuardar);
-    }
-    $backdrop.addEventListener('click', (e) => { if (e.target === $backdrop) cerrarModal(); });
-
-    document.getElementById('nuevo-cliente-btn').addEventListener('click', () => {
-      abrirModal('Nuevo cliente',
-        `<div class="form-row">${campo('cl-nombre', 'Nombre o razón social *')}${campo('cl-rut', 'RUT')}</div>
-         <div class="form-row">${campo('cl-tel', 'Teléfono', 'tel')}${campo('cl-email', 'Email', 'email')}</div>
-         ${campo('cl-dir', 'Dirección')}`,
-        async () => {
-          const nombre = val('m-cl-nombre');
-          if (!nombre) { modalError('Ingresa el nombre.'); return; }
-          const { data, error } = await supabaseClient.from('clientes')
-            .insert({ nombre, rut: val('m-cl-rut'), telefono: val('m-cl-tel'), email: val('m-cl-email'), direccion: val('m-cl-dir') })
-            .select('id, nombre, rut, telefono, email').single();
-          if (error) { modalError('Error: ' + error.message); return; }
-          clientesCache.push(data); clientesCache.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
-          poblarClientes(data.id); actualizarVehiculos();
-          cerrarModal();
-        });
-    });
-
-    document.getElementById('nuevo-vehiculo-btn').addEventListener('click', () => {
-      const clienteId = document.getElementById('cliente_id').value;
-      if (!clienteId) { alert('Primero selecciona (o crea) el cliente al que pertenece el vehículo.'); return; }
-      const cli = clientesCache.find(c => c.id === clienteId);
-      abrirModal(`Nuevo vehículo de ${cli ? cli.nombre : ''}`,
-        `<div class="form-row">${campo('v-pat', 'Patente *', 'text', 'style="text-transform:uppercase;"')}${campo('v-marca', 'Marca')}${campo('v-modelo', 'Modelo')}</div>
-         <div class="form-row">${campo('v-anio', 'Año', 'number')}${campo('v-km', 'Kilometraje', 'number')}</div>`,
-        async () => {
-          const patente = (val('m-v-pat') || '').toUpperCase();
-          if (!patente) { modalError('Ingresa la patente.'); return; }
-          const { data, error } = await supabaseClient.from('vehiculos')
-            .insert({ cliente_id: clienteId, patente, marca: val('m-v-marca'), modelo: val('m-v-modelo'), anio: val('m-v-anio'), kilometraje: val('m-v-km') })
-            .select('*').single();
-          if (error) { modalError('Error: ' + error.message); return; }
-          vehiculosCache.push(data);
-          actualizarVehiculos();
-          document.getElementById('vehiculo_id').value = data.id;
-          cerrarModal();
-        });
-    });
-
-    document.getElementById('nuevo-trabajo-btn').addEventListener('click', () => {
-      abrirModal('Nuevo trabajo del catálogo',
-        `${campo('t-nombre', 'Nombre del trabajo *')}
-         <div class="form-row">${campo('t-horas', 'Horas de taller', 'number', 'step="any" value="1"')}${campo('t-precio', 'Precio fijo (opcional)', 'number', 'step="1" placeholder="Vacío = horas × valor hora"')}</div>
-         <p style="color:var(--color-text-muted); font-size:0.8rem; margin:0;">Se agrega al catálogo y queda disponible al instante.</p>`,
-        async () => {
-          const nombre = val('m-t-nombre');
-          if (!nombre) { modalError('Ingresa el nombre del trabajo.'); return; }
-          const { data, error } = await supabaseClient.from('trabajos')
-            .insert({ nombre, horas_estimadas: val('m-t-horas') || 1, precio_fijo: val('m-t-precio'), insumos: [] })
-            .select('*').single();
-          if (error) { modalError('Error: ' + error.message); return; }
-          trabajosCache.push(data); trabajosCache.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
-          document.getElementById('item-tipo').value = 'mano_obra'; onTipoChange();
-          poblarTrabajos(data.id);
-          onTrabajoChange();
-          cerrarModal();
-        });
-    });
-
-    document.getElementById('nuevo-repuesto-btn').addEventListener('click', () => {
-      abrirModal('Nuevo repuesto / insumo',
-        `<div class="form-row">${campo('r-nombre', 'Nombre *')}${campo('r-marca', 'Marca')}</div>
-         <div class="form-row">${campo('r-sku', 'SKU / código')}${campo('r-venta', 'Precio venta', 'number', 'step="1"')}${campo('r-stock', 'Stock inicial', 'number', 'step="1" value="0"')}</div>`,
-        async () => {
-          const nombre = val('m-r-nombre');
-          if (!nombre) { modalError('Ingresa el nombre.'); return; }
-          const { data, error } = await supabaseClient.from('repuestos')
-            .insert({ nombre, marca: val('m-r-marca'), sku: val('m-r-sku'), precio_venta: val('m-r-venta'), stock_actual: val('m-r-stock') || 0 })
-            .select('*').single();
-          if (error) { modalError('Error: ' + error.message); return; }
-          repuestosCache.push(data); repuestosCache.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
-          document.getElementById('item-tipo').value = 'repuesto'; onTipoChange();
-          poblarRepuestos(data.id); onRepuestoChange();
-          cerrarModal();
-        });
-    });
 
     document.getElementById('nueva-btn').addEventListener('click', () => abrirEditor(null));
     document.getElementById('cerrar-editor-btn').addEventListener('click', cerrarEditor);
     document.getElementById('guardar-btn').addEventListener('click', guardarCotizacion);
-    document.getElementById('agregar-item-btn').addEventListener('click', agregarItem);
-    document.getElementById('cliente_id').addEventListener('change', actualizarVehiculos);
-    document.getElementById('item-tipo').addEventListener('change', onTipoChange);
-    document.getElementById('item-trabajo').addEventListener('change', onTrabajoChange);
-    document.getElementById('item-repuesto').addEventListener('change', onRepuestoChange);
-    document.getElementById('item-cantidad').addEventListener('input', actualizarPreviewTrabajo);
-    document.getElementById('item-horas').addEventListener('input', actualizarPreviewTrabajo);
     // Cambiar entre % y pesos conserva el descuento: solo cambia cómo se expresa
     setupDescuentoUI('descuento_pct', 'descuento_tipo', () => calcularTotales(itemsActuales, 0, true).subtotalMOBruto, renderTotales);
     document.getElementById('descuento_pct').addEventListener('input', renderTotales);
@@ -1149,15 +780,14 @@
       repuestosCache = repuestos.data || [];
       categoriasCache = categorias.data || [];
 
-      poblarClientes();
-      poblarTrabajos();
-      poblarRepuestos();
-
-      setupCombobox('cliente-buscar', 'cliente_id', 'cliente-lista', clientesCache, c => c.nombre);
-      setupCombobox('trabajo-buscar', 'item-trabajo', 'trabajo-lista', trabajosCache, t => `${t.nombre} (${t.horas_estimadas} h)`);
-      setupCombobox('repuesto-buscar', 'item-repuesto', 'repuesto-lista', repuestosCache, r => `${r.sku ? r.sku + ' · ' : ''}${r.nombre}`);
-
-      onTipoChange();
+      // Cliente/vehículo y editor de ítems: los mismos de diagnósticos y OT
+      selectorCliente = crearSelectorCliente({ contenedor: document.getElementById('selector-cliente'), clientes: clientesCache, vehiculos: vehiculosCache });
+      editorItems = crearEditorItems({
+        contenedor: document.getElementById('editor-items'),
+        trabajos: trabajosCache, repuestos: repuestosCache,
+        valorHora: () => config.valor_hora,
+        onAgregar: agregarLineas,
+      });
       mantenerCatalogoAlDia(recargarCatalogo);
       await loadCotizaciones();
 

@@ -1078,3 +1078,7 @@ table.tabla-comparativa { min-width: 0; }
 .registro-correo .rc-asunto { color: var(--color-text-muted); flex-basis: 100%; }
 .registro-correo .rc-cuerpo { padding: 0.5rem 0.75rem 0.75rem; background: #fafbfc; border-radius: 8px; margin-bottom: 0.5rem; font-size: 0.85rem; }
 .registro-correo .rc-evento { font-size: 0.78rem; color: var(--color-text-muted); margin-bottom: 0.35rem; }
+
+/* Precio de cada línea con $ y puntos (cotización, diagnóstico y OT) */
+input.cell-precio { min-width: 6.8rem; }
+.selector-cliente .sc-ficha .ficha-nombre { display: flex; align-items: center; flex-wrap: wrap; gap: 0.25rem; }

@@ -19,16 +19,9 @@
         <!-- Formulario nueva OT -->
         <div class="card" id="nueva-card" style="display:none;">
           <h2 style="margin-top:0;">Nueva orden de trabajo</h2>
+          <div id="selector-cliente"></div>
           <div class="form-row">
-            <div class="form-group">
-              <label for="nueva-cliente">Cliente *</label>
-              <select id="nueva-cliente"></select>
-            </div>
-            <div class="form-group">
-              <label for="nueva-vehiculo">Vehículo</label>
-              <select id="nueva-vehiculo"><option value="">Sin vehículo</option></select>
-            </div>
-            <div class="form-group">
+            <div class="form-group" style="max-width:180px;">
               <label for="nueva-km">Km de ingreso</label>
               <input type="number" id="nueva-km" min="0" />
             </div>
@@ -119,60 +112,8 @@
           </div>
 
           <h3>Ítems de la orden</h3>
-          <div class="form-row" style="align-items:end;">
-            <div class="form-group">
-              <label for="item-tipo">Tipo de ítem</label>
-              <select id="item-tipo">
-                <option value="mano_obra">Trabajo del catálogo (carga insumos)</option>
-                <option value="repuesto">Repuesto del inventario</option>
-                <option value="insumo_taller">Insumo de taller (libre)</option>
-                <option value="insumo_vehiculo">Insumo de vehículo (libre)</option>
-                <option value="otro">Otro (libre)</option>
-              </select>
-            </div>
-            <div class="form-group" id="grupo-trabajo">
-              <label for="trabajo-buscar">Trabajo precargado</label>
-              <div class="combobox-wrap">
-                <input type="text" id="trabajo-buscar" placeholder="Escribe para buscar..." autocomplete="off" />
-                <div class="combobox-lista" id="trabajo-lista" style="display:none;"></div>
-              </div>
-              <select id="item-trabajo" style="display:none;"></select>
-            </div>
-            <div class="form-group" id="grupo-repuesto" style="display:none;">
-              <label for="repuesto-buscar">Repuesto</label>
-              <div class="combobox-wrap">
-                <input type="text" id="repuesto-buscar" placeholder="Escribe para buscar..." autocomplete="off" />
-                <div class="combobox-lista" id="repuesto-lista" style="display:none;"></div>
-              </div>
-              <select id="item-repuesto" style="display:none;"></select>
-            </div>
-            <div class="form-group" id="grupo-pct" style="display:none; max-width:180px;">
-              <label for="item-pct">% usado del producto: <strong id="item-pct-label">100%</strong></label>
-              <input type="range" id="item-pct" min="5" max="100" step="5" value="100" style="padding:0;" />
-              <small style="color:var(--color-text-muted);">Descuenta esa fracción del stock.</small>
-            </div>
-            <div class="form-group" id="grupo-descripcion" style="display:none;">
-              <label for="item-descripcion">Descripción</label>
-              <input type="text" id="item-descripcion" />
-            </div>
-            <div class="form-group" style="max-width:110px;">
-              <label for="item-cantidad" id="item-cantidad-label">Horas</label>
-              <input type="number" id="item-cantidad" value="1" min="0" step="0.25" />
-            </div>
-            <div class="form-group" id="grupo-horas-trabajo" style="display:none; max-width:140px;">
-              <label for="item-horas">Horas por trabajo</label>
-              <input type="number" id="item-horas" min="0" step="any" />
-            </div>
-            <div class="form-group" style="max-width:150px;">
-              <label for="item-precio">Precio unitario</label>
-              <input type="number" id="item-precio" min="0" step="1" />
-            </div>
-            <div class="form-group" style="flex:0;">
-              <button type="button" id="agregar-item-btn">Agregar</button>
-            </div>
-          </div>
-          <p id="item-preview" style="color:var(--color-text-muted); font-weight:600; margin:0.4rem 0 0;"></p>
-          <p class="error-message" id="item-error"></p>
+          <div id="editor-items"></div>
+          <p style="color:var(--color-text-muted); font-size:0.82rem; margin:0.4rem 0 0.25rem;">Puedes corregir la descripción, las horas, la cantidad y el precio de cada línea: se guarda al salir de la casilla. <strong>Valores sin IVA.</strong></p>
           <table>
             <thead>
               <tr><th>Tipo</th><th>Descripción</th><th>Horas de trabajo</th><th>Cantidad</th><th>Precio unit.</th><th>Total</th><th></th></tr>
@@ -361,6 +302,7 @@
   <script src="../assets/vendor/supabase.min.js"></script>
   <script src="../assets/js/supabaseClient.js"></script>
   <script src="../assets/js/layout.js"></script>
+  <script src="../assets/js/documentos.js"></script>
   <script>
     let clientesCache = [], vehiculosCache = [], trabajosCache = [], repuestosCache = [], personalCache = [];
     let categoriasCache = [], policiesCache = [];
@@ -499,12 +441,12 @@
     }
 
     // ---------- Nueva OT ----------
-    function actualizarVehiculosNueva() {
-      const clienteId = document.getElementById('nueva-cliente').value;
-      const propios = vehiculosCache.filter(v => v.cliente_id === clienteId);
-      document.getElementById('nueva-vehiculo').innerHTML =
-        '<option value="">Sin vehículo</option>' +
-        propios.map(v => `<option value="${v.id}">${v.patente} · ${[v.marca, v.modelo].filter(Boolean).join(' ')}</option>`).join('');
+    // Cliente/vehículo y editor de ítems: los mismos de cotizaciones y diagnósticos (assets/js/documentos.js)
+    let selectorCliente = null, editorItems = null;
+    // Al elegir el vehículo se trae su último kilometraje (si aún no se escribió uno)
+    function alCambiarCliente({ vehiculo }) {
+      const kmEl = document.getElementById('nueva-km');
+      if (vehiculo && vehiculo.kilometraje != null && !kmEl.value) kmEl.value = vehiculo.kilometraje;
     }
 
     // ---------- Checklist de recepción ----------
@@ -728,12 +670,13 @@
     async function crearOrden() {
       const errorEl = document.getElementById('nueva-error');
       errorEl.textContent = '';
-      const clienteId = document.getElementById('nueva-cliente').value;
-      if (!clienteId) { errorEl.textContent = 'Selecciona un cliente.'; return; }
+      // Cliente y vehículo nuevos se crean recién al crear la OT
+      const fichas = await selectorCliente.preparar();
+      if (fichas.error) { errorEl.textContent = fichas.error; return; }
 
       const { data, error } = await supabaseClient.from('ordenes').insert({
-        cliente_id: clienteId,
-        vehiculo_id: document.getElementById('nueva-vehiculo').value || null,
+        cliente_id: fichas.clienteId,
+        vehiculo_id: fichas.vehiculoId || null,
         km_ingreso: document.getElementById('nueva-km').value || null,
         diagnostico: document.getElementById('nueva-diagnostico').value || null,
         nivel_combustible: document.getElementById('nueva-combustible').value || null,
@@ -1191,17 +1134,17 @@
       alert(`${codigo} eliminada.${avisos.length ? '\n\n' + avisos.join('\n') : ''}`);
     }
 
+    // Líneas de la OT: se pueden corregir igual que en cotizaciones y diagnósticos (se guardan al salir de la casilla)
     function renderItemsDetalle() {
       const items = ordenActual.orden_items || [];
       const tbody = document.getElementById('items-body');
-      tbody.innerHTML = items.length ? items.map(i => `
+      tbody.innerHTML = items.length ? items.map((i, idx) => `
         <tr>
           <td>${badgeItemDe(i)}</td>
-          <td>${i.descripcion}</td>
-          <td style="text-align:center;">${lineaVista(i).horas != null ? fmtNumItem(lineaVista(i).horas) + ' h' : '–'}</td>
-          <td>${fmtNumItem(lineaVista(i).cantidad)}</td>
-          <td>${fmtMoneda(i.precio_unitario)}${lineaVista(i).porHora ? ' <small style="color:var(--color-text-muted);">por hora</small>' : ''}</td>
-          <td>${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td>
+          <td><input type="text" class="cell-desc" data-idx="${idx}" value="${htmlSeguro(i.descripcion || '')}" style="min-width:150px;" /></td>
+          ${celdasHorasCantidadEditor(i, idx)}
+          <td><input type="number" class="cell-precio" data-idx="${idx}" value="${i.precio_unitario}" min="0" step="1" />${lineaVista(i).porHora ? '<small style="color:var(--color-text-muted);">por hora</small>' : ''}</td>
+          <td class="cell-total" data-idx="${idx}">${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td>
           <td><button type="button" class="btn-danger quitar-item-btn" data-id="${i.id}" style="padding:0.2rem 0.5rem;">✕</button></td>
         </tr>`).join('')
         : '<tr><td colspan="7">Sin ítems.</td></tr>';
@@ -1214,6 +1157,36 @@
         });
       });
 
+      const recalc = (idx) => {
+        const i = items[idx];
+        const celda = tbody.querySelector(`.cell-total[data-idx="${idx}"]`);
+        if (celda) celda.textContent = fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario));
+        renderTotalesOT();
+      };
+      tbody.querySelectorAll('.cell-desc').forEach(inp => inp.addEventListener('input', () => { items[inp.dataset.idx].descripcion = inp.value; }));
+      tbody.querySelectorAll('.cell-cant').forEach(inp => inp.addEventListener('input', () => { cambiarCantidadLinea(items[inp.dataset.idx], inp.value); recalc(inp.dataset.idx); }));
+      tbody.querySelectorAll('.cell-horas').forEach(inp => inp.addEventListener('input', () => { cambiarHorasLinea(items[inp.dataset.idx], inp.value); recalc(inp.dataset.idx); }));
+      tbody.querySelectorAll('.cell-precio').forEach(inp => inp.addEventListener('input', () => { items[inp.dataset.idx].precio_unitario = Number(inp.value) || 0; recalc(inp.dataset.idx); }));
+      tbody.querySelectorAll('.cell-desc, .cell-cant, .cell-horas, .cell-precio').forEach(inp =>
+        inp.addEventListener('change', () => guardarLineaOT(items[inp.dataset.idx])));
+
+      renderTotalesOT();
+    }
+
+    async function guardarLineaOT(i) {
+      if (!i || !i.id) return;
+      const cambios = { descripcion: String(i.descripcion || '').trim() || '(sin descripción)', cantidad: Number(i.cantidad) || 0, precio_unitario: Number(i.precio_unitario) || 0, horas: i.horas ?? null };
+      let { error } = await supabaseClient.from('orden_items').update(cambios).eq('id', i.id);
+      if (error && /horas|schema cache|PGRST204|42703/i.test(`${error.code || ''} ${error.message || ''}`)) {
+        delete cambios.horas;   // sin v56 se guarda sin el detalle de horas
+        ({ error } = await supabaseClient.from('orden_items').update(cambios).eq('id', i.id));
+      }
+      if (error) mostrarToast(`No se pudo guardar el cambio de la línea: ${error.message}`, 'error', 9000);
+      else mostrarToast('✓ Línea guardada', 'ok', 1800);
+    }
+
+    function renderTotalesOT() {
+      const items = ordenActual.orden_items || [];
       const t = calcularTotal(items, ordenActual.con_iva !== false, ordenActual);
       actualizarEquivDescuentoUI('detalle-descuento', 'detalle-descuento-tipo', t.baseDescuento);
       const pagadoPagos = (ordenActual.pagos || []).reduce((s, p) => s + Number(p.monto), 0);
@@ -1277,158 +1250,23 @@
     }
 
     // ---------- Agregar ítems / horas ----------
-    function onTipoChange() {
-      const tipo = document.getElementById('item-tipo').value;
-      const libre = (tipo === 'otro' || tipo === 'insumo_taller' || tipo === 'insumo_vehiculo');
-      document.getElementById('grupo-trabajo').style.display = tipo === 'mano_obra' ? 'block' : 'none';
-      document.getElementById('grupo-repuesto').style.display = tipo === 'repuesto' ? 'block' : 'none';
-      document.getElementById('grupo-pct').style.display = tipo === 'repuesto' ? 'block' : 'none';
-      document.getElementById('grupo-descripcion').style.display = libre ? 'block' : 'none';
-      // Para repuesto de inventario, la cantidad la define el % usado (se oculta el campo cantidad).
-      document.getElementById('item-cantidad').parentElement.style.display = tipo === 'repuesto' ? 'none' : 'block';
-      document.getElementById('item-precio').parentElement.style.display = tipo === 'mano_obra' ? 'none' : 'block';
-      document.getElementById('item-cantidad-label').textContent = 'Cantidad';
-      if (tipo === 'mano_obra') document.getElementById('item-cantidad').value = '1';
-      else if (tipo === 'repuesto') onRepuestoChange();
-      else {
-        document.getElementById('item-cantidad').value = '1';
-        document.getElementById('item-precio').value = '';
-      }
-      actualizarCamposTrabajo();
-    }
-
-    // Empareja la descripción de un insumo con un repuesto del inventario
-    // para precargar su precio de venta (sin IVA).
-    function matchInventario(desc) {
-      const d = (desc || '').toLowerCase();
-      const r = repuestosCache.find(x => {
-        const n = (x.nombre || '').toLowerCase();
-        return n && (d.includes(n) || n.includes(d));
-      });
-      return r ? Number(r.precio_venta || 0) : 0;
-    }
-
-    function onTrabajoChange() {
-      const t = trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value);
-      if (!t) return;
-      document.getElementById('item-cantidad').value = '1';
-      if (t.precio_fijo != null) {
-        document.getElementById('item-precio').value = Number(t.precio_fijo);
-      } else {
-        document.getElementById('item-precio').value = Number(config.valor_hora);
-        document.getElementById('item-horas').value = Number(t.horas_estimadas || 0);
-      }
-      actualizarCamposTrabajo();
-    }
-
-    // El campo "Horas por trabajo" solo tiene sentido si el trabajo se
-    // cobra por hora (sin precio fijo) — con precio fijo la cantidad ya
-    // multiplica el total directo, sin pasar por horas.
-    function actualizarCamposTrabajo() {
-      const tipo = document.getElementById('item-tipo').value;
-      const t = tipo === 'mano_obra' ? trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value) : null;
-      const mostrarHoras = !!(t && t.precio_fijo == null && !opcionesDeTrabajo(t).length);
-      document.getElementById('grupo-horas-trabajo').style.display = mostrarHoras ? 'block' : 'none';
-      actualizarPreviewTrabajo();
-    }
-
-    function actualizarPreviewTrabajo() {
-      const previewEl = document.getElementById('item-preview');
-      const tipo = document.getElementById('item-tipo').value;
-      if (tipo !== 'mano_obra') { previewEl.textContent = ''; return; }
-      const t = trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value);
-      if (!t) { previewEl.textContent = ''; return; }
-      const cantidad = Math.max(1, Number(document.getElementById('item-cantidad').value) || 1);
-      if (opcionesDeTrabajo(t).length) {
-        previewEl.textContent = `Este servicio no se realiza solo: al agregarlo se elige una opción (desde ${fmtMoneda(precioNetoTrabajo(t, config.valor_hora))} + IVA).`;
-      } else if (t.precio_fijo != null) {
-        previewEl.textContent = `Total: ${cantidad} × ${fmtMoneda(t.precio_fijo)} = ${fmtMoneda(Number(t.precio_fijo) * cantidad)}`;
-      } else {
-        const horas = Math.max(0, Number(document.getElementById('item-horas').value) || 0);
-        const totalHoras = horas * cantidad;
-        previewEl.textContent = `Total: ${cantidad} × ${horas} h = ${totalHoras} h · ${fmtMoneda(totalHoras * Number(config.valor_hora))}`;
-      }
-    }
-
-    function onRepuestoChange() {
-      const r = repuestosCache.find(x => x.id === document.getElementById('item-repuesto').value);
-      if (!r) return;
-      document.getElementById('item-pct').value = '100';
-      document.getElementById('item-pct-label').textContent = '100%';
-      document.getElementById('item-precio').value = r.precio_venta != null ? Number(r.precio_venta) : '';
-    }
-
-    async function agregarItem() {
-      const errorEl = document.getElementById('item-error');
-      errorEl.textContent = '';
-      const tipo = document.getElementById('item-tipo').value;
-      let cantidad = Number(document.getElementById('item-cantidad').value);
-      const precio = Number(document.getElementById('item-precio').value);
-      let descripcion = '', trabajo_id = null, repuesto_id = null;
-
-      if (tipo === 'mano_obra') {
-        const t = trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value);
-        if (!t) return;
-        // Carga mano de obra + insumos del trabajo (n veces) como varias líneas (sin mover stock).
-        const n = Math.max(1, Number(document.getElementById('item-cantidad').value) || 1);
-        // Servicio con opciones obligatorias (combos): se elige con cuál; la línea sale con su precio cerrado
-        let opcion = null;
-        if (opcionesDeTrabajo(t).length) {
-          opcion = await elegirOpcionTrabajo(t);
-          if (!opcion) return;
-        }
-        const sufijo = n > 1 ? ` (x${n})` : '';
-        const horasPorTrabajo = (opcion || t.precio_fijo != null) ? null : Math.max(0, Number(document.getElementById('item-horas').value) || 0);
-        const nombreLinea = opcion ? `${t.nombre} — ${opcion.nombre}` : t.nombre;
-        const base = (ordenActual.orden_items || []).length;
-        // cantidad × precio_unitario = total; horas / por_hora detallan la mano de obra para el cliente
-        const lineas = [{ orden_id: ordenActual.id, tipo: 'mano_obra', trabajo_id: t.id, repuesto_id: null, descripcion: nombreLinea + sufijo, ...datosManoObra(t, n, config.valor_hora, { opcion, horasPorTrabajo }), orden: base + 1 }];
-        (t.insumos || []).forEach((ins, k) => {
-          lineas.push({ orden_id: ordenActual.id, tipo: ins.categoria || 'otro', trabajo_id: null, repuesto_id: null, descripcion: ins.descripcion, cantidad: n, precio_unitario: matchInventario(ins.descripcion), orden: base + 2 + k });
-        });
-        const { error } = await insertarItems('orden_items', lineas);
-        if (error) { errorEl.textContent = `Error: ${error.message}`; return; }
-        document.getElementById('item-preview').textContent = '';
-        await abrirDetalle(ordenActual.id);
-        return;
-      } else if (tipo === 'repuesto') {
-        const r = repuestosCache.find(x => x.id === document.getElementById('item-repuesto').value);
-        if (!r) return;
-        const pct = Number(document.getElementById('item-pct').value) || 100;
-        cantidad = pct / 100;  // 100% = 1 unidad; 50% = 0.5 unidad
-        if (Number(r.stock_actual) < cantidad) {
-          errorEl.textContent = `Stock insuficiente de "${r.nombre}" (disponible: ${r.stock_actual}).`;
-          return;
-        }
-        descripcion = r.nombre + (pct < 100 ? ` (${pct}% usado)` : '');
-        repuesto_id = r.id;
-      } else {
-        descripcion = document.getElementById('item-descripcion').value.trim();
-        if (!descripcion) return;
-      }
-
-      const { error } = await supabaseClient.from('orden_items').insert({
-        orden_id: ordenActual.id,
-        tipo, trabajo_id, repuesto_id, descripcion,
-        cantidad, precio_unitario: precio,
-        orden: (ordenActual.orden_items || []).length + 1,
-      });
-      if (error) { errorEl.textContent = `Error: ${error.message}`; return; }
-
-      // Descuento automático de stock al usar un repuesto
-      if (repuesto_id) {
-        const r = repuestosCache.find(x => x.id === repuesto_id);
+    // Líneas que entrega el editor de ítems: se guardan en la OT; un repuesto del inventario descuenta su stock
+    async function agregarLineasOT(lineas, { repuesto, cantidad } = {}) {
+      const base = (ordenActual.orden_items || []).length;
+      const filas = lineas.map((l, k) => ({ ...l, orden_id: ordenActual.id, orden: base + 1 + k }));
+      const { error } = await insertarItems('orden_items', filas);
+      if (error) { document.getElementById('item-error').textContent = `Error: ${error.message}`; return false; }
+      if (repuesto) {
         await supabaseClient.from('movimientos_stock').insert({
-          repuesto_id, tipo: 'salida', cantidad,
+          repuesto_id: repuesto.id, tipo: 'salida', cantidad,
           motivo: `Usado en ${fmtNumero('OT', ordenActual.numero)}`,
           orden_id: ordenActual.id,
         });
-        const nuevoStock = Number(r.stock_actual) - cantidad;
-        await supabaseClient.from('repuestos').update({ stock_actual: nuevoStock }).eq('id', repuesto_id);
-        r.stock_actual = nuevoStock;
+        const nuevoStock = Number(repuesto.stock_actual) - cantidad;
+        await supabaseClient.from('repuestos').update({ stock_actual: nuevoStock }).eq('id', repuesto.id);
+        repuesto.stock_actual = nuevoStock;
+        if (editorItems) editorItems.recargar();
       }
-
-      document.getElementById('item-descripcion').value = '';
       await abrirDetalle(ordenActual.id);
     }
 
@@ -1514,6 +1352,8 @@
       document.getElementById('listado-card').style.display = 'block';
       document.getElementById('nueva-card').style.display = 'block';
       ordenActual = null;
+      if (selectorCliente) selectorCliente.limpiar();
+      ['nueva-km', 'nueva-diagnostico', 'nueva-pertenencias'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
       inicializarChecklist();
       initFirmaCanvas();
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1524,14 +1364,6 @@
     document.getElementById('crear-ot-btn').addEventListener('click', crearOrden);
     document.getElementById('cerrar-detalle-btn').addEventListener('click', cerrarDetalle);
     document.getElementById('eliminar-ot-btn').addEventListener('click', () => { if (ordenActual) eliminarOrden(ordenActual.id); });
-    document.getElementById('nueva-cliente').addEventListener('change', actualizarVehiculosNueva);
-    document.getElementById('item-tipo').addEventListener('change', onTipoChange);
-    document.getElementById('item-trabajo').addEventListener('change', onTrabajoChange);
-    document.getElementById('item-repuesto').addEventListener('change', onRepuestoChange);
-    document.getElementById('item-pct').addEventListener('input', (e) => {
-      document.getElementById('item-pct-label').textContent = e.target.value + '%';
-    });
-    document.getElementById('agregar-item-btn').addEventListener('click', agregarItem);
     document.getElementById('agregar-hora-btn').addEventListener('click', agregarHora);
     document.getElementById('filter-estado').addEventListener('change', renderOrdenes);
 
@@ -1976,27 +1808,15 @@
 
     // Trabajos y repuestos nuevos o editados en el catálogo/inventario aparecen aquí al volver
     // a la pestaña, sin recargar la página ni perder lo que se está editando.
-    const etiquetaTrabajo = (t) => `${t.nombre} (${t.horas_estimadas} h)`;
-    const etiquetaRepuesto = (r) => `${r.sku ? r.sku + ' · ' : ''}${r.nombre} (stock: ${r.stock_actual})`;
-    function poblarCatalogoSelects() {
-      document.getElementById('item-trabajo').innerHTML =
-        trabajosCache.map(t => `<option value="${t.id}">${htmlSeguro(etiquetaTrabajo(t))}</option>`).join('');
-      document.getElementById('item-repuesto').innerHTML =
-        repuestosCache.map(r => `<option value="${r.id}">${htmlSeguro(etiquetaRepuesto(r))}</option>`).join('');
-    }
     async function recargarCatalogo() {
       const [t, r] = await Promise.all([
         supabaseClient.from('trabajos').select('*').eq('activo', true).order('nombre'),
         supabaseClient.from('repuestos').select('*').eq('activo', true).order('nombre'),
       ]);
       if (t.error || r.error) return;
-      const selT = document.getElementById('item-trabajo'), selR = document.getElementById('item-repuesto');
-      const vT = selT.value, vR = selR.value;
       reemplazarEnSitio(trabajosCache, t.data);
       reemplazarEnSitio(repuestosCache, r.data);
-      poblarCatalogoSelects();
-      if (vT) selT.value = vT;
-      if (vR) selR.value = vR;
+      if (editorItems) editorItems.recargar();
     }
 
     (async () => {
@@ -2005,7 +1825,7 @@
       config = await getTallerConfig();
 
       const [clientes, vehiculos, trabajos, repuestos, personal, categorias, policies] = await Promise.all([
-        supabaseClient.from('clientes').select('id, nombre').eq('activo', true).order('nombre'),
+        supabaseClient.from('clientes').select('id, nombre, rut, telefono, email').eq('activo', true).order('nombre'),
         supabaseClient.from('vehiculos').select('*').eq('activo', true).order('patente'),
         supabaseClient.from('trabajos').select('*').eq('activo', true).order('nombre'),
         supabaseClient.from('repuestos').select('*').eq('activo', true).order('nombre'),
@@ -2021,19 +1841,20 @@
       categoriasCache = categorias.data || [];
       policiesCache = policies.data || [];
 
-      document.getElementById('nueva-cliente').innerHTML =
-        '<option value="">Seleccionar cliente...</option>' +
-        clientesCache.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
-      poblarCatalogoSelects();
       document.getElementById('hora-mecanico').innerHTML =
         personalCache.map(p => `<option value="${p.id}">${p.nombre}</option>`).join('');
 
-      setupCombobox('trabajo-buscar', 'item-trabajo', 'trabajo-lista', trabajosCache, t => `${t.nombre} (${t.horas_estimadas} h)`);
-      setupCombobox('repuesto-buscar', 'item-repuesto', 'repuesto-lista', repuestosCache, r => `${r.sku ? r.sku + ' · ' : ''}${r.nombre} (stock: ${r.stock_actual})`);
-      document.getElementById('item-cantidad').addEventListener('input', actualizarPreviewTrabajo);
-      document.getElementById('item-horas').addEventListener('input', actualizarPreviewTrabajo);
-
-      onTipoChange();
+      selectorCliente = crearSelectorCliente({
+        contenedor: document.getElementById('selector-cliente'), clientes: clientesCache, vehiculos: vehiculosCache,
+        alCambiar: alCambiarCliente,
+      });
+      editorItems = crearEditorItems({
+        contenedor: document.getElementById('editor-items'),
+        trabajos: trabajosCache, repuestos: repuestosCache,
+        valorHora: () => config.valor_hora,
+        conStock: true,   // la OT descuenta del inventario lo que usa
+        onAgregar: agregarLineasOT,
+      });
       mantenerCatalogoAlDia(recargarCatalogo);
       await loadOrdenes();
 

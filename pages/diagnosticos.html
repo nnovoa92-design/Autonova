@@ -43,25 +43,8 @@
           <div id="estado-conversion"></div>
 
           <h3>1. Cliente y vehículo</h3>
+          <div id="selector-cliente"></div>
           <div class="form-row">
-            <div class="form-group">
-              <label for="cliente-buscar">Cliente *</label>
-              <div class="combobox-wrap">
-                <div class="select-con-boton">
-                  <input type="text" id="cliente-buscar" placeholder="Escribe para buscar..." autocomplete="off" />
-                  <button type="button" class="btn-secondary btn-mini" id="nuevo-cliente-btn">+ Nuevo</button>
-                </div>
-                <div class="combobox-lista" id="cliente-lista" style="display:none;"></div>
-              </div>
-              <select id="cliente_id" style="display:none;"></select>
-            </div>
-            <div class="form-group">
-              <label for="vehiculo_id">Vehículo</label>
-              <div class="select-con-boton">
-                <select id="vehiculo_id"><option value="">Sin vehículo</option></select>
-                <button type="button" class="btn-secondary btn-mini" id="nuevo-vehiculo-btn">+ Nuevo</button>
-              </div>
-            </div>
             <div class="form-group" style="max-width:160px;">
               <label for="km">Kilometraje</label>
               <input type="number" id="km" min="0" />
@@ -121,64 +104,7 @@
           <h3 style="margin-top:1.5rem;">5. Trabajos recomendados</h3>
           <div id="aviso-lineas"></div>
           <div id="agregar-lineas">
-            <div class="form-row" style="align-items:end;">
-              <div class="form-group">
-                <label for="item-tipo">Tipo de ítem</label>
-                <select id="item-tipo">
-                  <option value="mano_obra">Trabajo del catálogo (carga insumos)</option>
-                  <option value="repuesto">Repuesto del inventario</option>
-                  <option value="insumo_taller">Insumo de taller (libre)</option>
-                  <option value="insumo_vehiculo">Insumo de vehículo (libre)</option>
-                  <option value="otro">Otro (libre)</option>
-                </select>
-              </div>
-              <div class="form-group" id="grupo-trabajo">
-                <label for="trabajo-buscar">Trabajo precargado</label>
-                <div class="combobox-wrap">
-                  <input type="text" id="trabajo-buscar" placeholder="Escribe para buscar..." autocomplete="off" />
-                  <div class="combobox-lista" id="trabajo-lista" style="display:none;"></div>
-                </div>
-                <select id="item-trabajo" style="display:none;"></select>
-              </div>
-              <div class="form-group" id="grupo-repuesto" style="display:none;">
-                <label for="repuesto-buscar">Repuesto</label>
-                <div class="combobox-wrap">
-                  <input type="text" id="repuesto-buscar" placeholder="Escribe para buscar..." autocomplete="off" />
-                  <div class="combobox-lista" id="repuesto-lista" style="display:none;"></div>
-                </div>
-                <select id="item-repuesto" style="display:none;"></select>
-              </div>
-              <div class="form-group" id="grupo-descripcion" style="display:none;">
-                <label for="item-descripcion">Descripción</label>
-                <input type="text" id="item-descripcion" />
-              </div>
-              <div class="form-group" id="grupo-tipo-otro" style="display:none; max-width:150px;">
-                <label for="item-tipo-otro">Clasificar como</label>
-                <select id="item-tipo-otro">
-                  <option value="">Otro</option>
-                  <option value="repuesto">Repuesto</option>
-                  <option value="trabajo">Trabajo externo</option>
-                  <option value="mano_obra">Mano de obra</option>
-                  <option value="insumo">Insumo</option>
-                </select>
-              </div>
-              <div class="form-group" style="max-width:110px;">
-                <label for="item-cantidad" id="item-cantidad-label">Cantidad</label>
-                <input type="number" id="item-cantidad" value="1" min="0" step="0.25" />
-              </div>
-              <div class="form-group" id="grupo-horas-trabajo" style="display:none; max-width:140px;">
-                <label for="item-horas">Horas por trabajo</label>
-                <input type="number" id="item-horas" min="0" step="any" />
-              </div>
-              <div class="form-group" style="max-width:150px;">
-                <label for="item-precio">Precio unitario</label>
-                <input type="number" id="item-precio" min="0" step="1" />
-              </div>
-              <div class="form-group" style="flex:0;">
-                <button type="button" id="agregar-item-btn">Agregar</button>
-              </div>
-            </div>
-            <p id="item-preview" style="color:var(--color-text-muted); font-weight:600; margin:0.4rem 0 0;"></p>
+            <div id="editor-items"></div>
             <p style="color:var(--color-text-muted); font-size:0.82rem; margin:0.5rem 0 0.25rem;">
               Al elegir un trabajo se cargan su mano de obra y los insumos que requiere.
               <strong>Todos los valores son sin IVA</strong> (el IVA se agrega en el total).
@@ -273,6 +199,7 @@
   <script src="../assets/vendor/supabase.min.js"></script>
   <script src="../assets/js/supabaseClient.js"></script>
   <script src="../assets/js/layout.js"></script>
+  <script src="../assets/js/documentos.js"></script>
   <script>
     let clientesCache = [], vehiculosCache = [], trabajosCache = [], repuestosCache = [];
     let diagnosticosCache = [];
@@ -415,25 +342,8 @@
     }
     const lineasBloqueadas = () => !!(diagActual && diagActual.cotizacion);
 
-    // ---------- Selectores ----------
-    function poblarClientes(sel) {
-      document.getElementById('cliente_id').innerHTML =
-        '<option value="">Seleccionar cliente...</option>' +
-        clientesCache.map(c => `<option value="${c.id}">${esc(c.nombre)}</option>`).join('');
-      if (sel) {
-        document.getElementById('cliente_id').value = sel;
-        const c = clientesCache.find(x => x.id === sel);
-        document.getElementById('cliente-buscar').value = c ? c.nombre : '';
-      }
-    }
-    function poblarTrabajos() {
-      document.getElementById('item-trabajo').innerHTML =
-        trabajosCache.map(t => `<option value="${t.id}">${esc(t.nombre)} (${t.horas_estimadas} h)</option>`).join('');
-    }
-    function poblarRepuestos() {
-      document.getElementById('item-repuesto').innerHTML =
-        repuestosCache.map(r => `<option value="${r.id}">${r.sku ? esc(r.sku) + ' · ' : ''}${esc(r.nombre)}</option>`).join('');
-    }
+    // ---------- Selectores (cliente/vehículo y editor de ítems: los mismos de cotizaciones y OT) ----------
+    let selectorCliente = null, editorItems = null;
     // Trabajos y repuestos nuevos o editados en el catálogo/inventario aparecen aquí al volver
     // a la pestaña, sin recargar la página ni perder lo que se está editando.
     async function recargarCatalogo() {
@@ -442,27 +352,14 @@
         supabaseClient.from('repuestos').select('*').eq('activo', true).order('nombre'),
       ]);
       if (t.error || r.error) return;
-      const selT = document.getElementById('item-trabajo'), selR = document.getElementById('item-repuesto');
-      const vT = selT.value, vR = selR.value;
       reemplazarEnSitio(trabajosCache, t.data);
       reemplazarEnSitio(repuestosCache, r.data);
-      poblarTrabajos(); poblarRepuestos();
-      if (vT) selT.value = vT;
-      if (vR) selR.value = vR;
+      if (editorItems) editorItems.recargar();
     }
-
-    function actualizarVehiculos(sel) {
-      const clienteId = document.getElementById('cliente_id').value;
-      const propios = vehiculosCache.filter(v => v.cliente_id === clienteId);
-      document.getElementById('vehiculo_id').innerHTML =
-        '<option value="">Sin vehículo</option>' +
-        propios.map(v => `<option value="${v.id}">${esc(v.patente)} · ${esc([v.marca, v.modelo].filter(Boolean).join(' '))}</option>`).join('');
-      if (sel) document.getElementById('vehiculo_id').value = sel;
-    }
-    function onVehiculoChange() {
-      const v = vehiculosCache.find(x => x.id === document.getElementById('vehiculo_id').value);
+    // Al elegir el vehículo se trae su último kilometraje (si aún no se escribió uno)
+    function alCambiarCliente({ vehiculo }) {
       const kmEl = document.getElementById('km');
-      if (v && v.kilometraje != null && !kmEl.value) kmEl.value = v.kilometraje;
+      if (vehiculo && vehiculo.kilometraje != null && !kmEl.value) kmEl.value = vehiculo.kilometraje;
     }
 
     // ---------- Pruebas y monitoreos ----------
@@ -713,125 +610,10 @@
       catch { prompt('Copia el link manualmente:', url); }
     });
 
-    // ---------- Trabajos recomendados (mismo editor de líneas que cotizaciones) ----------
-    function matchInventario(desc) {
-      const d = (desc || '').toLowerCase();
-      const r = repuestosCache.find(x => {
-        const n = (x.nombre || '').toLowerCase();
-        return n && (d.includes(n) || n.includes(d));
-      });
-      return r ? { repuesto_id: r.id, precio: Number(r.precio_venta || 0) } : { repuesto_id: null, precio: 0 };
-    }
-
-    // Si el trabajo tiene opciones obligatorias (combos), antes pregunta con cuál: la línea sale con
-    // el precio cerrado de esa combinación.
-    async function agregarTrabajoCompleto(t, n = 1, horasPorTrabajo = null) {
-      n = Math.max(1, Number(n) || 1);
-      let opcion = null;
-      if (opcionesDeTrabajo(t).length) {
-        opcion = await elegirOpcionTrabajo(t);
-        if (!opcion) return;
-      }
-      const sufijo = n > 1 ? ` (x${n})` : '';
-      const nombreLinea = opcion ? `${t.nombre} — ${opcion.nombre}` : t.nombre;
-      // cantidad × precio_unitario = total; horas / por_hora detallan la mano de obra para el cliente
-      itemsActuales.push({ tipo: 'mano_obra', trabajo_id: t.id, repuesto_id: null, descripcion: nombreLinea + sufijo, ...datosManoObra(t, n, config.valor_hora, { opcion, horasPorTrabajo }) });
-      (t.insumos || []).forEach(ins => {
-        const m = matchInventario(ins.descripcion);
-        itemsActuales.push({ tipo: ins.categoria || 'otro', trabajo_id: null, repuesto_id: m.repuesto_id, descripcion: ins.descripcion, cantidad: n, precio_unitario: m.precio });
-      });
-      renderItems();
-    }
-
-    function onTipoChange() {
-      const tipo = document.getElementById('item-tipo').value;
-      const libre = (tipo === 'otro' || tipo === 'insumo_taller' || tipo === 'insumo_vehiculo');
-      document.getElementById('grupo-trabajo').style.display = tipo === 'mano_obra' ? 'block' : 'none';
-      document.getElementById('grupo-repuesto').style.display = tipo === 'repuesto' ? 'block' : 'none';
-      document.getElementById('grupo-descripcion').style.display = libre ? 'block' : 'none';
-      document.getElementById('grupo-tipo-otro').style.display = tipo === 'otro' ? 'block' : 'none';
-      document.getElementById('item-precio').parentElement.style.display = tipo === 'mano_obra' ? 'none' : 'block';
-      if (tipo === 'mano_obra') document.getElementById('item-cantidad').value = '1';
-      else if (tipo === 'repuesto') onRepuestoChange();
-      else if (libre) {
-        document.getElementById('item-cantidad').value = '1';
-        document.getElementById('item-precio').value = '';
-      }
-      actualizarCamposTrabajo();
-    }
-
-    function onTrabajoChange() {
-      const t = trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value);
-      if (!t) return;
-      document.getElementById('item-cantidad').value = '1';
-      if (t.precio_fijo != null) {
-        document.getElementById('item-precio').value = Number(t.precio_fijo);
-      } else {
-        document.getElementById('item-precio').value = Number(config.valor_hora);
-        document.getElementById('item-horas').value = Number(t.horas_estimadas || 0);
-      }
-      actualizarCamposTrabajo();
-    }
-
-    // "Horas por trabajo" solo aplica a trabajos que se cobran por hora.
-    function actualizarCamposTrabajo() {
-      const tipo = document.getElementById('item-tipo').value;
-      const t = tipo === 'mano_obra' ? trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value) : null;
-      document.getElementById('grupo-horas-trabajo').style.display = (t && t.precio_fijo == null && !opcionesDeTrabajo(t).length) ? 'block' : 'none';
-      actualizarPreviewTrabajo();
-    }
-
-    function actualizarPreviewTrabajo() {
-      const previewEl = document.getElementById('item-preview');
-      const tipo = document.getElementById('item-tipo').value;
-      const t = tipo === 'mano_obra' ? trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value) : null;
-      if (!t) { previewEl.textContent = ''; return; }
-      const cantidad = Math.max(1, Number(document.getElementById('item-cantidad').value) || 1);
-      if (opcionesDeTrabajo(t).length) {
-        previewEl.textContent = `Este servicio no se realiza solo: al agregarlo se elige una opción (desde ${fmtMoneda(precioNetoTrabajo(t, config.valor_hora))} + IVA).`;
-      } else if (t.precio_fijo != null) {
-        previewEl.textContent = `Total: ${cantidad} × ${fmtMoneda(t.precio_fijo)} = ${fmtMoneda(Number(t.precio_fijo) * cantidad)}`;
-      } else {
-        const horas = Math.max(0, Number(document.getElementById('item-horas').value) || 0);
-        const totalHoras = horas * cantidad;
-        previewEl.textContent = `Total: ${cantidad} × ${horas} h = ${totalHoras} h · ${fmtMoneda(totalHoras * Number(config.valor_hora))}`;
-      }
-    }
-
-    function onRepuestoChange() {
-      const r = repuestosCache.find(x => x.id === document.getElementById('item-repuesto').value);
-      if (!r) return;
-      document.getElementById('item-cantidad').value = '1';
-      document.getElementById('item-precio').value = r.precio_venta != null ? Number(r.precio_venta) : '';
-    }
-
-    function agregarItem() {
-      const tipo = document.getElementById('item-tipo').value;
-      if (tipo === 'mano_obra') {
-        const t = trabajosCache.find(x => x.id === document.getElementById('item-trabajo').value);
-        if (!t) return;
-        const n = Math.max(1, Number(document.getElementById('item-cantidad').value) || 1);
-        const horas = t.precio_fijo != null ? null : Math.max(0, Number(document.getElementById('item-horas').value) || 0);
-        agregarTrabajoCompleto(t, n, horas);
-        document.getElementById('item-preview').textContent = '';
-        return;
-      }
-      const cantidad = Number(document.getElementById('item-cantidad').value) || 0;
-      const precio = Number(document.getElementById('item-precio').value) || 0;
-      let descripcion = '', repuesto_id = null, tipo_otro = null;
-      if (tipo === 'repuesto') {
-        const r = repuestosCache.find(x => x.id === document.getElementById('item-repuesto').value);
-        if (!r) return;
-        descripcion = r.nombre;
-        repuesto_id = r.id;
-      } else {
-        descripcion = document.getElementById('item-descripcion').value.trim();
-        if (!descripcion) return;
-        if (tipo === 'otro') tipo_otro = document.getElementById('item-tipo-otro').value || 'otro';
-      }
-      itemsActuales.push({ tipo, trabajo_id: null, repuesto_id, descripcion, cantidad, precio_unitario: precio, tipo_otro });
-      document.getElementById('item-descripcion').value = '';
-      document.getElementById('item-tipo-otro').value = '';
+    // ---------- Trabajos recomendados ----------
+    // Líneas que entrega el editor de ítems (el mismo de cotizaciones y OT)
+    function agregarLineas(lineas) {
+      itemsActuales.push(...lineas);
       renderItems();
     }
 
@@ -1029,9 +811,7 @@
       document.getElementById('editor-ok').textContent = '';
       document.getElementById('editor-title').textContent = nuevo ? 'Nuevo diagnóstico' : `Editar ${fmtNumero('DIAG', d.numero)}`;
 
-      document.getElementById('cliente_id').value = nuevo ? '' : d.cliente_id;
-      document.getElementById('cliente-buscar').value = nuevo ? '' : ((d.clientes && d.clientes.nombre) || (clientesCache.find(c => c.id === d.cliente_id) || {}).nombre || '');
-      actualizarVehiculos(nuevo ? null : d.vehiculo_id);
+      if (nuevo) selectorCliente.limpiar(); else selectorCliente.fijar(d.cliente_id, d.vehiculo_id);
       document.getElementById('km').value = nuevo ? '' : (d.km ?? '');
       document.getElementById('motivo').value = nuevo ? '' : (d.motivo ?? '');
       document.getElementById('conclusion').value = nuevo ? '' : (d.conclusion ?? '');
@@ -1063,7 +843,6 @@
       renderEstadoConversion();
       renderResumenIngreso();
       renderPruebas();
-      onTipoChange();
       renderItems();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -1077,17 +856,18 @@
     async function guardarDiagnostico() {
       const errorEl = document.getElementById('editor-error');
       errorEl.textContent = '';
-      const clienteId = document.getElementById('cliente_id').value;
-      if (!clienteId) { errorEl.textContent = 'Selecciona un cliente.'; return null; }
       if (pruebasActuales.some(h => !h.item.trim() && ((h.nota || '').trim() || (h.fotos || []).length))) {
         errorEl.textContent = 'Ponle nombre a cada prueba que tenga resultado o fotos.';
         return null;
       }
+      // Cliente y vehículo nuevos se crean recién al guardar
+      const fichas = await selectorCliente.preparar();
+      if (fichas.error) { errorEl.textContent = fichas.error; return null; }
       const bloqueado = lineasBloqueadas();
 
       const payload = {
-        cliente_id: clienteId,
-        vehiculo_id: document.getElementById('vehiculo_id').value || null,
+        cliente_id: fichas.clienteId,
+        vehiculo_id: fichas.vehiculoId || null,
         km: Number(document.getElementById('km').value) || null,
         motivo: document.getElementById('motivo').value.trim() || null,
         conclusion: document.getElementById('conclusion').value.trim() || null,
@@ -1594,11 +1374,9 @@
       document.getElementById('conv-ot').addEventListener('click', () => { cerrarModal(); convertir('ot'); });
     });
 
-    // ---------- Modales "+ Nuevo" (cliente y vehículo) ----------
+    // ---------- Ventana genérica (inspección de ingreso y conversión) ----------
     const $backdrop = document.getElementById('modal-backdrop');
-    const val = (id) => { const e = document.getElementById(id); return e && e.value.trim() ? e.value.trim() : null; };
     const modalError = (m) => { document.getElementById('modal-error').textContent = m; };
-    const campo = (id, label, type = 'text', extra = '') => `<div class="form-group"><label for="m-${id}">${label}</label><input type="${type}" id="m-${id}" ${extra} /></div>`;
     function cerrarModal() { $backdrop.classList.remove('abierto'); document.getElementById('modal').innerHTML = ''; }
     function abrirModal(titulo, camposHtml, onGuardar) {
       document.getElementById('modal').innerHTML = `
@@ -1615,45 +1393,6 @@
     }
     $backdrop.addEventListener('click', (e) => { if (e.target === $backdrop) cerrarModal(); });
 
-    document.getElementById('nuevo-cliente-btn').addEventListener('click', () => {
-      abrirModal('Nuevo cliente',
-        `<div class="form-row">${campo('cl-nombre', 'Nombre o razón social *')}${campo('cl-rut', 'RUT')}</div>
-         <div class="form-row">${campo('cl-tel', 'Teléfono', 'tel')}${campo('cl-email', 'Email', 'email')}</div>
-         ${campo('cl-dir', 'Dirección')}`,
-        async () => {
-          const nombre = val('m-cl-nombre');
-          if (!nombre) { modalError('Ingresa el nombre.'); return; }
-          const { data, error } = await supabaseClient.from('clientes')
-            .insert({ nombre, rut: val('m-cl-rut'), telefono: val('m-cl-tel'), email: val('m-cl-email'), direccion: val('m-cl-dir') })
-            .select('id, nombre, rut, telefono, email').single();
-          if (error) { modalError('Error: ' + error.message); return; }
-          clientesCache.push(data); clientesCache.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
-          poblarClientes(data.id); actualizarVehiculos();
-          cerrarModal();
-        });
-    });
-
-    document.getElementById('nuevo-vehiculo-btn').addEventListener('click', () => {
-      const clienteId = document.getElementById('cliente_id').value;
-      if (!clienteId) { alert('Primero selecciona (o crea) el cliente al que pertenece el vehículo.'); return; }
-      const cli = clientesCache.find(c => c.id === clienteId);
-      abrirModal(`Nuevo vehículo de ${esc(cli ? cli.nombre : '')}`,
-        `<div class="form-row">${campo('v-pat', 'Patente *', 'text', 'style="text-transform:uppercase;"')}${campo('v-marca', 'Marca')}${campo('v-modelo', 'Modelo')}</div>
-         <div class="form-row">${campo('v-anio', 'Año', 'number')}${campo('v-km', 'Kilometraje', 'number')}</div>`,
-        async () => {
-          const patente = (val('m-v-pat') || '').toUpperCase();
-          if (!patente) { modalError('Ingresa la patente.'); return; }
-          const { data, error } = await supabaseClient.from('vehiculos')
-            .insert({ cliente_id: clienteId, patente, marca: val('m-v-marca'), modelo: val('m-v-modelo'), anio: val('m-v-anio'), kilometraje: val('m-v-km') })
-            .select('*').single();
-          if (error) { modalError('Error: ' + error.message); return; }
-          vehiculosCache.push(data);
-          actualizarVehiculos(data.id);
-          onVehiculoChange();
-          cerrarModal();
-        });
-    });
-
     // ---------- Eventos e inicio ----------
     document.getElementById('nueva-btn').addEventListener('click', () => abrirEditor(null));
     document.getElementById('cerrar-btn').addEventListener('click', cerrarEditor);
@@ -1661,14 +1400,6 @@
       const fila = await guardarDiagnostico();
       if (fila) document.getElementById('editor-ok').textContent = `Guardado (${fmtNumero('DIAG', fila.numero)}).`;
     });
-    document.getElementById('agregar-item-btn').addEventListener('click', agregarItem);
-    document.getElementById('cliente_id').addEventListener('change', () => actualizarVehiculos());
-    document.getElementById('vehiculo_id').addEventListener('change', onVehiculoChange);
-    document.getElementById('item-tipo').addEventListener('change', onTipoChange);
-    document.getElementById('item-trabajo').addEventListener('change', onTrabajoChange);
-    document.getElementById('item-repuesto').addEventListener('change', onRepuestoChange);
-    document.getElementById('item-cantidad').addEventListener('input', actualizarPreviewTrabajo);
-    document.getElementById('item-horas').addEventListener('input', actualizarPreviewTrabajo);
     document.getElementById('diag-horas').addEventListener('input', renderTotales);
     // Autonumeración de renglones (1., 2., 3.…) en los cuadros de texto del diagnóstico
     setupAutoList('motivo', { iniciar: true });
@@ -1701,12 +1432,16 @@
       trabajosCache = trabajos.data || [];
       repuestosCache = repuestos.data || [];
 
-      poblarClientes();
-      poblarTrabajos();
-      poblarRepuestos();
-      setupCombobox('cliente-buscar', 'cliente_id', 'cliente-lista', clientesCache, c => c.nombre);
-      setupCombobox('trabajo-buscar', 'item-trabajo', 'trabajo-lista', trabajosCache, t => `${t.nombre} (${t.horas_estimadas} h)`);
-      setupCombobox('repuesto-buscar', 'item-repuesto', 'repuesto-lista', repuestosCache, r => `${r.sku ? r.sku + ' · ' : ''}${r.nombre}`);
+      selectorCliente = crearSelectorCliente({
+        contenedor: document.getElementById('selector-cliente'), clientes: clientesCache, vehiculos: vehiculosCache,
+        alCambiar: alCambiarCliente, titulo: '',
+      });
+      editorItems = crearEditorItems({
+        contenedor: document.getElementById('editor-items'),
+        trabajos: trabajosCache, repuestos: repuestosCache,
+        valorHora: () => config.valor_hora,
+        onAgregar: agregarLineas,
+      });
 
       mantenerCatalogoAlDia(recargarCatalogo);
       await cargarDiagnosticos();
