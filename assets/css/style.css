@@ -1187,3 +1187,13 @@ input.cell-precio { min-width: 6.8rem; }
 .promo-form { border: 1px solid var(--color-border); border-radius: var(--radius); padding: 0.85rem; margin: 0.5rem 0 0.75rem; background: #fafbfc; }
 .promo-check { display: flex; gap: 0.5rem; align-items: center; font-size: 0.9rem; margin: 0.25rem 0; }
 .promo-check input { width: auto; }
+/* Inicio: estado real de cada recordatorio por correo */
+.pasos-titulo { font-size: 0.75rem; color: var(--color-text-muted); margin-right: 0.15rem; }
+.paso-chip.omitido { background: #eef0f3; color: #7a828e; }
+.paso-chip.error { background: #fde2df; color: #a93b33; font-weight: 600; }
+.paso-chip.aviso { background: #fef3c7; color: #92600a; font-weight: 600; }
+.paso-chip.hoy { background: #fff1d6; color: #9a5b00; font-weight: 600; }
+.paso-chip.prog { background: #fff; color: #4b5563; border: 1px dashed #c4c9d1; }
+/* Agenda: el listado «Bloqueos vigentes y próximos» ya no se muestra (se administran en Configuración → Bloqueos de agenda).
+   Solo se oculta: el código de bloqueos sigue igual y los días bloqueados se ven en el calendario. */
+#bloqueos-card { display: none !important; }

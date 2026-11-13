@@ -246,6 +246,45 @@
     const pasosHechos = (arr) => { const n = (arr || []).map(Number).filter(Boolean); return n.length ? Math.max(...n) : 0; };
     const chipsPasos = (nombres, hecho) => Object.entries(nombres).map(([p, txt]) =>
       `<span class="paso-chip${Number(p) <= hecho ? ' hecho' : ''}">${Number(p) <= hecho ? '✓ ' : ''}${txt}</span>`).join('');
+    // Registro real de correos (correos_enviados, v62): qué salió, cuándo y si llegó, por documento
+    async function cargarRegistroCorreos(tabla, ids, eventos) {
+      const mapa = {};
+      if (!ids.length) return mapa;
+      const { data } = await supabaseClient.from('correos_enviados').select('ref_id, evento, estado, creado_en')
+        .eq('ref_tabla', tabla).in('ref_id', ids).in('evento', eventos).order('creado_en');
+      (data || []).forEach(l => { (mapa[l.ref_id] = mapa[l.ref_id] || []).push(l); });
+      return mapa;
+    }
+    // Cada correo de recordatorio va al paso que corresponde según el día en que salió (igual que el envío automático)
+    function logsPorPaso(logs, fechas) {
+      const porPaso = {};
+      (logs || []).forEach(l => {
+        const d = ymdChile(l.creado_en);
+        let p = d >= fechas[3] ? 3 : (d >= fechas[2] ? 2 : 1);
+        while (porPaso[p] && p < 3) p++;
+        if (!porPaso[p]) porPaso[p] = l;
+      });
+      return porPaso;
+    }
+    const fechaCorta = (ymd) => String(ymd).split('-').reverse().slice(0, 2).join('-');   // 05-11
+    // Un recordatorio = lo que realmente pasó: enviado (con fecha), falló, no se envió, sin correo, hoy o programado
+    function chipsEnvios(nombres, fechas, hecho, porPaso, { sinCorreo, apagado, hoy, limite }) {
+      return Object.entries(nombres).map(([k, txt]) => {
+        const p = Number(k), log = porPaso[p], f = fechas[p];
+        if (log) {
+          const d = fechaCorta(ymdChile(log.creado_en));
+          if (log.estado === 'enviado') return `<span class="paso-chip hecho" title="Correo enviado el ${fmtFechaHora(log.creado_en)}">✓ ${txt} · enviado ${d}</span>`;
+          if (log.estado === 'error') return `<span class="paso-chip error" title="El correo falló: revisa «Correos enviados» en Configuración">✗ ${txt} · falló ${d}</span>`;
+          return `<span class="paso-chip aviso" title="No se confirmó la entrega: revisa «Enviados» en tu Gmail">? ${txt} · ${d} sin confirmar</span>`;
+        }
+        if (sinCorreo) return '<span class="paso-chip omitido" title="El cliente no tiene correo registrado">– ' + txt + ' · sin correo</span>';
+        if (p <= hecho) return `<span class="paso-chip omitido" title="Este correo no se envió">– ${txt} · no se envió</span>`;
+        if (limite && f > limite) return `<span class="paso-chip omitido" title="La cotización vence antes de ese día">– ${txt} · no alcanza</span>`;
+        if (apagado) return '<span class="paso-chip omitido" title="Apagado en Configuración → Correo automático">– ' + txt + ' · apagado</span>';
+        if (f <= hoy) return `<span class="paso-chip hoy" title="Sale solo hoy desde las 10:00">⏰ ${txt} · hoy 10:00</span>`;
+        return `<span class="paso-chip prog" title="Se enviará solo ese día desde las 10:00">${txt} · ${fechaCorta(f)}</span>`;
+      }).join('');
+    }
     const correoActivo = (evento) => !!(cfgAvisos && cfgAvisos.correo_script_url && cfgAvisos.correo_script_clave)
       && !(cfgAvisos.correo_eventos && cfgAvisos.correo_eventos[evento] === false);
     // Paso que corresponde según los días (igual que el envío automático)
@@ -278,6 +317,8 @@
         .filter(o => o.cobranza_estado !== 'omitida' && o.cobranza_estado !== 'pagada')
         .map(o => ({ ...o, cuentas: cuentasOT(o) }))
         .filter(o => o.cuentas.saldo > 1);
+      const registro = await cargarRegistroCorreos('ordenes', cobranzas.map(o => o.id), ['cobranza_ot']);
+      cobranzas.forEach(o => { o.registro = registro[o.id] || []; });
       renderCobranza();
     }
 
@@ -301,13 +342,18 @@
           const pasoHoy = dias >= 15 ? 3 : pasoPorDias(dias, false);
           const fechas = { 1: sumarDiasYmd(desde, 3), 2: sumarDiasYmd(desde, 5), 3: sumarDiasYmd(desde, 15) };
           const sig = [1, 2, 3].find(p => p > Math.max(hecho, pasoHoy));
-          estado = `<div class="aviso-estado">Cobranza activa desde el ${fmtFecha(desde + 'T12:00:00')} · ${chipsPasos(PASOS_COBRANZA, hecho)}</div>
-            <div class="aviso-nota">${!correoValido(cli.email) ? '⚠ El cliente no tiene correo: cóbrale por WhatsApp.'
-              : !correoActivo('cobranza_ot') ? '⚠ El aviso automático de cobranza está apagado en Configuración.'
+          const sinCorreo = !correoValido(cli.email);
+          const apagado = !correoActivo('cobranza_ot');
+          const porPaso = logsPorPaso(o.registro, fechas);
+          const salieron = Object.values(porPaso).filter(l => l.estado === 'enviado').length;
+          estado = `<div class="aviso-estado">Cobranza activa desde el ${fmtFecha(desde + 'T12:00:00')} · <span class="pasos-titulo">Avisos por correo:</span> ${chipsEnvios(PASOS_COBRANZA, fechas, hecho, porPaso, { sinCorreo, apagado, hoy })}</div>
+            <div class="aviso-nota">${sinCorreo ? '⚠ Sin correo registrado: no le llegan avisos por correo (por eso salen en gris). Cóbrale por WhatsApp.'
+              : apagado ? '⚠ El aviso automático de cobranza está apagado en Configuración.'
               : pasoHoy > hecho ? `Hoy sale el aviso del ${PASOS_COBRANZA[pasoHoy]} (desde las 10:00).`
-              : sig ? `Próximo correo automático: ${PASOS_COBRANZA[sig]}, ${proximoEnvioTexto(fechas[sig], hoy)}.` : 'Ya se enviaron los 3 avisos.'}</div>`;
-          acciones = `<button type="button" class="btn-secondary cob-wa" data-idx="${idx}">💬 WhatsApp</button>
-            <button type="button" class="btn-secondary cob-mail" data-idx="${idx}">✉ Enviar aviso ahora</button>
+              : sig ? `Próximo aviso por correo: ${PASOS_COBRANZA[sig]}, ${proximoEnvioTexto(fechas[sig], hoy)}.`
+              : `Listo: ${salieron === 1 ? 'salió 1 aviso' : `salieron ${salieron} avisos`} por correo. No salen más correos automáticos.`}</div>`;
+          acciones = `<button type="button" class="${sinCorreo ? '' : 'btn-secondary '}cob-wa" data-idx="${idx}">💬 WhatsApp</button>
+            ${sinCorreo ? '' : `<button type="button" class="btn-secondary cob-mail" data-idx="${idx}">✉ Enviar aviso ahora</button>`}
             <a class="btn btn-secondary" href="ordenes.html?id=${o.id}">💳 Registrar pago</a>
             <button type="button" class="btn-secondary cob-detener" data-idx="${idx}">⏸ Detener</button>`;
         } else {
@@ -406,6 +452,9 @@
         const enviada = c.enviada_en ? ymdChile(c.enviada_en) : null;
         return { ...c, vence, enviada, restantes: diasEntre(hoy, vence), total: totalVigenteCotizacion(c, cfgAvisos.iva_pct) };
       }).sort((a, b) => (a.restantes < 0) - (b.restantes < 0) || a.restantes - b.restantes);
+      // Qué correos salieron de verdad (la cotización y cada recordatorio)
+      const registro = await cargarRegistroCorreos('cotizaciones', cotPendientes.map(c => c.id), ['cotizacion_enviada', 'recordatorio_cotizacion']);
+      cotPendientes.forEach(c => { c.registro = registro[c.id] || []; });
       renderCotizacionesPendientes();
     }
 
@@ -419,19 +468,27 @@
         const cli = c.clientes || {};
         const hecho = pasosHechos(c.recordatorios_enviados);
         const diasEnviada = c.enviada ? diasEntre(c.enviada, hoy) : null;
+        const sinCorreo = !correoValido(cli.email);
+        const apagado = !correoActivo('recordatorio_cotizacion');
+        const fechas = c.enviada ? { 1: sumarDiasYmd(c.enviada, 3), 2: sumarDiasYmd(c.enviada, 5), 3: c.vence } : null;
+        const recs = c.registro.filter(l => l.evento === 'recordatorio_cotizacion');
+        const envioCot = c.registro.find(l => l.evento === 'cotizacion_enviada' && l.estado === 'enviado');
+        const porPaso = fechas ? logsPorPaso(recs, fechas) : {};
+        const salieron = Object.values(porPaso).filter(l => l.estado === 'enviado').length;
         let nota;
         if (c.restantes < 0) nota = `Venció el ${fmtFecha(c.vence + 'T12:00:00')} sin respuesta: en la próxima revisión automática (cada hora) queda rechazada. Si vuelve, hazle una nueva.`;
         else if (!c.enviada) nota = 'Sin fecha de envío: los recordatorios automáticos parten cuando la marcas «enviada».';
-        else if (!correoValido(cli.email)) nota = '⚠ El cliente no tiene correo: recuérdasela por WhatsApp.';
-        else if (!correoActivo('recordatorio_cotizacion')) nota = '⚠ Los recordatorios automáticos de cotización están apagados en Configuración.';
-        else if (hecho >= 3) nota = 'Sin más correos automáticos (ya se enviaron, o la cotización es anterior a los recordatorios automáticos).';
+        else if (sinCorreo) nota = '⚠ Sin correo registrado: no le llegan recordatorios por correo (por eso salen en gris). Recuérdasela por WhatsApp.';
+        else if (apagado) nota = '⚠ Los recordatorios automáticos de cotización están apagados en Configuración.';
+        else if (hecho >= 3 && !recs.length) nota = 'Esta cotización es anterior a los recordatorios automáticos: <strong>no se le enviaron recordatorios</strong>. Recuérdasela por WhatsApp o con «Enviar recordatorio ahora».';
+        else if (hecho >= 3) nota = `Listo: ${salieron === 1 ? 'salió 1 recordatorio' : `salieron ${salieron} recordatorios`} por correo. No salen más correos automáticos.`;
         else {
           const pasoHoy = pasoPorDias(diasEnviada, hoy === c.vence && diasEnviada >= 1);
-          const fechas = { 1: sumarDiasYmd(c.enviada, 3), 2: sumarDiasYmd(c.enviada, 5), 3: c.vence };
           const sig = [1, 2, 3].find(p => p > Math.max(hecho, pasoHoy) && fechas[p] > hoy && fechas[p] <= c.vence);
-          nota = pasoHoy > hecho ? `Hoy sale el correo automático del ${PASOS_COTIZACION[pasoHoy]} (desde las 10:00).`
-            : sig ? `Próximo correo automático: ${PASOS_COTIZACION[sig]}, ${proximoEnvioTexto(fechas[sig], hoy)}.` : 'Ya se enviaron los recordatorios automáticos.';
+          nota = pasoHoy > hecho ? `Hoy sale el recordatorio del ${PASOS_COTIZACION[pasoHoy]} (desde las 10:00).`
+            : sig ? `Próximo recordatorio por correo: ${PASOS_COTIZACION[sig]}, ${proximoEnvioTexto(fechas[sig], hoy)}.` : 'Ya se enviaron los recordatorios automáticos.';
         }
+        const chips = fechas ? chipsEnvios(PASOS_COTIZACION, fechas, hecho, porPaso, { sinCorreo, apagado, hoy, limite: c.vence }) : '';
         return `
           <div class="aviso-fila${c.restantes < 0 ? ' vencida' : ''}">
             <div class="aviso-cab">
@@ -439,12 +496,12 @@
               ${c.vehiculos ? `· <span class="badge">${htmlSeguro(c.vehiculos.patente)}</span>` : ''}
               <span class="aviso-fecha">${diasEnviada != null ? `enviada hace ${textoDias(diasEnviada)} · ` : ''}${c.restantes > 0 ? `vence en ${textoDias(c.restantes)}` : (c.restantes === 0 ? '<strong>hoy es su último día</strong>' : '<span class="badge badge-gray">Vencida</span>')}</span>
             </div>
-            <div class="aviso-montos">Total ${fmtMoneda(c.total)}</div>
-            <div class="aviso-estado">${chipsPasos(PASOS_COTIZACION, hecho)}</div>
+            <div class="aviso-montos">Total ${fmtMoneda(c.total)}${envioCot ? ` · <span style="color:var(--color-text-muted); font-size:0.85rem;">📧 cotización enviada por correo el ${fechaCorta(ymdChile(envioCot.creado_en))}</span>` : ''}</div>
+            ${chips ? `<div class="aviso-estado"><span class="pasos-titulo">Recordatorios por correo:</span> ${chips}</div>` : ''}
             <div class="aviso-nota">${nota}</div>
             <div class="aviso-acciones">
-              <button type="button" class="btn-secondary cot-wa" data-idx="${idx}">💬 WhatsApp</button>
-              ${c.restantes >= 0 ? `<button type="button" class="btn-secondary cot-mail" data-idx="${idx}">✉ Enviar recordatorio ahora</button>` : ''}
+              <button type="button" class="${sinCorreo ? '' : 'btn-secondary '}cot-wa" data-idx="${idx}">💬 WhatsApp</button>
+              ${c.restantes >= 0 && !sinCorreo ? `<button type="button" class="btn-secondary cot-mail" data-idx="${idx}">✉ Enviar recordatorio ahora</button>` : ''}
               <a class="btn btn-secondary" href="cotizaciones.html?id=${c.id}">Abrir</a>
             </div>
           </div>`;

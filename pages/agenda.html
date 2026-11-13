@@ -315,12 +315,12 @@
       return m != null && m !== '' ? Math.max(0, Number(m) || 0) : 60;
     }
     // Servicio del catálogo que se cobra por la atención a domicilio, y su valor neto
-    function trabajoDomicilio() {
-      const id = tallerHorarios && tallerHorarios.trabajo_domicilio_id;
+    function trabajoDomicilio(modalidad) {
+      const id = tallerHorarios && (modalidad === 'retiro' ? tallerHorarios.trabajo_retiro_id : tallerHorarios.trabajo_domicilio_id);
       return id ? (trabajosCache.find(t => t.id === id) || null) : null;
     }
-    function valorDomicilio() {
-      const t = trabajoDomicilio();
+    function valorDomicilio(modalidad) {
+      const t = trabajoDomicilio(modalidad);
       if (!t) return null;
       const monto = precioNetoTrabajo(t, tallerHorarios && tallerHorarios.valor_hora);
       return monto != null ? { monto, desde: opcionesDeTrabajo(t).length > 0, nombre: t.nombre } : null;
@@ -971,9 +971,9 @@
     // A domicilio se agrega el valor de la atención a domicilio (catálogo)
     function lineaPrecioCita(c, precio) {
       let texto = lineaPrecio(precio);
-      if (c.modalidad === 'terreno') {
-        const v = valorDomicilio();
-        if (v) texto += `\n• Atención a domicilio: ${textoValorDomicilio(v)}.`;
+      if (c.modalidad === 'terreno' || c.modalidad === 'retiro') {
+        const v = valorDomicilio(c.modalidad);
+        if (v) texto += `\n• ${c.modalidad === 'retiro' ? 'Retiro y entrega' : 'Atención a domicilio'}: ${textoValorDomicilio(v)}.`;
       }
       return texto;
     }
@@ -1650,9 +1650,9 @@
             ${veh ? `<span>🚗 ${escapar(veh)}</span>` : ''}
           </div>
           <div class="ficha-datos"><span>🔧 Pidió: ${escapar(servicioCita(c) || 'Servicio por definir')}${horasCatalogo ? ` (referencia del catálogo: ${fmtDuracion(horasCatalogo)})` : ''}</span></div>
-          ${c.modalidad === 'terreno' ? `<div class="ficha-datos"><span>🚗 <strong>A domicilio</strong>${c.direccion ? ' · ' + escapar(c.direccion) : ''}</span></div>
+          ${c.modalidad === 'terreno' || c.modalidad === 'retiro' ? `<div class="ficha-datos"><span>🚗 <strong>${c.modalidad === 'retiro' ? 'Retiro y entrega a domicilio' : 'A domicilio (en terreno)'}</strong>${c.direccion ? ' · ' + escapar(c.direccion) : ''}</span></div>
           ${(margenesCita(c).antes || margenesCita(c).despues) ? `<div class="ficha-datos"><span>⏱ Se bloquea también el traslado: ${margenesCita(c).antes} min antes y ${margenesCita(c).despues} min después</span></div>` : ''}
-          <div class="ficha-datos"><span>💲 Atención a domicilio (catálogo${trabajoDomicilio() ? ': ' + escapar(trabajoDomicilio().nombre) : ''}): ${escapar(textoValorDomicilio(valorDomicilio()))}</span></div>` : ''}
+          <div class="ficha-datos"><span>💲 ${c.modalidad === 'retiro' ? 'Retiro y entrega' : 'Atención a domicilio'} (catálogo${trabajoDomicilio(c.modalidad) ? ': ' + escapar(trabajoDomicilio(c.modalidad).nombre) : ''}): ${escapar(textoValorDomicilio(valorDomicilio(c.modalidad)))}</span></div>` : ''}
           ${c.notas ? `<div class="ficha-datos"><span>💬 ${escapar(c.notas)}</span></div>` : ''}
           ${c.codigo_descuento ? (c.codigo_nota
             ? `<div class="ficha-datos" style="color:var(--color-danger);"><span>🎁 Viene con el código <strong>${escapar(c.codigo_descuento)}</strong>, pero ${escapar(String(c.codigo_nota).replace(/^No aplica:s*/i, "no aplica: "))} No se le hará el descuento: avísale al confirmar.</span></div>`
@@ -1973,8 +1973,8 @@
         }
       }
       // Atención a domicilio: su valor sale del catálogo (Configuración → Atención a domicilio)
-      if (c.modalidad === 'terreno') {
-        const td = trabajoDomicilio();
+      if (c.modalidad === 'terreno' || c.modalidad === 'retiro') {
+        const td = trabajoDomicilio(c.modalidad);
         let opcion = null;
         if (td && opcionesDeTrabajo(td).length) opcion = await elegirOpcionTrabajo(td);
         if (td && (opcion || !opcionesDeTrabajo(td).length)) {
