@@ -285,15 +285,23 @@
       return d ? `<a href="diagnosticos.html?id=${d.id}" title="Ver el diagnóstico de origen" style="${estilo || ''}">← ${fmtNumero('DIAG', d.numero)}</a>` : '';
     }
 
-    function abrirEditor(cot) {
+    // Las convertidas a OT y las rechazadas por vencer ya no se editan (para retomarlas: «♻ Hacer una nueva»)
+    function cotizacionEditable(c) {
+      return c.estado !== 'convertida' && c.rechazo_motivo !== 'vencida';
+    }
+
+    // opciones.copia: nueva cotización (borrador) con el cliente, vehículo, ítems y condiciones de `cot`
+    function abrirEditor(cot, opciones = {}) {
+      const copia = !!(cot && opciones.copia);
       document.getElementById('editor-card').style.display = 'block';
       document.getElementById('editor-error').textContent = '';
-      const enlaceOrigen = cot ? enlaceDiagnostico(cot.id) : '';
-      document.getElementById('origen-diagnostico').innerHTML = enlaceOrigen
-        ? `<p style="margin:0 0 0.75rem; font-size:0.88rem; color:var(--color-text-muted);">Creada desde el diagnóstico ${enlaceOrigen}</p>` : '';
+      const enlaceOrigen = cot && !copia ? enlaceDiagnostico(cot.id) : '';
+      document.getElementById('origen-diagnostico').innerHTML = copia
+        ? `<p style="margin:0 0 0.75rem; font-size:0.88rem; color:var(--color-text-muted);">Nueva cotización a partir de ${fmtNumero('COT', cot.numero)}${cot.rechazo_motivo === 'vencida' ? ' (venció sin respuesta)' : ''}: revisa los precios antes de enviarla.</p>`
+        : (enlaceOrigen ? `<p style="margin:0 0 0.75rem; font-size:0.88rem; color:var(--color-text-muted);">Creada desde el diagnóstico ${enlaceOrigen}</p>` : '');
       if (cot) {
-        document.getElementById('editor-title').textContent = `Editar ${fmtNumero('COT', cot.numero)}`;
-        document.getElementById('cotizacion-id').value = cot.id;
+        document.getElementById('editor-title').textContent = copia ? 'Nueva cotización' : `Editar ${fmtNumero('COT', cot.numero)}`;
+        document.getElementById('cotizacion-id').value = copia ? '' : cot.id;
         selectorCliente.fijar(cot.cliente_id, cot.vehiculo_id);
         document.getElementById('validez_dias').value = cot.validez_dias;
         escribirDescuentoUI('descuento_pct', 'descuento_tipo', cot);
@@ -435,7 +443,8 @@
         const t = totalesCotizacion(c);
         const vehiculo = c.vehiculos ? `${c.vehiculos.patente}` : '–';
         const puedeConvertir = c.estado === 'aprobada';
-        const editable = c.estado !== 'convertida';
+        const editable = cotizacionEditable(c);
+        const vencidaSinRechazar = c.estado === 'enviada' && venceCotizacion(c) < hoyChile();
         return `
         <tr id="cot-${c.id}">
           <td style="white-space:nowrap;">${fmtNumero('COT', c.numero)}${diagPorCotizacion[c.id] ? '<br>' + enlaceDiagnostico(c.id, 'font-size:0.75rem;') : ''}</td>
@@ -443,7 +452,9 @@
           <td>${c.clientes ? c.clientes.nombre : '–'}</td>
           <td style="white-space:nowrap;">${vehiculo}</td>
           <td style="white-space:nowrap;">${fmtMoneda(t.total)}</td>
-          <td style="white-space:nowrap;">${badgeEstado(c.estado, ESTADOS_COTIZACION)}</td>
+          <td style="white-space:nowrap;">${badgeEstado(c.estado, ESTADOS_COTIZACION)}${c.rechazo_motivo === 'vencida'
+            ? '<br><small style="color:var(--color-text-muted);">venció sin respuesta</small>'
+            : (vencidaSinRechazar ? '<br><small style="color:var(--color-text-muted);">vencida: se rechaza sola</small>' : '')}</td>
           <td class="table-actions">
             ${editable ? `<button type="button" class="btn-secondary editar-btn" data-id="${c.id}">Editar</button>` : ''}
             <button type="button" class="btn-secondary pdf-btn" data-id="${c.id}">📄 PDF</button>
@@ -461,10 +472,17 @@
             ${c.estado === 'enviada' ? `<button type="button" class="estado-btn" data-id="${c.id}" data-estado="aprobada">Aprobar</button>
               <button type="button" class="btn-danger estado-btn" data-id="${c.id}" data-estado="rechazada">Rechazar</button>` : ''}
             ${puedeConvertir ? `<button type="button" class="convertir-btn" data-id="${c.id}">Convertir a OT</button>` : ''}
+            ${c.estado === 'rechazada' ? `<button type="button" class="btn-secondary nueva-copia-btn" data-id="${c.id}" title="Nueva cotización (borrador) con el mismo cliente, vehículo e ítems">♻ Hacer una nueva</button>` : ''}
           </td>
         </tr>`;
       }).join('');
 
+      tbody.querySelectorAll('.nueva-copia-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const c = cotizacionesCache.find(x => x.id === btn.dataset.id);
+          if (c) abrirEditor(c, { copia: true });
+        });
+      });
       tbody.querySelectorAll('.editar-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           const c = cotizacionesCache.find(x => x.id === btn.dataset.id);
@@ -804,7 +822,7 @@
       const idParam = new URLSearchParams(window.location.search).get('id');
       const cotParam = idParam && cotizacionesCache.find(c => c.id === idParam);
       if (cotParam) {
-        if (cotParam.estado !== 'convertida') abrirEditor(cotParam);   // las convertidas ya no se editan: se resaltan en el listado
+        if (cotizacionEditable(cotParam)) abrirEditor(cotParam);   // las convertidas y las vencidas ya no se editan: se resaltan en el listado
         else {
           const fila = document.getElementById('cot-' + cotParam.id);
           if (fila) {

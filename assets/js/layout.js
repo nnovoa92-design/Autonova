@@ -85,6 +85,8 @@ function fmtMoneda(n) {
 
 function fmtFecha(d) {
   if (!d) return '–';
+  // Una fecha sola (AAAA-MM-DD) se lee a mediodía: a medianoche UTC en Chile mostraba el día anterior
+  if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) d = d + 'T12:00:00';
   return new Date(d).toLocaleDateString('es-CL', { dateStyle: 'short' });
 }
 
@@ -1198,6 +1200,11 @@ function sumarDiasYmd(ymd, n) {
   const d = new Date(`${ymd}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
+}
+// Último día de validez de una cotización (AAAA-MM-DD): fecha + días de validez. El día siguiente, si sigue
+// «enviada» y sin ingreso del vehículo, el servidor la deja rechazada (v66).
+function venceCotizacion(c) {
+  return sumarDiasYmd(String((c && (c.fecha || c.creado_en)) || hoyChile()).slice(0, 10), Number(c && c.validez_dias) || 15);
 }
 // Instantes UTC (ISO) de las 00:00 y las 23:59:59 de un día en Chile, para filtrar por fecha_hora.
 function limitesDiaChile(ymd) {

@@ -211,18 +211,35 @@
       });
 
       cots.forEach(c => {
-        const vence = sumarDiasYmd(String(c.fecha || c.creado_en).slice(0, 10), Number(c.validez_dias) || 15);
-        const vencida = c.estado === 'enviada' && vence < hoy;
+        const vence = venceCotizacion(c);
+        const porVencer = c.rechazo_motivo === 'vencida';   // la rechazó el sistema al pasar su validez
+        const vencida = porVencer || (c.estado === 'enviada' && vence < hoy);
         const e = ESTADOS_COTIZACION[c.estado] || { label: c.estado, badge: '' };
+        const total = fmtMoneda(totalVigenteCotizacion(c, config.iva_pct));
         eventos.push({
           tipo: 'cotizacion', fecha: c.creado_en || c.fecha,
           titulo: fmtNumero('COT', c.numero),
           estado: badge(e.label, e.badge) + (vencida ? ' ' + badge('Vencida', 'badge-gray') : ''),
           detalle: listaItems(c.cotizacion_items),
-          montos: `Total ${fmtMoneda(totalVigenteCotizacion(c, config.iva_pct))}${c.estado === 'enviada' && !vencida ? ` · válida hasta el ${fmtFecha(vence + 'T12:00:00')}` : ''}`,
+          montos: `Total ${total}` +
+            (c.estado === 'enviada' && !vencida ? ` · válida hasta el ${fmtFecha(vence + 'T12:00:00')}` : '') +
+            (vencida ? ` · estuvo vigente hasta el ${fmtFecha(vence)}` : '') +
+            (c.estado === 'rechazada' && c.rechazada_en && !porVencer ? ` · rechazada el ${fmtFecha(c.rechazada_en)}` : ''),
           persona: quien(c),
           link: `cotizaciones.html?id=${c.id}`,
         });
+        // Rechazo automático: queda como hecho propio en la línea de tiempo, el día en que pasó
+        if (porVencer) {
+          eventos.push({
+            tipo: 'cotizacion', extra: true, fecha: c.rechazada_en || (sumarDiasYmd(vence, 1) + 'T03:00:00Z'),
+            titulo: `${fmtNumero('COT', c.numero)} rechazada automáticamente`,
+            estado: badge('Rechazada', 'badge-red') + ' ' + badge('Vencida', 'badge-gray'),
+            detalle: `Pasaron sus ${Number(c.validez_dias) || 15} días de validez sin aprobación ni ingreso del vehículo. Para retomarla hay que hacer una cotización nueva.`,
+            montos: `Total que tenía: ${total}`,
+            persona: quien(c),
+            link: `cotizaciones.html?id=${c.id}`,
+          });
+        }
       });
 
       let gastado = 0, saldo = 0;
@@ -322,7 +339,7 @@
           ${r.proxima ? dato('Próxima cita', `${fmtFecha(r.proxima)} ${fmtHora(r.proxima)}`) : ''}
           ${r.cotPendientes ? dato('Cotizaciones por responder', String(r.cotPendientes)) : ''}
         </div>`;
-      const cuenta = (t) => eventos.filter(e => e.tipo === t).length;
+      const cuenta = (t) => eventos.filter(e => e.tipo === t && !e.extra).length;   // el rechazo automático no es otra cotización
       document.getElementById('exp-filtros').innerHTML =
         `<button type="button" class="exp-filtro${!filtroExpediente ? ' activo' : ''}" data-tipo="">Todo (${eventos.length})</button>` +
         Object.entries(TIPOS_EXPEDIENTE).filter(([t]) => cuenta(t)).map(([t, info]) =>

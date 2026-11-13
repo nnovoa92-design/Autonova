@@ -410,7 +410,7 @@
         const hecho = pasosHechos(c.recordatorios_enviados);
         const diasEnviada = c.enviada ? diasEntre(c.enviada, hoy) : null;
         let nota;
-        if (c.restantes < 0) nota = `Venció el ${fmtFecha(c.vence + 'T12:00:00')}: si le interesa, puedes ofrecerle actualizarla.`;
+        if (c.restantes < 0) nota = `Venció el ${fmtFecha(c.vence + 'T12:00:00')} sin respuesta: en la próxima revisión automática (cada hora) queda rechazada. Si vuelve, hazle una nueva.`;
         else if (!c.enviada) nota = 'Sin fecha de envío: los recordatorios automáticos parten cuando la marcas «enviada».';
         else if (!correoValido(cli.email)) nota = '⚠ El cliente no tiene correo: recuérdasela por WhatsApp.';
         else if (!correoActivo('recordatorio_cotizacion')) nota = '⚠ Los recordatorios automáticos de cotización están apagados en Configuración.';

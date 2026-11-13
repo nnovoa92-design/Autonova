@@ -102,7 +102,11 @@
       cotData = d;
       if (d.taller && d.taller.nombre) document.getElementById('taller-nombre').textContent = d.taller.nombre;
       const t = calcular(d);
-      const pendiente = d.estado === 'borrador' || d.estado === 'enviada';
+      // Vencida: la rechazó el sistema al pasar su validez, o sigue enviada pero ya pasó el último día
+      const vence = venceCotizacion(d);
+      const vencida = d.rechazo_motivo === 'vencida' || ((d.estado === 'borrador' || d.estado === 'enviada') && vence < hoyChile());
+      const pendiente = (d.estado === 'borrador' || d.estado === 'enviada') && !vencida;
+      const telTaller = String((d.taller && d.taller.telefono) || '').replace(/\D/g, '');
       const desgloseHTML = renderDesgloseHTML(t, 300);
       const politicasEspeciales = politicasEspecialesTexto(d);
 
@@ -111,7 +115,7 @@
           <div style="text-align:center; margin-bottom:1.5rem;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
               <h2 style="margin:0;">COTIZACIÓN ${fmtNumero('COT', d.numero)}</h2>
-              ${badgeEstado(d.estado, ESTADOS_COTIZACION)}
+              ${vencida ? '<span class="badge badge-gray">Vencida</span>' : badgeEstado(d.estado, ESTADOS_COTIZACION)}
             </div>
             <p style="color:var(--color-text-muted); margin:0; font-size:0.9rem;">
               <strong>${d.cliente ? d.cliente.nombre : '–'}</strong>
@@ -168,6 +172,13 @@
             ` : ''}
           </div>` : ''}
 
+          ${vencida && !mensajeRespuesta ? `
+          <div style="background:#f3f4f6; padding:1rem; border-radius:6px; color:#374151; text-align:center; margin:1.5rem 0 1rem;">
+            <strong>Esta cotización estuvo vigente hasta el ${fmtFecha(vence)}</strong> y ya no se puede aprobar.<br>
+            <span style="font-size:0.9rem;">Si todavía te interesa, escríbenos y te preparamos una nueva con los valores actualizados.</span>
+            ${telTaller ? `<div style="margin-top:0.75rem;"><a href="https://wa.me/${telTaller}?text=${encodeURIComponent(`Hola, me interesa la cotización ${fmtNumero('COT', d.numero)} que venció. ¿Me pueden preparar una nueva?`)}" target="_blank" rel="noopener" style="display:inline-block; background:#25d366; color:#fff; padding:0.5rem 1rem; border-radius:4px; text-decoration:none; font-size:0.9rem;">💬 Pedir una nueva por WhatsApp</a></div>` : ''}
+          </div>` : ''}
+
           ${pendiente && !mensajeRespuesta ? `
           <div style="display:flex; gap:0.75rem; flex-wrap:wrap; justify-content:center; margin-top:1.5rem;">
             <button type="button" id="aprobar-btn" style="padding:0.75rem 1.5rem; font-size:1rem;">✓ Aprobar cotización</button>
@@ -202,6 +213,10 @@
         p_respuesta: respuesta,
       });
       const errorEl = document.getElementById('respuesta-error');
+      if (!error && data === 'vencida') {   // se venció mientras estaba abierta: se muestra como vencida
+        render({ ...cotData, rechazo_motivo: 'vencida' });
+        return;
+      }
       if (error || data !== 'ok') {
         if (errorEl) errorEl.textContent = 'No se pudo registrar tu respuesta. Contacta al taller.';
         return;
