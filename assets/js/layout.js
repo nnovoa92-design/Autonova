@@ -575,16 +575,109 @@ async function enviarCorreo({ para, asunto, texto, ref }) {
   return r;
 }
 
+// ---------- Correo con diseño (HTML) ----------
+// TODOS los correos salen con el mismo diseño: logo, colores del taller, botones en los links,
+// «Síguenos en Instagram» destacado y el botón de reserva al final. El texto plano viaja igual, de respaldo.
+// La MISMA lógica está en SQL (_correo_html, sql/v69) para los correos automáticos: si se cambia una, cambiar la otra.
+// Necesita el script de Gmail versión 2 (Configuración → Correo automático); con el antiguo, sale el texto plano.
+const BOTONES_CORREO = [
+  ['#condiciones', '📋 Ver condiciones completas'],
+  ['/inspeccion-ingreso.html', '✍️ Revisar y firmar la inspección'],
+  ['/inspeccion.html', '📋 Ver el informe de inspección'],
+  ['/cotizacion.html', '📄 Ver y aprobar la cotización'],
+  ['/diagnostico.html', '🔎 Ver el informe de diagnóstico'],
+  ['/portal.html', '🚗 Seguir mi vehículo'],
+  ['/reservar.html', '📅 Reservar hora'],
+  ['/club.html', '🎁 Compartir mi código'],
+];
+const escCorreo = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+function botonCorreo(url) {
+  const e = BOTONES_CORREO.find(([p]) => url.includes(p));
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 20px;"><tr><td style="border-radius:10px;background:#d4a84b;">` +
+    `<a href="${escCorreo(url)}" target="_blank" style="display:inline-block;padding:13px 24px;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:bold;color:#15181e;text-decoration:none;border-radius:10px;">${e ? e[1] : 'Abrir enlace'}</a></td></tr></table>`;
+}
+function lineaCorreo(l) {
+  let h = escCorreo(l).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" style="color:#b8260c;word-break:break-all;">$1</a>');
+  if (/^[▸•-] /.test(l)) h = '<span style="color:#d4a84b;font-weight:bold;">▸</span>&nbsp;' + h.slice(2);
+  return h;
+}
+function correoHtml(asunto, texto, cfg) {
+  cfg = cfg || {};
+  const app = String(cfg.app_url || window.location.origin).replace(/\/+$/, '');
+  const taller = cfg.nombre || 'Autonova';
+  const ig = instagramUrl(clubConfig(cfg));
+  const igUsuario = ig ? '@' + ig.replace(/^https:\/\/instagram\.com\//, '') : '';
+  let titulo = String(asunto || '').trim();
+  if (titulo.toLowerCase().endsWith(taller.toLowerCase())) titulo = titulo.slice(0, -taller.length).replace(/\s*[·—-]\s*$/, '').trim();
+  const P = 'margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.6;color:#2b3038;';
+  const partes = [];
+  let parrafo = [];
+  const cerrar = () => { if (parrafo.length) partes.push(`<p style="${P}">${parrafo.join('<br>')}</p>`); parrafo = []; };
+  for (const bruta of String(texto || '').split('\n')) {
+    const l = bruta.trim();
+    if (/instagram\.com/i.test(l)) continue;             // Instagram va destacado al final
+    if (!l) { cerrar(); continue; }
+    if (/^━+$/.test(l)) { cerrar(); partes.push('<div style="height:2px;background:#d4a84b;margin:6px 0 20px;font-size:0;line-height:0;">&nbsp;</div>'); continue; }
+    let m = l.match(/^(https?:\/\/\S+)$/);
+    if (m) { cerrar(); partes.push(botonCorreo(m[1])); continue; }
+    m = l.match(/^(.*):\s*(https?:\/\/\S+)$/);
+    if (m) { parrafo.push(lineaCorreo(m[1] + ':')); cerrar(); partes.push(botonCorreo(m[2])); continue; }
+    parrafo.push(lineaCorreo(l));
+  }
+  cerrar();
+  const previa = (String(texto || '').split('\n').map(s => s.trim()).find(s => s && !/^hola\b/i.test(s) && !/https?:/.test(s)) || '').slice(0, 110);
+  const F = "font-family:Impact,'Arial Black',Arial,Helvetica,sans-serif;";
+  const bloqueIg = ig ? `
+  <tr><td class="pad" style="padding:6px 36px 6px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#0d0e11;border-radius:14px;"><tr><td align="center" style="padding:26px 22px;">
+      <div style="${F}font-size:13px;letter-spacing:4px;color:#d4a84b;text-transform:uppercase;">📸 Síguenos en Instagram</div>
+      <div style="${F}font-size:30px;line-height:1.2;color:#ffffff;margin:8px 0 6px;">${escCorreo(igUsuario)}</div>
+      <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#c9ced6;margin:0 0 18px;">Mecánica honesta, explicada para que entiendas qué se le hace a tu auto.</div>
+      <a href="${escCorreo(ig)}" target="_blank" style="display:inline-block;background:#d6249f;background-image:linear-gradient(45deg,#fdb045,#fd5949 40%,#d6249f 70%,#285aeb);color:#ffffff;text-decoration:none;font-family:Arial,Helvetica,sans-serif;font-weight:bold;font-size:15px;padding:13px 28px;border-radius:999px;">Seguir a ${escCorreo(igUsuario)} →</a>
+    </td></tr></table>
+  </td></tr>` : '';
+  return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escCorreo(titulo)}</title>
+<style>@keyframes latido{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}.latido{animation:latido 2.4s ease-in-out infinite}@media (max-width:620px){.contenedor{width:100%!important}.pad{padding-left:20px!important;padding-right:20px!important}}</style></head>
+<body style="margin:0;padding:0;background:#eceef2;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${escCorreo(previa)}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eceef2;"><tr><td align="center" style="padding:24px 10px;">
+<table role="presentation" class="contenedor" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:16px;overflow:hidden;">
+  <tr><td align="center" style="background:#0d0e11;padding:22px 20px 16px;"><a href="${escCorreo(app)}/reservar.html" target="_blank"><img src="${escCorreo(app)}/assets/img/logo-correo.jpg" width="200" alt="${escCorreo(taller)}" style="display:block;width:200px;max-width:70%;height:auto;border:0;"></a></td></tr>
+  <tr><td style="height:5px;background:#e1341e;background-image:linear-gradient(90deg,#e1341e,#d4a84b);font-size:0;line-height:0;">&nbsp;</td></tr>
+  <tr><td class="pad" style="padding:30px 36px 6px;">
+    <h1 style="margin:0 0 20px;${F}font-weight:normal;font-size:26px;line-height:1.2;letter-spacing:0.5px;text-transform:uppercase;color:#0d0e11;">${escCorreo(titulo)}</h1>
+    ${partes.join('\n    ')}
+  </td></tr>${bloqueIg}
+  <tr><td class="pad" align="center" style="padding:22px 36px 30px;">
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#3a3f48;margin:0 0 14px;">¿Necesitas otra hora? Reserva en línea en menos de 1 minuto.</div>
+    <a class="latido" href="${escCorreo(app)}/reservar.html" target="_blank" style="display:inline-block;background:#e1341e;color:#ffffff;text-decoration:none;font-family:Arial,Helvetica,sans-serif;font-weight:bold;font-size:17px;padding:15px 34px;border-radius:12px;">📅 Reservar hora</a>
+  </td></tr>
+  <tr><td style="background:#f4f5f7;padding:18px 36px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:#6a727f;text-align:center;">
+    <strong style="color:#15181e;">${escCorreo(taller)}</strong>${cfg.telefono ? ` · ${escCorreo(cfg.telefono)}` : ''}<br>Recibes este correo por un servicio o una reserva en ${escCorreo(taller)}.
+  </td></tr>
+</table></td></tr></table></body></html>`;
+}
+// Texto plano de respaldo (si el correo del cliente no muestra diseño): también lleva Instagram y la reserva
+function textoCorreoConPie(texto, cfg) {
+  const ig = instagramUrl(clubConfig(cfg));
+  const app = String((cfg && cfg.app_url) || window.location.origin).replace(/\/+$/, '');
+  const t = String(texto || '');
+  const extra = [];
+  if (ig && !/instagram\.com/i.test(t)) extra.push(`📸 Síguenos en Instagram: ${ig}`);
+  if (!t.includes('/reservar.html')) extra.push(`📅 Reserva tu hora en línea: ${app}/reservar.html`);
+  return extra.length ? `${t}\n\n${extra.join('\n')}` : t;
+}
+
 async function enviarPorScript(url, clave, cfg, para, asunto, texto) {
   try {
     const r = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // sin «preflight»: Apps Script no lo responde
-      body: JSON.stringify({ clave, para, asunto, texto, nombre: (cfg && cfg.nombre) || 'Autonova' }),
+      body: JSON.stringify({ clave, para, asunto, texto: textoCorreoConPie(texto, cfg), html: correoHtml(asunto, texto, cfg), nombre: (cfg && cfg.nombre) || 'Autonova' }),
     });
     let j = null;
     try { j = await r.json(); } catch (e) { j = null; }
-    if (j && j.ok) return { estado: 'enviado' };
+    if (j && j.ok) return { estado: 'enviado', version: Number(j.version) || 1 };
     if (j && j.error) return { estado: 'error', mensaje: j.error };
     return { estado: 'incierto', mensaje: `respuesta inesperada (HTTP ${r.status})` };
   } catch (e) {

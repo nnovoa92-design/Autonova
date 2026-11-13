@@ -1166,3 +1166,14 @@ input.cell-precio { min-width: 6.8rem; }
 .verif-anulado { border-left-color: var(--color-danger); }
 .verif-titulo { font-size: 1rem; margin-bottom: 0.2rem; }
 .verif-acciones { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.35rem; }
+.aviso-script-v2 { background: #fff8e6; border: 1px solid #ecd9a0; border-radius: var(--radius); padding: 0.65rem 0.9rem; margin: 0 0 0.85rem; font-size: 0.86rem; color: #5b4a12; }
+.aviso-script-v2 ol { margin: 0.35rem 0 0; padding-left: 1.2rem; }
+.aviso-script-v2 li { margin: 0.15rem 0; }
+/* Reserva: casilla del código del Club con sus bases */
+.codigo-reserva { border: 1px dashed #d4a84b; background: #fffaf0; border-radius: var(--radius); padding: 0.7rem 0.85rem; margin-bottom: 0.9rem; }
+.codigo-reserva label { font-weight: 700; }
+.bases-codigo { margin-top: 0.5rem; background: #fff; border: 1px solid var(--color-border); border-radius: var(--radius); padding: 0.55rem 0.75rem; font-size: 0.82rem; }
+.bases-codigo strong { display: block; margin-bottom: 0.25rem; }
+.bases-codigo ul { margin: 0; padding-left: 1.1rem; }
+.bases-codigo li { margin: 0.15rem 0; }
+.bases-codigo a { font-weight: 600; }

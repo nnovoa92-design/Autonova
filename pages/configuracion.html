@@ -305,6 +305,16 @@
             <li>Arriba a la derecha: <strong>Implementar → Nueva implementación → ⚙ Aplicación web</strong>. En «Ejecutar como» deja <em>Yo</em> y en «Quién tiene acceso» elige <em>Cualquier persona</em>. Pulsa Implementar y acepta los permisos (si Google avisa que la app no está verificada: <em>Configuración avanzada → Ir a … → Permitir</em>; es tu propio script).</li>
             <li>Copia la <strong>URL de la aplicación web</strong>, pégala abajo y pulsa <strong>Guardar</strong>. Después usa <strong>Enviar correo de prueba</strong>.</li>
           </ol>
+          <div class="aviso-script-v2">
+            <strong>✨ Correos con diseño (script versión 2).</strong> Si ya tenías el envío funcionando, actualiza el script una vez para que los
+            correos lleguen con logo, colores, botones, «Síguenos en Instagram» y el botón de reserva (la URL no cambia):
+            <ol>
+              <li>Pulsa <strong>Copiar script</strong> (abajo).</li>
+              <li>En <a href="https://script.google.com" target="_blank" rel="noopener">script.google.com</a> abre tu proyecto del correo, borra todo, pega y pulsa el disquete 💾.</li>
+              <li><strong>Implementar → Gestionar implementaciones</strong> → el lápiz ✏ de tu implementación → en «Versión» elige <strong>Nueva versión</strong> → <strong>Implementar</strong>.</li>
+              <li>Vuelve aquí y pulsa <strong>Enviar correo de prueba</strong>: debe decir «con diseño».</li>
+            </ol>
+          </div>
           <div class="form-row">
             <div class="form-group">
               <label for="correo_script_clave">Clave del script</label>
@@ -1383,13 +1393,16 @@ function doPost(e) {
     if (d.clave !== CLAVE) return responder({ ok: false, error: 'Clave incorrecta' });
     const para = String(d.para || '').trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(para)) return responder({ ok: false, error: 'Correo inválido' });
-    MailApp.sendEmail({
+    const correo = {
       to: para,
       subject: String(d.asunto || 'Confirmación de tu hora').slice(0, 200),
-      body: String(d.texto || '').slice(0, 5000),
+      body: String(d.texto || '').slice(0, 6000),
       name: String(d.nombre || 'Taller').slice(0, 80)
-    });
-    return responder({ ok: true });
+    };
+    // Versión 2: el correo con diseño (logo, colores y botones); el texto queda de respaldo
+    if (d.html) correo.htmlBody = String(d.html).slice(0, 90000);
+    MailApp.sendEmail(correo);
+    return responder({ ok: true, version: 2 });
   } catch (err) {
     return responder({ ok: false, error: String(err) });
   }
@@ -1446,9 +1459,11 @@ function responder(obj) {
       if (!para) return;
       if (!correoValido(para)) { errorEl.textContent = 'Ese correo no es válido.'; return; }
       okEl.textContent = 'Enviando…';
-      const r = await enviarCorreo({ para, asunto: 'Prueba de correo de Autonova', texto: 'Si recibes este mensaje, el envío de confirmaciones por correo está funcionando.\n\nAutonova' });
+      const cfgPrueba = await getTallerConfig();
+      const r = await enviarCorreo({ para, asunto: `Prueba de correo de ${cfgPrueba.nombre || 'Autonova'}`, texto: `Hola,\n\nSi recibes este mensaje, el envío de correos de ${cfgPrueba.nombre || 'Autonova'} está funcionando.\n\nAsí se ven los botones de los correos:\n${window.location.origin}/reservar.html\n\n${firmaCorreoTaller(cfgPrueba)}` });
       okEl.textContent = '';
-      if (r.estado === 'enviado') okEl.textContent = `Listo: se envió un correo de prueba a ${para}. Revisa la bandeja (y spam).`;
+      if (r.estado === 'enviado' && r.version >= 2) okEl.textContent = `Listo: se envió un correo de prueba CON DISEÑO a ${para}. Revisa la bandeja (y spam).`;
+      else if (r.estado === 'enviado') errorEl.textContent = `El correo salió a ${para}, pero SIN DISEÑO: tu script en Google es la versión antigua. Sigue los 4 pasos de «Correos con diseño» (arriba) y vuelve a probar.`;
       else if (r.estado === 'sin_configurar') errorEl.textContent = 'Aún no hay URL y clave guardadas: completa los pasos y pulsa «Guardar».';
       else if (r.estado === 'error') errorEl.textContent = `El script respondió: ${r.mensaje}. Si dice «Clave incorrecta», pega de nuevo el script con la clave actual y vuelve a implementar.`;
       else errorEl.textContent = `No pude confirmar el envío (${r.mensaje}). Revisa que la implementación tenga acceso «Cualquier persona» y que la URL termine en /exec; mira también «Enviados» en tu Gmail.`;
