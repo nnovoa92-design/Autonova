@@ -800,7 +800,7 @@ const PLANTILLAS_CORREO = {
   premio_referido: {
     titulo: 'Club: premio por referido (cupón; lo envía Supabase solo)',
     asunto: '🎁 Ganaste un cupón de {descuento} en {taller}',
-    texto: 'Hola {nombre},\n\n¡Gracias por recomendarnos! {referido} ya hizo su servicio con nosotros gracias a ti, así que ganaste un cupón de {descuento} de descuento{tope_texto} para tu próxima visita.\n\nTu cupón: {cupon}\nVálido hasta el {vence}. Es personal y se usa una sola vez: escríbelo al reservar o muéstralo al llegar.\nReserva aquí: {link_reserva}\n\nSigue compartiendo tu código {codigo}: cada amigo que venga te da un cupón nuevo.\n{link_compartir}\n\n{firma}',
+    texto: 'Hola {nombre},\n\n¡Gracias por recomendarnos! {referido} ya hizo su servicio con nosotros gracias a ti, así que ganaste un cupón de {descuento} de descuento{tope_texto} para tu próxima visita.\n\n🎟 Tu cupón: {cupon}\n📅 Válido hasta el {vence}.\n\nCómo usarlo: escríbelo al reservar en línea o dilo al dejar tu vehículo (después ya no se puede aplicar).\nReserva aquí: {link_reserva}\n\nCondiciones: es personal e intransferible, se usa una sola vez y va un cupón por orden de trabajo. El descuento es sobre el valor del trabajo sin IVA{tope_texto}, no se acumula con otras promociones, no aplica a bodegaje y no es canjeable por dinero.\n\nSigue compartiendo tu código {codigo}: por cada amigo que venga ganas un cupón nuevo.\n{link_compartir}\n\n{firma}',
     variables: ['nombre', 'referido', 'descuento', 'tope_texto', 'cupon', 'vence', 'link_reserva', 'codigo', 'link_compartir', 'taller', 'firma'],
   },
 };
@@ -856,17 +856,17 @@ const PLANTILLAS_WHATSAPP = {
   },
   wa_club_codigo: {
     titulo: 'Club: enviarle a un cliente su código (botón en Club Autonova)',
-    texto: 'Hola {nombre}, le saluda {taller} 🎁\nTu código personal del Club es *{codigo}*.\nCompártelo: tus amigos tienen {descuento} de descuento en su primera visita{tope_texto} y, cuando hagan su servicio, a ti te llega un cupón de {descuento} para tu próxima visita.\nCompártelo fácil desde aquí: {link_compartir}',
+    texto: 'Hola {nombre}, le saluda {taller} 🎁\nTu código personal del Club es *{codigo}*.\n• Tu amigo: {descuento} de descuento en su primera visita{tope_texto}.\n• Tú: un cupón de {descuento}{tope_texto} por cada amigo que pague y retire su vehículo.\nTu amigo debe dar el código al reservar o al dejar su vehículo (después ya no se aplica).\nCompártelo y revisa las condiciones aquí: {link_compartir}',
     variables: ['nombre', 'codigo', 'descuento', 'tope_texto', 'link_compartir', 'instagram', 'taller'],
   },
   wa_premio_referido: {
     titulo: 'Club: avisar el premio por referido (botón en Club Autonova)',
-    texto: 'Hola {nombre}, le saluda {taller} 🎁\n¡Gracias por recomendarnos! {referido} ya hizo su servicio gracias a ti, así que ganaste un cupón de {descuento} de descuento{tope_texto} para tu próxima visita: *{cupon}*\nVálido hasta el {vence}, personal y de un solo uso. Reserva aquí: {link_reserva}',
+    texto: 'Hola {nombre}, le saluda {taller} 🎁\n¡Gracias por recomendarnos! {referido} ya hizo su servicio gracias a ti, así que ganaste un cupón de {descuento} de descuento{tope_texto} para tu próxima visita: *{cupon}*\n📅 Válido hasta el {vence}. Úsalo escribiéndolo al reservar o diciéndolo al dejar tu vehículo (después ya no se aplica).\nEs personal, de un solo uso, uno por orden de trabajo, sobre el valor sin IVA y no se acumula con otras promociones.\nReserva aquí: {link_reserva}',
     variables: ['nombre', 'referido', 'descuento', 'tope_texto', 'cupon', 'vence', 'link_reserva', 'codigo', 'taller'],
   },
   wa_compartir_codigo: {
     titulo: 'Club: mensaje que el cliente le manda a sus amigos (botón «Compartir»)',
-    texto: 'Te recomiendo {taller} 🔧 me atendieron muy bien.\nCon mi código *{codigo}* tienes {descuento} de descuento en tu primera visita{tope_texto}.\nReserva aquí 👉 {link_club}',
+    texto: 'Te recomiendo {taller} 🔧 me atendieron muy bien.\nCon mi código *{codigo}* tienes {descuento} de descuento en tu primera visita{tope_texto}.\n⚠ Dilo al reservar o al dejar tu auto (después ya no se aplica).\nReserva y condiciones 👉 {link_club}',
     variables: ['codigo', 'descuento', 'tope_texto', 'link_club', 'taller'],
   },
   wa_cobranza: {
@@ -984,23 +984,82 @@ function topeClubTexto(tope) {
 function linkClub(codigo, compartir) {
   return `${window.location.origin}/club.html?c=${encodeURIComponent(codigo)}${compartir ? '&compartir=1' : ''}`;
 }
-// Valores del Club para los mensajes (al entregar el vehículo y botones de Club Autonova)
-function valoresClub(codigo, cfg) {
+// Condiciones del Club: UNA sola redacción para la página pública (club.html), los mensajes y la app.
+// Regla del plazo (decisión del dueño): el código se da al reservar o al dejar el vehículo; después no corre (sql/v68).
+function condicionesClub(c, taller) {
+  c = { ...CLUB_POR_DEFECTO, ...(c || {}) };
+  taller = taller || 'el taller';
+  const pct = `${fmtPorcentaje(c.pct)}%`;
+  const topeNum = Number(c.tope) > 0 ? Number(c.tope) : 0;
+  const tope = topeNum ? fmtMoneda(topeNum) : '';
+  const dias = Number(c.premio_dias) || 90;
+  const ejemplo = (monto) => {
+    const descuento = Math.min(monto * Number(c.pct) / 100, topeNum || Infinity);
+    return { monto, descuento, paga: monto - descuento, conTope: !!topeNum && descuento >= topeNum };
+  };
+  const ejemplos = [ejemplo(100000)];
+  if (topeNum && Number(c.pct) > 0) ejemplos.push(ejemplo(Math.ceil(topeNum / (Number(c.pct) / 100) * 1.5 / 50000) * 50000));
+  return {
+    pct, tope, dias, ejemplos,
+    amigo: [
+      `Es para personas que nunca se han atendido en ${taller}, en su primera orden de trabajo.`,
+      `${pct} de descuento sobre el valor del trabajo sin IVA (mano de obra y repuestos)${tope ? `, con un máximo de ${tope} de descuento` : ''}. El IVA se calcula sobre el valor ya descontado.`,
+      'El código se da al reservar en línea o al dejar el vehículo. Si se menciona después (por ejemplo, al pagar), ya no se aplica.',
+      'Un solo código de recomendación por persona y por vehículo. No vale para el dueño del código (mismo RUT, teléfono o vehículo).',
+      'No se acumula con otros descuentos ni promociones y no aplica a cobros de bodegaje.',
+    ],
+    cliente: [
+      `Ganas un cupón de ${pct}${tope ? ` (máximo ${tope})` : ''} por cada amigo que pague completo y retire su vehículo. Sin límite de amigos.`,
+      `Te lo enviamos por correo (o WhatsApp si no tenemos tu correo) y vence a los ${dias} días de emitido.`,
+      'Es personal e intransferible, se usa una sola vez y va un cupón por orden de trabajo. Se da al reservar o al dejar tu vehículo; después ya no se aplica.',
+      'No es canjeable por dinero ni se acumula con otros descuentos.',
+      'Si el trabajo de tu amigo se anula o no se paga, no se genera cupón.',
+    ],
+    general: `${taller} puede modificar o terminar el programa avisando en esta página; los cupones ya emitidos se respetan hasta su vencimiento.`,
+  };
+}
+
+// Valores del Club para los mensajes (al entregar el vehículo y botones de Club Autonova).
+// canal: 'correo' (bloque completo, con cómo funciona y condiciones) o 'whatsapp' (resumido, con link a las condiciones).
+function valoresClub(codigo, cfg, canal = 'correo') {
   const club = clubConfig(cfg);
   const ig = instagramUrl(club);
   const descuento = `${fmtPorcentaje(club.pct)}%`;
   const tope_texto = topeClubTexto(club.tope);
   const base = { codigo: codigo || '', instagram: ig, descuento, tope_texto, link_compartir: '', link_club: '' };
-  const lineaIg = ig ? `📸 Síguenos en Instagram: ${ig}` : '';
-  if (!codigo || club.activo === false) return { ...base, bloque_club: lineaIg ? `\n\n${lineaIg}` : '' };
+  if (!codigo || club.activo === false) return { ...base, bloque_club: ig ? `\n\n📸 Síganos en Instagram: ${ig}` : '' };
   const taller = (cfg && cfg.nombre) || 'el taller';
-  const bloque = [
-    lineaIg,
-    `🎁 Club ${taller}: su código personal es ${codigo}.`,
-    `Compártalo: sus amigos tienen ${descuento} de descuento en su primera visita${tope_texto} y, cuando hagan su servicio, a usted le llega un cupón de ${descuento} para su próxima visita.`,
-    `Compártalo fácil desde aquí: ${linkClub(codigo, true)}`,
-  ].filter(Boolean).join('\n');
-  return { ...base, link_compartir: linkClub(codigo, true), link_club: linkClub(codigo), bloque_club: `\n\n${bloque}` };
+  const compartir = linkClub(codigo, true);
+  const maximo = Number(club.tope) > 0 ? ` (máximo ${fmtMoneda(club.tope)})` : '';
+  const bloque = canal === 'whatsapp'
+    ? [
+      ig ? `📸 Instagram: ${ig}` : '',
+      '',
+      `🎁 *Club ${taller}* — su código: *${codigo}*`,
+      `• Su amigo: ${descuento} de descuento en su primera visita${maximo}.`,
+      `• Usted: un cupón de ${descuento}${maximo} por cada amigo que pague y retire su vehículo.`,
+      'Su amigo debe dar el código al reservar o al dejar su vehículo (después ya no se aplica).',
+      `Compartir y condiciones: ${compartir}`,
+    ]
+    : [
+      ig ? `📸 Síganos en Instagram: ${ig}` : '',
+      '',
+      '━━━━━━━━━━━━━━━━━━━━',
+      `🎁 CLUB ${String(taller).toUpperCase()} · RECOMIENDA Y GANA`,
+      `Su código personal: ${codigo}`,
+      '',
+      `▸ Su amigo: ${descuento} de descuento en su primera visita${maximo}.`,
+      `▸ Usted: un cupón de ${descuento}${maximo} por CADA amigo que pague y retire su vehículo.`,
+      '',
+      'Cómo funciona:',
+      `1) Comparta su código o este link: ${compartir}`,
+      '2) Su amigo da el código al reservar en línea o al dejar su vehículo.',
+      `3) Cuando su amigo pague y retire su vehículo, le enviamos su cupón (personal, de un solo uso, vence a los ${Number(club.premio_dias) || 90} días).`,
+      '',
+      'Importante: el descuento es solo para personas que nunca se han atendido con nosotros, es sobre el valor sin IVA, no se acumula con otras promociones y no aplica a bodegaje. Si el código se menciona después de dejar el vehículo, ya no se aplica.',
+      `Condiciones completas: ${compartir}#condiciones`,
+    ];
+  return { ...base, link_compartir: compartir, link_club: linkClub(codigo), bloque_club: `\n\n${bloque.filter((l, i, a) => l !== '' || (a[i - 1] && a[i + 1])).join('\n')}` };
 }
 
 // Aviso automático de una OT (ingreso o cambio de estado) al correo del cliente

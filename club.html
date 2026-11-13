@@ -59,6 +59,24 @@
       background: radial-gradient(circle at 30% 107%, #fdf497 0%, #fd5949 45%, #d6249f 60%, #285aeb 90%); }
     .ig p { margin: 0; color: var(--texto-suave); font-size: 0.9rem; }
     .ig a { color: #fff; font-weight: 700; text-decoration: none; }
+    /* Lo importante, a primera vista */
+    .chips-club { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.45rem; margin: -0.35rem 0 0.4rem; }
+    .chip-club { display: inline-flex; align-items: center; gap: 0.35rem; background: #1d2027; border: 1px solid var(--borde); color: #fff;
+      border-radius: 999px; padding: 0.35rem 0.75rem; font-size: 0.85rem; font-weight: 600; }
+    .ver-condiciones { display: block; text-align: center; color: var(--oro-claro); font-size: 0.85rem; margin: 0 0 1.1rem; text-decoration: underline; text-underline-offset: 3px; }
+    /* Condiciones claras */
+    .condiciones { border-color: rgba(212, 168, 75, 0.45); scroll-margin-top: 1rem; }
+    .condiciones h3 { font-size: 0.95rem; color: #fff; margin: 1rem 0 0.4rem; }
+    .ej-titulo { color: var(--texto-suave); font-size: 0.88rem; margin: 0 0 0.5rem; }
+    .ejemplos { display: grid; gap: 0.45rem; }
+    .ej { display: grid; grid-template-columns: 1fr auto; gap: 0.15rem 0.75rem; background: #0f1115; border: 1px solid var(--borde); border-radius: 10px; padding: 0.55rem 0.75rem; font-size: 0.88rem; color: var(--texto-suave); }
+    .ej strong { color: #fff; }
+    .ej .ej-desc { grid-row: span 2; align-self: center; color: #6ee7a0; font-weight: 700; font-size: 1.05rem; text-align: right; }
+    .ej .ej-desc em { display: block; font-style: normal; font-size: 0.7rem; color: var(--oro-claro); text-transform: uppercase; letter-spacing: 0.08em; }
+    .cond-lista { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.45rem; }
+    .cond-lista li { position: relative; padding-left: 1.55rem; color: #d7dbe2; font-size: 0.9rem; line-height: 1.45; }
+    .cond-lista li::before { content: '✓'; position: absolute; left: 0; top: 0; color: var(--oro); font-weight: 700; }
+    .cond-general { color: #7d8490; font-size: 0.78rem; margin: 0.9rem 0 0; line-height: 1.45; }
     .letra-chica { color: #6f7682; font-size: 0.75rem; text-align: center; margin-top: 1.25rem; line-height: 1.5; }
     .aviso-copiado { position: fixed; left: 50%; bottom: 1.25rem; transform: translateX(-50%); background: #fff; color: #15181e; font-weight: 700;
       padding: 0.55rem 1rem; border-radius: 999px; box-shadow: 0 8px 24px rgba(0,0,0,0.35); font-size: 0.9rem; display: none; z-index: 10; }
@@ -129,9 +147,39 @@
           <div class="ig-icono" aria-hidden="true">📸</div>
           <div>
             <a href="${esc(url)}" target="_blank" rel="noopener">Síguenos en Instagram ${esc(usuario)}</a>
-            <p>Trabajos reales, consejos para tu auto y promociones antes que nadie.</p>
+            <p>Mecánica honesta, explicada para que entiendas qué se le hace a tu auto.</p>
           </div>
         </div>`;
+    }
+
+    // ---------- Condiciones claras (misma redacción que los mensajes: condicionesClub en layout.js) ----------
+    const condicionesDe = (d) => condicionesClub({ pct: d.pct, tope: d.tope, premio_dias: d.premio_dias }, (d.taller && d.taller.nombre) || 'Autonova');
+    function chips(lista) {
+      return `<div class="chips-club">${lista.map(([icono, texto]) => `<span class="chip-club"><span aria-hidden="true">${icono}</span>${esc(texto)}</span>`).join('')}</div>
+        <a class="ver-condiciones" href="#condiciones">Ver condiciones completas ↓</a>`;
+    }
+    function bloqueCondiciones(d, enfoque) {
+      const c = condicionesDe(d);
+      const lista = (arr) => `<ul class="cond-lista">${arr.map(t => `<li>${esc(t)}</li>`).join('')}</ul>`;
+      const ejemplos = c.ejemplos.map(e => `
+        <div class="ej">
+          <span>Trabajo de <strong>${fmtMoneda(e.monto)}</strong> + IVA</span>
+          <span class="ej-desc">−${fmtMoneda(e.descuento)}${e.conTope ? ' <em>tope</em>' : ''}</span>
+          <span>Pagas <strong>${fmtMoneda(e.paga)}</strong> + IVA</span>
+        </div>`).join('');
+      const secciones = {
+        amigo: `<h3>Tu descuento</h3>${lista(c.amigo)}`,
+        compartir: `<h3>Para tu amigo</h3>${lista(c.amigo)}<h3>Para ti (quien recomienda)</h3>${lista(c.cliente)}`,
+        premio: `<h3>Tu cupón</h3>${lista(c.cliente.slice(1, 4))}`,
+      };
+      return `
+        <section class="panel condiciones" id="condiciones">
+          <h2>📋 Condiciones claras</h2>
+          <p class="ej-titulo">Así se calcula ${enfoque === 'premio' ? 'tu cupón' : 'el descuento'} (${esc(c.pct)}${c.tope ? `, máximo ${esc(c.tope)}` : ''}):</p>
+          <div class="ejemplos">${ejemplos}</div>
+          ${secciones[enfoque] || ''}
+          <p class="cond-general">${esc(c.general)}</p>
+        </section>`;
     }
 
     function vistaAmigo(d) {
@@ -148,6 +196,7 @@
           <div class="codigo">${esc(d.codigo)}</div>
           <span class="pct">${esc(fmtPorcentaje(d.pct))}% OFF · primera visita</span>
         </div>
+        ${chips([['✅', 'Solo tu primera visita'], ['💲', Number(d.tope) > 0 ? `Máximo ${fmtMoneda(d.tope)} de descuento` : 'Sobre el valor sin IVA'], ['🗣', 'Dilo al reservar o al dejar tu auto']])}
         <div class="acciones">
           <a class="btn-club principal" href="${esc(linkReserva(d.codigo))}">📅 Reservar con mi descuento</a>
           ${tel ? `<a class="btn-club wa" href="https://wa.me/${tel}?text=${encodeURIComponent(textoWa)}" target="_blank" rel="noopener">💬 Prefiero escribir por WhatsApp</a>` : ''}
@@ -160,8 +209,9 @@
             <li><div class="n">3</div><div><strong>Paga menos y únete al Club</strong><span>Recibes tu propio código: cuando tus amigos vengan, ganas cupones de descuento.</span></div></li>
           </ol>
         </div>
+        ${bloqueCondiciones(d, 'amigo')}
         ${bloqueInstagram(d)}
-        <p class="letra-chica">Válido para clientes nuevos en su primera orden de trabajo. ${esc(fmtPorcentaje(d.pct))}% sobre el total del trabajo${esc(textoTope(d))}. No acumulable con otras promociones. Sujeto a disponibilidad de agenda.</p>`;
+        <p class="letra-chica">Reserva sujeta a disponibilidad de agenda.</p>`;
     }
 
     function vistaCompartir(d) {
@@ -177,6 +227,7 @@
           <div class="codigo">${esc(d.codigo)}</div>
           <span class="pct">Sin límite de amigos</span>
         </div>
+        ${chips([['♾', 'Un cupón por cada amigo'], ['🎟', `Cupón ${fmtPorcentaje(d.pct)}%${Number(d.tope) > 0 ? ` (máx. ${fmtMoneda(d.tope)})` : ''}`], ['📅', `Vence a los ${Number(d.premio_dias) || 90} días`]])}
         <div class="acciones">
           <a class="btn-club wa" href="https://wa.me/?text=${encodeURIComponent(mensaje)}" target="_blank" rel="noopener">💬 Compartir por WhatsApp</a>
           ${navigator.share ? '<button type="button" class="btn-club principal" id="btn-compartir">📤 Compartir en Instagram u otra app</button>' : ''}
@@ -189,12 +240,12 @@
           <h2>Cómo ganas</h2>
           <ol class="pasos">
             <li><div class="n">1</div><div><strong>Comparte tu código</strong><span>Por WhatsApp, en tus historias o de boca en boca: ${esc(d.codigo)}.</span></div></li>
-            <li><div class="n">2</div><div><strong>Tu amigo viene con ${esc(fmtPorcentaje(d.pct))}% menos</strong><span>Reserva con tu link o dice tu código al llegar.</span></div></li>
-            <li><div class="n">3</div><div><strong>Te llega tu cupón por correo</strong><span>Cuando tu amigo pague su servicio, recibes un cupón personal de ${esc(fmtPorcentaje(d.pct))}%.</span></div></li>
+            <li><div class="n">2</div><div><strong>Tu amigo viene con ${esc(fmtPorcentaje(d.pct))}% menos</strong><span>Reserva con tu link o da tu código al dejar su vehículo. Si lo dice después (por ejemplo, al pagar), ya no se aplica.</span></div></li>
+            <li><div class="n">3</div><div><strong>Te llega tu cupón</strong><span>Cuando tu amigo pague y retire su vehículo, te enviamos un cupón personal de ${esc(fmtPorcentaje(d.pct))}% por correo.</span></div></li>
           </ol>
         </div>
-        ${bloqueInstagram(d)}
-        <p class="letra-chica">El descuento del amigo es para clientes nuevos, en su primera orden de trabajo. Los cupones son personales, de un solo uso y tienen fecha de vencimiento. ${esc(fmtPorcentaje(d.pct))}% sobre el total del trabajo${esc(textoTope(d))}; no acumulable con otras promociones.</p>`;
+        ${bloqueCondiciones(d, 'compartir')}
+        ${bloqueInstagram(d)}`;
       document.getElementById('btn-copiar-msg').addEventListener('click', () => copiar(mensaje, 'Mensaje copiado ✓ Pégalo donde quieras'));
       document.getElementById('btn-copiar-link').addEventListener('click', () => copiar(linkAmigo(d.codigo), 'Link copiado ✓'));
       const btnShare = document.getElementById('btn-compartir');
@@ -210,7 +261,9 @@
         <h1>Tu cupón de <span class="oro">${esc(fmtPorcentaje(d.pct))}%</span></h1>
         <p class="sub">Es personal y se usa una sola vez${d.vence ? `, hasta el <strong>${esc(fmtFecha(d.vence))}</strong>` : ''}${esc(textoTope(d))}.</p>
         <div class="ticket"><small>Cupón</small><div class="codigo">${esc(d.codigo)}</div><span class="pct">${esc(fmtPorcentaje(d.pct))}% OFF</span></div>
+        ${chips([['👤', 'Personal'], ['1️⃣', 'Un solo uso'], ['🗣', 'Dilo al reservar o al dejar tu auto']])}
         <div class="acciones"><a class="btn-club principal" href="${esc(linkReserva(d.codigo))}">📅 Reservar y usar mi cupón</a></div>
+        ${bloqueCondiciones(d, 'premio')}
         ${bloqueInstagram(d)}`;
     }
 
