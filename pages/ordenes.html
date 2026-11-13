@@ -141,8 +141,12 @@
 
           <h3 style="margin-top:1.5rem;">Abonos y pagos</h3>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.5rem;">
-            Registra abonos parciales. Se calcula automáticamente el saldo pendiente.
+            Registra abonos parciales, o con «Pagó todo» deja la OT pagada de una vez. El saldo se calcula solo.
           </p>
+          <div class="pago-total-fila" id="pago-total-fila">
+            <span id="pago-total-saldo"></span>
+            <button type="button" id="pago-total-btn" class="btn-pago-total">✅ Pagó todo</button>
+          </div>
           <div class="form-row" style="align-items:end; flex-wrap:wrap;">
             <div class="form-group">
               <label for="abono-monto">Monto *</label>
@@ -1003,34 +1007,50 @@
       const table = document.getElementById('abonos-table');
       const tbody = document.getElementById('abonos-body');
 
-      if (!abonosActuales.length) {
+      // Abonos y pagos de esta OT (los pagos incluyen el de «Pagó todo»), del más reciente al más antiguo
+      const pagosOT = (ordenActual && ordenActual.pagos) || [];
+      const filas = [
+        ...abonosActuales.map(a => ({ ...a, tabla: 'abonos', orden: String(a.fecha || '') + 'T' + (a.hora || '12:00') })),
+        ...pagosOT.map(p => { const d = new Date(p.fecha || p.creado_en || Date.now()); return { ...p, fecha: p.fecha || d.toISOString(), tabla: 'pagos', orden: isNaN(d) ? '' : ymdChile(d.toISOString()) + 'T' + d.toTimeString().slice(0, 5) }; }),
+      ].sort((x, y) => (x.orden < y.orden ? 1 : -1));
+      if (!filas.length) {
         table.style.display = 'none';
         return;
       }
 
       table.style.display = 'table';
-      tbody.innerHTML = abonosActuales.map(a => {
+      tbody.innerHTML = filas.map(a => {
         let voucherLink = '–';
         if (a.voucher_url) {
           const publicUrl = supabaseClient.storage.from('fotos-ot').getPublicUrl(a.voucher_url).data.publicUrl;
           voucherLink = `<a href="${publicUrl}" target="_blank">📄</a>`;
         }
+        const metodo = METODOS_PAGO[a.metodo_pago] || String(a.metodo_pago || '').replace('_', ' ');
+        // Las fechas sin hora (abonos) se leen a mediodía para que no muestren el día anterior
+        const fecha = /^\d{4}-\d{2}-\d{2}$/.test(String(a.fecha)) ? a.fecha + 'T12:00:00' : a.fecha;
         return `
         <tr style="border-bottom:1px solid #eee;">
-          <td style="padding:0.5rem;">${fmtFecha(a.fecha)}${a.hora ? ` ${a.hora}` : ''}</td>
-          <td style="padding:0.5rem;">${a.metodo_pago.replace('_', ' ')}</td>
+          <td style="padding:0.5rem;">${fmtFecha(fecha)}${a.hora ? ` ${a.hora}` : ''}</td>
+          <td style="padding:0.5rem;">${htmlSeguro(metodo)}${a.tabla === 'pagos' ? ' <span class="badge badge-green" title="Registrado en Pagos">Pago</span>' : ''}</td>
           <td style="text-align:right; padding:0.5rem;"><strong>${fmtMoneda(a.monto)}</strong></td>
           <td style="text-align:center; padding:0.5rem;">${voucherLink}</td>
           <td style="text-align:center; padding:0.5rem;">
-            <button type="button" class="btn-danger abono-del-btn" data-id="${a.id}" style="padding:0.2rem 0.5rem;">✕</button>
+            <button type="button" class="btn-danger abono-del-btn" data-id="${a.id}" data-tabla="${a.tabla}" style="padding:0.2rem 0.5rem;">✕</button>
           </td>
         </tr>`;
       }).join('');
 
       tbody.querySelectorAll('.abono-del-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
-          if (!confirm('¿Eliminar este abono?')) return;
-          await supabaseClient.from('abonos').delete().eq('id', btn.dataset.id);
+          const esPago = btn.dataset.tabla === 'pagos';
+          if (!confirm(esPago ? '¿Eliminar este pago? También se borra del módulo Pagos.' : '¿Eliminar este abono?')) return;
+          const { error } = await supabaseClient.from(btn.dataset.tabla).delete().eq('id', btn.dataset.id);
+          if (error) { mostrarToast('No se pudo eliminar: ' + error.message, 'error'); return; }
+          // Si la cobranza se había cerrado por estar pagada, vuelve a quedar por decidir en Inicio
+          if (ordenActual.cobranza_estado === 'pagada') {
+            const { error: errCob } = await supabaseClient.from('ordenes').update({ cobranza_estado: null }).eq('id', ordenActual.id);
+            if (errCob) console.warn('Cobranza no actualizada:', errCob.message);
+          }
           await abrirDetalle(ordenActual.id);
         });
       });
@@ -1226,7 +1246,67 @@
         <div class="fila"><span>Pagado</span><span>${fmtMoneda(pagado)}</span></div>
         <div class="fila total"><span>Saldo</span><span>${fmtMoneda(t.total + bodegaje.monto - pagado)}</span></div>
         ${repartoHtml}`;
+      actualizarPagoTotal(t.total + bodegaje.monto, pagado);
     }
+
+    // ---------- «Pagó todo»: registra el saldo completo como un pago (queda en Pagos y en los ingresos del mes) ----------
+    let saldoOTActual = 0;
+    function actualizarPagoTotal(totalAPagar, pagado) {
+      const fila = document.getElementById('pago-total-fila');
+      if (!fila) return;
+      saldoOTActual = Math.round(totalAPagar - pagado);
+      const btn = document.getElementById('pago-total-btn');
+      const txt = document.getElementById('pago-total-saldo');
+      const sinNada = totalAPagar < 1 && pagado < 1;   // OT todavía sin ítems: no hay nada que cobrar
+      fila.style.display = sinNada ? 'none' : '';
+      const pagadaCompleta = saldoOTActual < 1;
+      fila.classList.toggle('pagado', pagadaCompleta);
+      btn.disabled = pagadaCompleta;
+      btn.textContent = pagadaCompleta ? '✅ Pagada completa' : '✅ Pagó todo';
+      txt.innerHTML = pagadaCompleta
+        ? (saldoOTActual <= -1 ? `Pagado de más: <strong>${fmtMoneda(-saldoOTActual)}</strong> sobre el total.` : 'Sin saldo pendiente: la OT está pagada.')
+        : `Saldo pendiente: <strong>${fmtMoneda(saldoOTActual)}</strong>`;
+    }
+
+    document.getElementById('pago-total-btn').addEventListener('click', () => {
+      if (!ordenActual || saldoOTActual < 1) return;
+      const o = ordenActual;
+      const monto = saldoOTActual;
+      const metodoPrevio = document.getElementById('abono-metodo').value;
+      const opciones = Object.entries(METODOS_PAGO)
+        .map(([k, l]) => `<option value="${k}"${k === metodoPrevio ? ' selected' : ''}>${l}</option>`).join('');
+      const ventanaPago = ventanaFormulario('✅ Pagó todo', `
+        <p style="margin:0 0 0.75rem;">Se registra el pago del saldo completo de <strong>${fmtNumero('OT', o.numero)}</strong>:
+          <strong style="font-size:1.1rem;">${fmtMoneda(monto)}</strong>.<br>
+          <span style="color:var(--color-text-muted); font-size:0.85rem;">Queda en Pagos (ingresos del mes), la OT con saldo $0 y se detienen los recordatorios de cobranza.</span></p>
+        <div class="form-group"><label for="pt-metodo">Método de pago *</label>
+          <select id="pt-metodo"><option value="">Seleccionar...</option>${opciones}</select></div>
+        <div class="form-group"><label for="pt-fecha">Fecha del pago *</label>
+          <input type="date" id="pt-fecha" value="${hoyChile()}" max="${hoyChile()}" /></div>
+        <div class="form-group"><label for="pt-notas">Nota (opcional)</label>
+          <input type="text" id="pt-notas" data-autolista="no" placeholder="Ej: N° de transferencia, quién pagó…" /></div>`,
+        async (v) => {
+          const metodo = v.valor('#pt-metodo'), fecha = v.valor('#pt-fecha');
+          if (!metodo || !fecha) { v.error('Elige el método y la fecha del pago.'); return; }
+          const pago = {
+            orden_id: o.id, cliente_id: o.cliente_id, monto, metodo_pago: metodo, con_iva: o.con_iva !== false,
+            notas: [`Pago total de la ${fmtNumero('OT', o.numero)}`, v.valor('#pt-notas')].filter(Boolean).join(' · '),
+          };
+          if (fecha !== hoyChile()) pago.fecha = `${fecha}T12:00:00-03:00`;   // pago de otro día: a mediodía de esa fecha
+          const { error } = await supabaseClient.from('pagos').insert(pago);
+          if (error) { v.error('No se pudo registrar el pago: ' + error.message); return; }
+          // Ya no hay nada que cobrar: la cobranza automática queda cerrada
+          const { error: errCob } = await supabaseClient.from('ordenes').update({ cobranza_estado: 'pagada' })
+            .eq('id', o.id).or('cobranza_estado.is.null,cobranza_estado.eq.activa');
+          if (errCob) console.warn('Cobranza no actualizada:', errCob.message);
+          v.cerrar();
+          mostrarToast(`✅ ${fmtNumero('OT', o.numero)} pagada: ${fmtMoneda(monto)} registrado en Pagos.`);
+          await abrirDetalle(o.id);
+        });
+      const btnRegistrar = ventanaPago.fondo.querySelector('.vf-guardar');
+      btnRegistrar.textContent = '✅ Registrar pago';
+      btnRegistrar.classList.add('btn-pago-total');
+    });
 
     function renderHoras() {
       const horas = ordenActual.registro_horas || [];

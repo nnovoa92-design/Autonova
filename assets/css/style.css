@@ -1128,3 +1128,12 @@ input.cell-precio { min-width: 6.8rem; }
 .aviso-acciones button, .aviso-acciones .btn { padding: 0.32rem 0.7rem; font-size: 0.8rem; text-decoration: none; }
 .paso-chip { font-size: 0.72rem; padding: 0.1rem 0.45rem; border-radius: 999px; background: #f1f3f6; color: var(--color-text-muted); }
 .paso-chip.hecho { background: #d8f3dc; color: #1b6e3c; font-weight: 600; }
+
+/* OT: «Pagó todo» registra el saldo completo como pago */
+.pago-total-fila { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;
+  background: #f0faf3; border: 1px solid #b7e2c4; border-radius: var(--radius); padding: 0.6rem 0.8rem; margin: 0 0 0.75rem; }
+.pago-total-fila.pagado { background: #f5f6f8; border-color: var(--color-border); }
+#pago-total-saldo { font-size: 0.92rem; }
+.btn-pago-total { background: #15803d; border-color: #15803d; }
+.btn-pago-total:hover { background: #116632; border-color: #116632; }
+.btn-pago-total:disabled { background: #9aa3ae; border-color: #9aa3ae; cursor: default; transform: none; }

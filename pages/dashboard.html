@@ -379,7 +379,19 @@
         .eq('estado', 'enviada').order('creado_en', { ascending: false });
       if (error) { cont.innerHTML = `<p class="error-message">${htmlSeguro(error.message)}</p>`; return; }
       const hoy = hoyChile();
-      cotPendientes = (data || []).map(c => {
+      // Si ya hubo un ingreso (OT de esta cotización, o el mismo vehículo entró después de enviarla), deja de estar pendiente
+      const vehIds = [...new Set((data || []).map(c => c.vehiculo_id).filter(Boolean))];
+      let ingresos = [];
+      if ((data || []).length) {
+        const filtros = [`cotizacion_id.in.(${data.map(c => c.id).join(',')})`];
+        if (vehIds.length) filtros.push(`vehiculo_id.in.(${vehIds.join(',')})`);
+        const { data: ots } = await supabaseClient.from('ordenes').select('cotizacion_id, vehiculo_id, creado_en, estado')
+          .neq('estado', 'cancelado').or(filtros.join(','));
+        ingresos = ots || [];
+      }
+      const yaIngreso = c => ingresos.some(o => o.cotizacion_id === c.id
+        || (c.vehiculo_id && o.vehiculo_id === c.vehiculo_id && c.enviada_en && new Date(o.creado_en) >= new Date(c.enviada_en)));
+      cotPendientes = (data || []).filter(c => !yaIngreso(c)).map(c => {
         const vence = sumarDiasYmd(String(c.fecha || c.creado_en).slice(0, 10), Number(c.validez_dias) || 15);
         const enviada = c.enviada_en ? ymdChile(c.enviada_en) : null;
         return { ...c, vence, enviada, restantes: diasEntre(hoy, vence), total: totalVigenteCotizacion(c, cfgAvisos.iva_pct) };
