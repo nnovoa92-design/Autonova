@@ -1045,13 +1045,19 @@
       const i = inspActual;
       if (!i.telefono) { alert('Esta inspección no tiene teléfono registrado.'); return; }
       const plan = inspPlanDe(i.datos);
-      const mensaje =
-        `Hola ${i.nombre_comprador}, le saluda ${config.nombre}.\n` +
-        `Resultado de la inspección precompra ${fmtNumero('INS', i.numero)}${plan ? ` (${plan.nombre})` : ''}` +
-        `${i.patente ? ' del vehículo ' + i.patente : ''} (${[i.marca, i.modelo].filter(Boolean).join(' ')}):\n` +
-        `Puntaje: ${i.score}/100 — ${i.ok} bien, ${i.warn} con atención, ${i.bad} malos.\n` +
-        `${i.recomendacion}\n` +
-        `Informe completo, con fotos: ${window.location.origin}/inspeccion.html?id=${i.id}`;
+      const modelo = [i.marca, i.modelo].filter(Boolean).join(' ');
+      // Texto editable en Configuración → Mensajes al cliente
+      const mensaje = armarWhatsApp('wa_inspeccion', {
+        nombre: i.nombre_comprador,
+        numero: fmtNumero('INS', i.numero),
+        vehiculo: `el vehículo${i.patente ? ' ' + i.patente : ''}${modelo ? ` (${modelo})` : ''}`,
+        patente: i.patente || '',
+        plan: plan ? plan.nombre : 'Inspección precompra',
+        puntaje: i.score,
+        resumen: `${i.ok} bien, ${i.warn} con atención, ${i.bad} malos`,
+        recomendacion: i.recomendacion || '',
+        link: `${window.location.origin}/inspeccion.html?id=${i.id}`,
+      }, config);
       abrirEnlace(linkWhatsApp(i.telefono, mensaje));
     });
 

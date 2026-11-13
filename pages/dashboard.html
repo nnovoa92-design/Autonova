@@ -41,6 +41,30 @@
           </div>
         </div>
 
+        <div class="card" id="cobranza-card">
+          <div class="toolbar">
+            <h2 style="margin:0;">💰 Cobranza de OT</h2>
+            <span class="badge badge-yellow" id="cobranza-resumen"></span>
+          </div>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.5rem;">
+            OT entregadas que no aparecen pagadas. Si de verdad tienen saldo, <strong>inicia la cobranza</strong>: le llegará un
+            correo al cliente a los 3, 5 y 15 días, y se detiene sola cuando registras el pago. Si ya pagó, registra el pago en la OT.
+          </p>
+          <div id="cobranza-lista" class="avisos-lista"><p style="color:var(--color-text-muted);">Cargando...</p></div>
+        </div>
+
+        <div class="card" id="cotpend-card">
+          <div class="toolbar">
+            <h2 style="margin:0;">📝 Cotizaciones por responder</h2>
+            <span class="badge badge-blue" id="cotpend-resumen"></span>
+          </div>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.5rem;">
+            Cotizaciones enviadas que el cliente aún no aprueba. Le llega un correo automático a los 3 y 5 días y el último día de
+            validez, con el link para aprobarla y para reservar hora. También puedes recordársela por WhatsApp.
+          </p>
+          <div id="cotpend-lista" class="avisos-lista"><p style="color:var(--color-text-muted);">Cargando...</p></div>
+        </div>
+
         <div class="card">
           <div class="toolbar">
             <h2 style="margin:0;">Recordatorios</h2>
@@ -200,6 +224,263 @@
     const DEFAULT_MSG_MANTENCION = 'Hola, {nombre}\n\nLe saluda el equipo de {taller}. Queremos contarle que ya están próximos a cumplirse 12 meses desde el último servicio realizado a su vehículo patente {patente}.\n\nPor este motivo, queremos invitarle a programar una nueva mantención preventiva, para revisar su estado general, anticiparnos a posibles fallas y ayudarle a mantenerlo seguro, confiable y en buenas condiciones.\n\nSerá un gusto volver a recibirle, revisar su vehículo con dedicación y efectuar los trabajos que realmente necesite.\n\nQuedamos atentos para coordinar una hora en el día que más le acomode.';
     const DEFAULT_MSG_REVISION_TECNICA = 'Hola, {nombre}\n\nLe saluda el equipo de {taller}. Queremos recordarle que la revisión técnica de su vehículo, patente {patente}, corresponde durante este mes.\n\nPara ayudarle a ahorrar tiempo y evitar esperas, contamos con el servicio de traslado y gestión de revisión técnica. Nosotros retiramos su vehículo, realizamos una inspección preventiva de los principales puntos y lo llevamos a la planta de revisión técnica.\n\nQuedamos atentos para ayudarle y coordinar una hora.';
 
+    // ---------- Cobranza de OT y cotizaciones por responder ----------
+    // Los correos automáticos los envía Supabase cada día desde las 10:00 (sql/v64); aquí se confirman, se ven y se
+    // pueden enviar a mano (WhatsApp o correo). Los pasos ya hechos se guardan para que el automático no los repita.
+    const PASOS_COTIZACION = { 1: 'día 3', 2: 'día 5', 3: 'último día' };
+    const PASOS_COBRANZA = { 1: 'día 3', 2: 'día 5', 3: 'día 15' };
+    let cobranzas = [], cotPendientes = [], cfgAvisos = null;
+    const diasEntre = (desde, hasta) => Math.round((new Date(hasta + 'T12:00:00Z') - new Date(desde + 'T12:00:00Z')) / 86400000);
+    const textoDias = (n) => `${n} ${n === 1 ? 'día' : 'días'}`;
+    const textoVehiculo = (v) => v ? `su vehículo ${v.patente}${[v.marca, v.modelo].filter(Boolean).length ? ` (${[v.marca, v.modelo].filter(Boolean).join(' ')})` : ''}` : 'su vehículo';
+    const pasosHechos = (arr) => { const n = (arr || []).map(Number).filter(Boolean); return n.length ? Math.max(...n) : 0; };
+    const chipsPasos = (nombres, hecho) => Object.entries(nombres).map(([p, txt]) =>
+      `<span class="paso-chip${Number(p) <= hecho ? ' hecho' : ''}">${Number(p) <= hecho ? '✓ ' : ''}${txt}</span>`).join('');
+    const correoActivo = (evento) => !!(cfgAvisos && cfgAvisos.correo_script_url && cfgAvisos.correo_script_clave)
+      && !(cfgAvisos.correo_eventos && cfgAvisos.correo_eventos[evento] === false);
+    // Paso que corresponde según los días (igual que el envío automático)
+    const pasoPorDias = (dias, ultimoDia) => ultimoDia ? 3 : (dias >= 5 ? 2 : (dias >= 3 ? 1 : 0));
+    const proximoEnvioTexto = (fecha, hoy) => fecha <= hoy ? 'hoy desde las 10:00' : `el ${fmtFecha(fecha + 'T12:00:00')} a las 10:00`;
+
+    // Total, pagado y saldo de una OT (con el bodegaje, igual que en la OT)
+    function cuentasOT(o) {
+      const neto = descuentoDeItems(o.orden_items, o).neto;
+      const conIva = o.con_iva !== false;
+      const total = conIva ? neto * (1 + Number(cfgAvisos.iva_pct ?? 19) / 100) : neto;
+      let bodegaje = 0;
+      if (o.fecha_listo) {
+        const hasta = o.fecha_entrega ? new Date(o.fecha_entrega) : new Date();
+        const dias = Math.max(0, Math.floor((hasta - new Date(o.fecha_listo)) / 86400000) - Number(cfgAvisos.bodegaje_dias_gracia ?? 2));
+        bodegaje = dias * Number(cfgAvisos.bodegaje_monto_dia ?? 4000) * (conIva ? 1 + Number(cfgAvisos.iva_pct ?? 19) / 100 : 1);
+      }
+      const pagado = [...(o.pagos || []), ...(o.abonos || [])].reduce((s, p) => s + Number(p.monto || 0), 0);
+      return { total: Math.round(total + bodegaje), pagado, saldo: Math.round(total + bodegaje - pagado) };
+    }
+
+    async function cargarCobranza() {
+      cfgAvisos = await getTallerConfig();
+      const cont = document.getElementById('cobranza-lista');
+      const { data, error } = await supabaseClient.from('ordenes')
+        .select('*, orden_items(cantidad, precio_unitario, tipo, tipo_otro), pagos(monto), abonos(monto), clientes(id, nombre, telefono, email), vehiculos(id, patente, marca, modelo)')
+        .eq('estado', 'entregado').order('fecha_entrega', { ascending: false });
+      if (error) { cont.innerHTML = `<p class="error-message">${htmlSeguro(error.message)}</p>`; return; }
+      cobranzas = (data || [])
+        .filter(o => o.cobranza_estado !== 'omitida' && o.cobranza_estado !== 'pagada')
+        .map(o => ({ ...o, cuentas: cuentasOT(o) }))
+        .filter(o => o.cuentas.saldo > 1);
+      renderCobranza();
+    }
+
+    function renderCobranza() {
+      const cont = document.getElementById('cobranza-lista');
+      const porDecidir = cobranzas.filter(o => !o.cobranza_estado).length;
+      document.getElementById('cobranza-resumen').textContent = cobranzas.length
+        ? `${cobranzas.length} con saldo${porDecidir ? ` · ${porDecidir} por revisar` : ''}` : 'Al día';
+      if (!cobranzas.length) { cont.innerHTML = '<p style="color:var(--color-text-muted);">No hay OT entregadas con saldo pendiente. 👍</p>'; return; }
+      const hoy = hoyChile();
+      cont.innerHTML = cobranzas.map((o, idx) => {
+        const entrega = o.fecha_entrega ? ymdChile(o.fecha_entrega) : null;
+        const c = o.cuentas;
+        const cli = o.clientes || {};
+        let estado = '', acciones = '';
+        if (o.cobranza_estado === 'activa') {
+          // Los avisos cuentan desde que se inició la cobranza (igual que el envío automático)
+          const desde = ymdChile(o.cobranza_desde || o.fecha_entrega || new Date().toISOString());
+          const hecho = pasosHechos(o.cobranza_enviados);
+          const dias = diasEntre(desde, hoy);
+          const pasoHoy = dias >= 15 ? 3 : pasoPorDias(dias, false);
+          const fechas = { 1: sumarDiasYmd(desde, 3), 2: sumarDiasYmd(desde, 5), 3: sumarDiasYmd(desde, 15) };
+          const sig = [1, 2, 3].find(p => p > Math.max(hecho, pasoHoy));
+          estado = `<div class="aviso-estado">Cobranza activa desde el ${fmtFecha(desde + 'T12:00:00')} · ${chipsPasos(PASOS_COBRANZA, hecho)}</div>
+            <div class="aviso-nota">${!correoValido(cli.email) ? '⚠ El cliente no tiene correo: cóbrale por WhatsApp.'
+              : !correoActivo('cobranza_ot') ? '⚠ El aviso automático de cobranza está apagado en Configuración.'
+              : pasoHoy > hecho ? `Hoy sale el aviso del ${PASOS_COBRANZA[pasoHoy]} (desde las 10:00).`
+              : sig ? `Próximo correo automático: ${PASOS_COBRANZA[sig]}, ${proximoEnvioTexto(fechas[sig], hoy)}.` : 'Ya se enviaron los 3 avisos.'}</div>`;
+          acciones = `<button type="button" class="btn-secondary cob-wa" data-idx="${idx}">💬 WhatsApp</button>
+            <button type="button" class="btn-secondary cob-mail" data-idx="${idx}">✉ Enviar aviso ahora</button>
+            <a class="btn btn-secondary" href="ordenes.html?id=${o.id}">💳 Registrar pago</a>
+            <button type="button" class="btn-secondary cob-detener" data-idx="${idx}">⏸ Detener</button>`;
+        } else {
+          estado = `<div class="aviso-nota">¿Tiene saldo de verdad? Si se te olvidó registrar un pago, regístralo en la OT. Si no, inicia la cobranza automática.</div>`;
+          acciones = `<button type="button" class="cob-iniciar" data-idx="${idx}">▶ Iniciar cobranza</button>
+            <a class="btn btn-secondary" href="ordenes.html?id=${o.id}">💳 Registrar pago</a>
+            <button type="button" class="btn-secondary cob-wa" data-idx="${idx}">💬 WhatsApp</button>
+            <button type="button" class="btn-secondary cob-omitir" data-idx="${idx}">No cobrar</button>`;
+        }
+        return `
+          <div class="aviso-fila${o.cobranza_estado === 'activa' ? '' : ' por-decidir'}">
+            <div class="aviso-cab">
+              <strong>${fmtNumero('OT', o.numero)}</strong> · ${htmlSeguro(cli.nombre || '–')}
+              ${o.vehiculos ? `· <span class="badge">${htmlSeguro(o.vehiculos.patente)}</span>` : ''}
+              ${entrega ? `<span class="aviso-fecha">entregado el ${fmtFecha(entrega + 'T12:00:00')} (hace ${textoDias(diasEntre(entrega, hoy))})</span>` : ''}
+            </div>
+            <div class="aviso-montos">Total ${fmtMoneda(c.total)} · Pagado ${fmtMoneda(c.pagado)} · <strong style="color:#a93b33;">Saldo ${fmtMoneda(c.saldo)}</strong></div>
+            ${estado}
+            <div class="aviso-acciones">${acciones}</div>
+          </div>`;
+      }).join('');
+    }
+
+    function valoresCobranza(o) {
+      return {
+        nombre: (o.clientes && o.clientes.nombre) || '',
+        ot: fmtNumero('OT', o.numero),
+        vehiculo: textoVehiculo(o.vehiculos),
+        fecha_entrega: o.fecha_entrega ? fmtFecha(o.fecha_entrega) : '',
+        saldo: fmtMoneda(o.cuentas.saldo), total: fmtMoneda(o.cuentas.total), pagado: fmtMoneda(o.cuentas.pagado),
+      };
+    }
+
+    document.getElementById('cobranza-lista').addEventListener('click', async (e) => {
+      const b = e.target.closest('button[data-idx]');
+      if (!b) return;
+      const o = cobranzas[Number(b.dataset.idx)];
+      if (!o) return;
+      const cambiarCobranza = async (cambios, aviso) => {
+        const { error } = await supabaseClient.from('ordenes').update(cambios).eq('id', o.id);
+        if (error) {
+          alert(faltaColumnaNueva(error) ? 'Falta ejecutar sql/actualizacion-v64-recordatorios-automaticos.sql en Supabase.' : 'No se pudo guardar: ' + error.message);
+          return;
+        }
+        if (aviso) mostrarToast(aviso, 'ok');
+        await cargarCobranza();
+      };
+      if (b.classList.contains('cob-iniciar')) {
+        if (!confirm(`¿Iniciar la cobranza de ${fmtNumero('OT', o.numero)} por ${fmtMoneda(o.cuentas.saldo)}?\n\nLe llegará un correo al cliente a los 3, 5 y 15 días. Se detiene sola cuando registres el pago.`)) return;
+        await cambiarCobranza({ cobranza_estado: 'activa', cobranza_desde: new Date().toISOString(), cobranza_total: o.cuentas.total, cobranza_enviados: [] }, 'Cobranza iniciada.');
+      } else if (b.classList.contains('cob-omitir') || b.classList.contains('cob-detener')) {
+        if (!confirm(b.classList.contains('cob-detener') ? '¿Detener los avisos de cobranza de esta OT?' : '¿No cobrar esta OT? Deja de aparecer aquí.')) return;
+        await cambiarCobranza({ cobranza_estado: 'omitida' }, 'Listo.');
+      } else if (b.classList.contains('cob-wa')) {
+        const tel = o.clientes && o.clientes.telefono;
+        if (!tel) { alert('El cliente no tiene teléfono registrado.'); return; }
+        abrirEnlace(linkWhatsApp(tel, armarWhatsApp('wa_cobranza', valoresCobranza(o), cfgAvisos)));
+      } else if (b.classList.contains('cob-mail')) {
+        const email = o.clientes && o.clientes.email;
+        if (!correoValido(email)) { alert('El cliente no tiene correo registrado.'); return; }
+        // El siguiente aviso; el «último aviso» solo desde el día 15
+        const desde = ymdChile(o.cobranza_desde || o.fecha_entrega || new Date().toISOString());
+        const paso = diasEntre(desde, hoyChile()) >= 15 ? 3 : Math.min(2, pasosHechos(o.cobranza_enviados) + 1);
+        const m = armarCorreo('cobranza_' + paso, valoresCobranza(o), cfgAvisos);
+        const r = await enviarCorreoOAbrirGmail(email, m.asunto, m.texto, { evento: 'cobranza_ot', tabla: 'ordenes', id: o.id, cliente_id: o.cliente_id, vehiculo_id: o.vehiculo_id });
+        if (r.estado === 'enviado' || r.estado === 'incierto') {
+          const { error } = await supabaseClient.from('ordenes').update({ cobranza_enviados: Array.from({ length: paso }, (_, k) => k + 1) }).eq('id', o.id);
+          void error;
+          await cargarCobranza();
+        }
+      }
+    });
+
+    async function cargarCotizacionesPendientes() {
+      cfgAvisos = cfgAvisos || await getTallerConfig();
+      const cont = document.getElementById('cotpend-lista');
+      const { data, error } = await supabaseClient.from('cotizaciones')
+        .select('*, cotizacion_items(cantidad, precio_unitario, tipo, tipo_otro), clientes(id, nombre, telefono, email), vehiculos(id, patente, marca, modelo)')
+        .eq('estado', 'enviada').order('creado_en', { ascending: false });
+      if (error) { cont.innerHTML = `<p class="error-message">${htmlSeguro(error.message)}</p>`; return; }
+      const hoy = hoyChile();
+      cotPendientes = (data || []).map(c => {
+        const vence = sumarDiasYmd(String(c.fecha || c.creado_en).slice(0, 10), Number(c.validez_dias) || 15);
+        const enviada = c.enviada_en ? ymdChile(c.enviada_en) : null;
+        return { ...c, vence, enviada, restantes: diasEntre(hoy, vence), total: totalVigenteCotizacion(c, cfgAvisos.iva_pct) };
+      }).sort((a, b) => (a.restantes < 0) - (b.restantes < 0) || a.restantes - b.restantes);
+      renderCotizacionesPendientes();
+    }
+
+    function renderCotizacionesPendientes() {
+      const cont = document.getElementById('cotpend-lista');
+      const vigentes = cotPendientes.filter(c => c.restantes >= 0).length;
+      document.getElementById('cotpend-resumen').textContent = cotPendientes.length ? `${vigentes} vigente${vigentes === 1 ? '' : 's'}${cotPendientes.length > vigentes ? ` · ${cotPendientes.length - vigentes} vencida${cotPendientes.length - vigentes === 1 ? '' : 's'}` : ''}` : 'Ninguna';
+      if (!cotPendientes.length) { cont.innerHTML = '<p style="color:var(--color-text-muted);">No hay cotizaciones esperando respuesta.</p>'; return; }
+      const hoy = hoyChile();
+      cont.innerHTML = cotPendientes.map((c, idx) => {
+        const cli = c.clientes || {};
+        const hecho = pasosHechos(c.recordatorios_enviados);
+        const diasEnviada = c.enviada ? diasEntre(c.enviada, hoy) : null;
+        let nota;
+        if (c.restantes < 0) nota = `Venció el ${fmtFecha(c.vence + 'T12:00:00')}: si le interesa, puedes ofrecerle actualizarla.`;
+        else if (!c.enviada) nota = 'Sin fecha de envío: los recordatorios automáticos parten cuando la marcas «enviada».';
+        else if (!correoValido(cli.email)) nota = '⚠ El cliente no tiene correo: recuérdasela por WhatsApp.';
+        else if (!correoActivo('recordatorio_cotizacion')) nota = '⚠ Los recordatorios automáticos de cotización están apagados en Configuración.';
+        else if (hecho >= 3) nota = 'Sin más correos automáticos (ya se enviaron, o la cotización es anterior a los recordatorios automáticos).';
+        else {
+          const pasoHoy = pasoPorDias(diasEnviada, hoy === c.vence && diasEnviada >= 1);
+          const fechas = { 1: sumarDiasYmd(c.enviada, 3), 2: sumarDiasYmd(c.enviada, 5), 3: c.vence };
+          const sig = [1, 2, 3].find(p => p > Math.max(hecho, pasoHoy) && fechas[p] > hoy && fechas[p] <= c.vence);
+          nota = pasoHoy > hecho ? `Hoy sale el correo automático del ${PASOS_COTIZACION[pasoHoy]} (desde las 10:00).`
+            : sig ? `Próximo correo automático: ${PASOS_COTIZACION[sig]}, ${proximoEnvioTexto(fechas[sig], hoy)}.` : 'Ya se enviaron los recordatorios automáticos.';
+        }
+        return `
+          <div class="aviso-fila${c.restantes < 0 ? ' vencida' : ''}">
+            <div class="aviso-cab">
+              <strong>${fmtNumero('COT', c.numero)}</strong> · ${htmlSeguro(cli.nombre || '–')}
+              ${c.vehiculos ? `· <span class="badge">${htmlSeguro(c.vehiculos.patente)}</span>` : ''}
+              <span class="aviso-fecha">${diasEnviada != null ? `enviada hace ${textoDias(diasEnviada)} · ` : ''}${c.restantes > 0 ? `vence en ${textoDias(c.restantes)}` : (c.restantes === 0 ? '<strong>hoy es su último día</strong>' : '<span class="badge badge-gray">Vencida</span>')}</span>
+            </div>
+            <div class="aviso-montos">Total ${fmtMoneda(c.total)}</div>
+            <div class="aviso-estado">${chipsPasos(PASOS_COTIZACION, hecho)}</div>
+            <div class="aviso-nota">${nota}</div>
+            <div class="aviso-acciones">
+              <button type="button" class="btn-secondary cot-wa" data-idx="${idx}">💬 WhatsApp</button>
+              ${c.restantes >= 0 ? `<button type="button" class="btn-secondary cot-mail" data-idx="${idx}">✉ Enviar recordatorio ahora</button>` : ''}
+              <a class="btn btn-secondary" href="cotizaciones.html?id=${c.id}">Abrir</a>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    function valoresCotizacion(c) {
+      const validezTexto = c.restantes > 0 ? `Le quedan ${textoDias(c.restantes)} de validez (hasta el ${fmtFecha(c.vence + 'T12:00:00')}).`
+        : c.restantes === 0 ? 'Hoy es el último día de validez: a partir de mañana los valores pueden cambiar.'
+        : `Venció el ${fmtFecha(c.vence + 'T12:00:00')}; si le interesa, la actualizamos sin compromiso.`;
+      return {
+        nombre: (c.clientes && c.clientes.nombre) || '',
+        cotizacion: fmtNumero('COT', c.numero),
+        vehiculo: textoVehiculo(c.vehiculos),
+        total: fmtMoneda(c.total),
+        iva: c.con_iva === false ? 'sin IVA' : 'IVA incluido',
+        dias_restantes: textoDias(Math.max(0, c.restantes)),
+        vence: fmtFecha(c.vence + 'T12:00:00'),
+        validez_texto: validezTexto,
+        link: `${window.location.origin}/cotizacion.html?id=${c.id}`,
+        link_reserva: `${window.location.origin}/reservar.html?cotizacion=${fmtNumero('COT', c.numero)}`,
+      };
+    }
+
+    document.getElementById('cotpend-lista').addEventListener('click', async (e) => {
+      const b = e.target.closest('button[data-idx]');
+      if (!b) return;
+      const c = cotPendientes[Number(b.dataset.idx)];
+      if (!c) return;
+      if (b.classList.contains('cot-wa')) {
+        const tel = c.clientes && c.clientes.telefono;
+        if (!tel) { alert('El cliente no tiene teléfono registrado.'); return; }
+        abrirEnlace(linkWhatsApp(tel, armarWhatsApp('wa_cotizacion_recordatorio', valoresCotizacion(c), cfgAvisos)));
+      } else if (b.classList.contains('cot-mail')) {
+        const email = c.clientes && c.clientes.email;
+        if (!correoValido(email)) { alert('El cliente no tiene correo registrado.'); return; }
+        // El siguiente recordatorio; el de «último día» solo el último día de validez
+        const hecho = pasosHechos(c.recordatorios_enviados);
+        const paso = c.restantes === 0 ? 3 : Math.min(2, Math.max(hecho + 1, pasoPorDias(c.enviada ? diasEntre(c.enviada, hoyChile()) : 0, false)));
+        const m = armarCorreo('cotizacion_recordatorio_' + paso, valoresCotizacion(c), cfgAvisos);
+        const r = await enviarCorreoOAbrirGmail(email, m.asunto, m.texto, { evento: 'recordatorio_cotizacion', tabla: 'cotizaciones', id: c.id, cliente_id: c.cliente_id, vehiculo_id: c.vehiculo_id });
+        if (r.estado === 'enviado' || r.estado === 'incierto') {
+          const hechos = Math.max(paso, hecho);
+          const { error } = await supabaseClient.from('cotizaciones').update({ recordatorios_enviados: Array.from({ length: hechos }, (_, k) => k + 1) }).eq('id', c.id);
+          void error;
+          await cargarCotizacionesPendientes();
+        }
+      }
+    });
+
+    // Dirección de la app para los links de los correos automáticos (los arma Supabase)
+    async function sincronizarDireccionApp() {
+      const cfg = await getTallerConfig();
+      if (!/^https:\/\//.test(window.location.origin) || !cfg || cfg.app_url === undefined || cfg.app_url === window.location.origin) return;
+      const { error } = await supabaseClient.from('taller_config').update({ app_url: window.location.origin }).eq('id', 1);
+      void error;
+    }
+
     (async () => {
       const session = await initLayout('dashboard');
       if (!session) return;
@@ -291,6 +572,10 @@
           <td style="white-space:nowrap;">${badgeEstado(c.estado, ESTADOS_COTIZACION)}</td>
         </tr>`).join('');
       }
+
+      // Cobranza de OT y cotizaciones por responder (recordatorios automáticos)
+      sincronizarDireccionApp();
+      await Promise.all([cargarCobranza(), cargarCotizacionesPendientes()]);
 
       // Recordatorios del mes (mantención por avisar + revisión técnica)
       await cargarRecordatorios();

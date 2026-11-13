@@ -137,7 +137,7 @@
               <textarea id="politica_revision_tecnica_texto" rows="6" style="font-family:inherit; font-size:0.85rem;"></textarea>
             </div>
 
-            <h2 data-cfg="whatsapp">Mensajes de WhatsApp</h2>
+            <h2 data-cfg="whatsapp">Mensajes de la agenda (WhatsApp)</h2>
             <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
               Usa estos textos entre llaves donde corresponda — la app los reemplaza al enviar:
               <code>{nombre}</code> <code>{taller}</code> <code>{fecha}</code> <code>{hora}</code> <code>{servicio}</code>
@@ -293,6 +293,7 @@
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.4rem;">
             Con el envío configurado, estos correos salen solos al correo del cliente (si lo tiene registrado).
             El WhatsApp sigue siendo manual con sus botones. Desmarca los que no quieras enviar.
+            Los recordatorios de cotización y la cobranza los envía Supabase cada día desde las 10:00, aunque la app esté cerrada.
           </p>
           <div id="correo-eventos" style="display:grid; gap:0.3rem;"></div>
           <p id="correo-eventos-estado" style="font-size:0.82rem; color:var(--color-text-muted); min-height:1em;"></p>
@@ -303,11 +304,13 @@
         </div>
 
         <div class="card" id="mensajes-correo-card">
-          <h2 data-cfg="mensajes-correo" style="margin-top:0;">Mensajes de correo</h2>
+          <h2 data-cfg="mensajes-correo" style="margin-top:0;">Mensajes al cliente (correo y WhatsApp)</h2>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
-            Edita el asunto y el texto de cada correo que reciben tus clientes. Las palabras entre llaves, como
-            <code>{nombre}</code>, se reemplazan solas al enviar: tócalas abajo para insertarlas donde está el cursor.
-            Usa «Ver ejemplo» para revisar cómo queda antes de guardar.
+            Edita cada correo y cada WhatsApp que reciben tus clientes: cotizaciones, diagnósticos, OT, inspecciones,
+            recordatorios de cotización y cobranza. Las palabras entre llaves, como <code>{nombre}</code>, se reemplazan
+            solas al enviar: tócalas abajo para insertarlas donde está el cursor. Usa «Ver ejemplo» para revisar cómo queda
+            antes de guardar. Los mensajes de la agenda (confirmación y recordatorio de cita, mantención y revisión técnica)
+            están en «Mensajes de la agenda».
           </p>
           <div class="form-group">
             <label for="pc-clave">Mensaje</label>
@@ -318,7 +321,7 @@
             <input type="text" id="pc-asunto" maxlength="200" />
           </div>
           <div class="form-group">
-            <label for="pc-texto">Texto del correo</label>
+            <label for="pc-texto" id="pc-texto-label">Texto del correo</label>
             <textarea id="pc-texto" rows="11"></textarea>
           </div>
           <div style="font-size:0.82rem; color:var(--color-text-muted); margin-bottom:0.3rem;">Datos que puedes usar (toca para insertar):</div>
@@ -853,8 +856,10 @@
       estadoEl.textContent = 'Guardado.';
     });
 
-    // ---------- Mensajes de correo editables (taller_config.correo_plantillas: { clave: { asunto, texto } }) ----------
+    // ---------- Mensajes al cliente editables: correos y WhatsApp (taller_config.correo_plantillas: { clave: { asunto, texto } }) ----------
     let correoPlantillas = {};
+    const plantillaDe = (clave) => PLANTILLAS_CORREO[clave] || PLANTILLAS_WHATSAPP[clave];
+    const esWhatsApp = (clave) => !!PLANTILLAS_WHATSAPP[clave];
     // Datos de ejemplo para «Ver ejemplo»
     const EJEMPLO_CORREO = {
       nombre: 'Juan Pérez', vehiculo: 'su vehículo ABCD12 (Kia Rio)', patente: 'ABCD12', ot: 'OT-0015',
@@ -862,9 +867,12 @@
       bloque_seguimiento: `\n\nPuede seguir el estado de su vehículo aquí:\n${window.location.origin}/portal.html?patente=ABCD12&ot=15`,
       cotizacion: 'COT-0007', detalle: '- Cambio de aceite: $25.000\n- Filtro de aceite: $8.000', total: '$39.270', iva: 'IVA incluido', validez: 15,
       link: `${window.location.origin}/…`, diagnostico: 'DIAG-0003', resumen: '- Pastillas de freno gastadas\n- Ruido en la suspensión delantera',
-      numero: 'INS-0003', puntaje: 82, recomendacion: 'Recomendable, con detalles menores a revisar.',
+      numero: 'INS-0003', puntaje: 82, recomendacion: 'Recomendable, con detalles menores a revisar.', plan: 'Compra Segura Pro',
+      dias_restantes: '12 días', vence: '25-11-26', validez_texto: 'Le quedan 12 días de validez (hasta el 25-11-26).',
+      link_reserva: `${window.location.origin}/reservar.html?cotizacion=COT-0007`,
+      fecha_entrega: '10-11-26', saldo: '$18.068', pagado: '$20.000', documento: 'OT-0015',
     };
-    const valoresEjemplo = (clave) => clave === 'inspeccion'
+    const valoresEjemplo = (clave) => (clave === 'inspeccion' || clave === 'wa_inspeccion')
       ? { ...EJEMPLO_CORREO, vehiculo: 'el vehículo ABCD12 (Toyota Corolla)', resumen: '20 bien, 3 con atención, 0 malos' }
       : (clave === 'cotizacion_enviada' ? { ...EJEMPLO_CORREO, vehiculo: 'ABCD12 (Kia Rio)' } : EJEMPLO_CORREO);
     const configParaEjemplo = () => ({
@@ -874,8 +882,11 @@
 
     function cargarPlantillaEnPantalla() {
       const clave = document.getElementById('pc-clave').value;
-      const base = PLANTILLAS_CORREO[clave], propia = correoPlantillas[clave] || {};
-      document.getElementById('pc-asunto').value = propia.asunto || base.asunto;
+      const base = plantillaDe(clave), propia = correoPlantillas[clave] || {};
+      const wa = esWhatsApp(clave);
+      document.getElementById('pc-asunto').closest('.form-group').style.display = wa ? 'none' : '';
+      document.getElementById('pc-texto-label').textContent = wa ? 'Texto del WhatsApp' : 'Texto del correo';
+      document.getElementById('pc-asunto').value = wa ? '' : (propia.asunto || base.asunto);
       document.getElementById('pc-texto').value = propia.texto || base.texto;
       document.getElementById('pc-variables').innerHTML = base.variables.map(v =>
         `<button type="button" class="btn-secondary btn-mini pc-var" data-var="${v}" title="${htmlSeguro(DESCRIPCION_VARIABLES_CORREO[v] || '')}">{${v}}</button>`).join('');
@@ -886,9 +897,10 @@
     function renderSelectorPlantillas() {
       const sel = document.getElementById('pc-clave');
       const actual = sel.value;
-      sel.innerHTML = Object.entries(PLANTILLAS_CORREO).map(([clave, p]) =>
+      const opciones = (grupo) => Object.entries(grupo).map(([clave, p]) =>
         `<option value="${clave}">${htmlSeguro(p.titulo)}${correoPlantillas[clave] ? ' ✎' : ''}</option>`).join('');
-      if (actual && PLANTILLAS_CORREO[actual]) sel.value = actual;
+      sel.innerHTML = `<optgroup label="✉ Correos">${opciones(PLANTILLAS_CORREO)}</optgroup><optgroup label="💬 WhatsApp">${opciones(PLANTILLAS_WHATSAPP)}</optgroup>`;
+      if (actual && plantillaDe(actual)) sel.value = actual;
       cargarPlantillaEnPantalla();
     }
     document.getElementById('pc-clave').addEventListener('change', cargarPlantillaEnPantalla);
@@ -899,7 +911,7 @@
     document.getElementById('pc-variables').addEventListener('click', (e) => {
       const b = e.target.closest('.pc-var');
       if (!b) return;
-      const campo = document.getElementById(pcUltimoCampo);
+      const campo = document.getElementById(esWhatsApp(document.getElementById('pc-clave').value) ? 'pc-texto' : pcUltimoCampo);
       const ini = campo.selectionStart ?? campo.value.length, fin = campo.selectionEnd ?? campo.value.length;
       const token = `{${b.dataset.var}}`;
       campo.value = campo.value.slice(0, ini) + token + campo.value.slice(fin);
@@ -909,9 +921,10 @@
 
     document.getElementById('pc-ejemplo-btn').addEventListener('click', () => {
       const clave = document.getElementById('pc-clave').value;
+      const wa = esWhatsApp(clave);
       const cfgEj = { ...configParaEjemplo(), correo_plantillas: { [clave]: { asunto: document.getElementById('pc-asunto').value, texto: document.getElementById('pc-texto').value } } };
-      const m = armarCorreo(clave, valoresEjemplo(clave), cfgEj);
-      document.getElementById('pc-ejemplo-asunto').textContent = m.asunto;
+      const m = wa ? { asunto: '', texto: armarWhatsApp(clave, valoresEjemplo(clave), cfgEj) } : armarCorreo(clave, valoresEjemplo(clave), cfgEj);
+      document.getElementById('pc-ejemplo-asunto').textContent = wa ? '(WhatsApp, sin asunto)' : m.asunto;
       document.getElementById('pc-ejemplo-texto').textContent = m.texto;
       document.getElementById('pc-ejemplo').hidden = false;
       const desconocidas = [...new Set((m.asunto + ' ' + m.texto).match(/\{\w+\}/g) || [])];
@@ -937,13 +950,15 @@
     }
     document.getElementById('pc-guardar-btn').addEventListener('click', async () => {
       const clave = document.getElementById('pc-clave').value;
-      const base = PLANTILLAS_CORREO[clave];
+      const base = plantillaDe(clave);
+      const wa = esWhatsApp(clave);
       const asunto = document.getElementById('pc-asunto').value.trim();
       const texto = document.getElementById('pc-texto').value.replace(/\s+$/, '');
-      if (!asunto || !texto.trim()) { document.getElementById('pc-error').textContent = 'El asunto y el texto no pueden quedar vacíos (usa «Restaurar texto original» si quieres volver al de siempre).'; return; }
+      if ((!wa && !asunto) || !texto.trim()) { document.getElementById('pc-error').textContent = `${wa ? 'El texto' : 'El asunto y el texto'} no pueden quedar vacíos (usa «Restaurar texto original» si quieres volver al de siempre).`; return; }
       const nuevas = { ...correoPlantillas };
-      if (asunto === base.asunto && texto === base.texto) delete nuevas[clave]; else nuevas[clave] = { asunto, texto };
-      await guardarPlantillas(nuevas, 'Mensaje guardado. Los próximos correos saldrán con este texto.');
+      if ((wa || asunto === base.asunto) && texto === base.texto) delete nuevas[clave];
+      else nuevas[clave] = wa ? { texto } : { asunto, texto };
+      await guardarPlantillas(nuevas, wa ? 'Mensaje guardado. Los próximos WhatsApp saldrán con este texto.' : 'Mensaje guardado. Los próximos correos saldrán con este texto.');
     });
     document.getElementById('pc-restaurar-btn').addEventListener('click', async () => {
       const clave = document.getElementById('pc-clave').value;

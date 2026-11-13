@@ -536,7 +536,12 @@
       tbody.querySelectorAll('.estado-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
           const cot = cotizacionesCache.find(x => x.id === btn.dataset.id);
-          await supabaseClient.from('cotizaciones').update({ estado: btn.dataset.estado }).eq('id', btn.dataset.id);
+          const cambios = { estado: btn.dataset.estado };
+          // La primera vez que se marca enviada parten los recordatorios automáticos (días 3, 5 y último día de validez)
+          if (btn.dataset.estado === 'enviada' && cot && !cot.enviada_en) { cambios.enviada_en = new Date().toISOString(); cambios.recordatorios_enviados = []; }
+          let { error } = await supabaseClient.from('cotizaciones').update(cambios).eq('id', btn.dataset.id);
+          if (faltaColumnaNueva(error)) ({ error } = await supabaseClient.from('cotizaciones').update({ estado: btn.dataset.estado }).eq('id', btn.dataset.id));   // aún sin v64
+          void error;
           // Marcada como enviada: aviso automático al correo del cliente con el link (el WhatsApp sigue manual)
           if (btn.dataset.estado === 'enviada' && cot) correoAutomatico('cotizacion_enviada', { para: cot.clientes && cot.clientes.email, ...mensajeCorreoCotizacion(cot), ref: { tabla: 'cotizaciones', id: cot.id, cliente_id: cot.cliente_id, vehiculo_id: cot.vehiculo_id } });
           await loadCotizaciones();
@@ -606,13 +611,17 @@
       if (!tel) { alert('El cliente no tiene teléfono registrado.'); return; }
 
       const t = totalesCotizacion(c);
-      const vehiculo = c.vehiculos ? ` para su vehículo ${c.vehiculos.patente} (${[c.vehiculos.marca, c.vehiculos.modelo].filter(Boolean).join(' ')})` : '';
-      const detalle = itemsEfectivos(c).map(i => `• ${i.descripcion}`).join('\n');
-      const mensaje =
-        `Hola ${c.clientes.nombre}, le saluda ${config.nombre}.\n` +
-        `Le enviamos la cotización ${fmtNumero('COT', c.numero)}${vehiculo}:\n${detalle}\n` +
-        `Total: ${fmtMoneda(t.total)} (${t.conIva ? 'IVA incluido' : 'sin IVA'}). Válida por ${c.validez_dias} días.\n` +
-        `Puede revisar y aprobar la cotización aquí: ${linkPublicoCotizacion(c.id)}`;
+      // Texto editable en Configuración → Mensajes al cliente
+      const mensaje = armarWhatsApp('wa_cotizacion', {
+        nombre: c.clientes.nombre,
+        cotizacion: fmtNumero('COT', c.numero),
+        vehiculo: c.vehiculos ? `su vehículo ${c.vehiculos.patente} (${[c.vehiculos.marca, c.vehiculos.modelo].filter(Boolean).join(' ')})` : 'su vehículo',
+        detalle: itemsEfectivos(c).map(i => `• ${i.descripcion}`).join('\n'),
+        total: fmtMoneda(t.total),
+        iva: t.conIva ? 'IVA incluido' : 'sin IVA',
+        validez: c.validez_dias,
+        link: linkPublicoCotizacion(c.id),
+      }, config);
       abrirEnlace(linkWhatsApp(tel, mensaje));
     }
 

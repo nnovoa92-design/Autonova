@@ -24,12 +24,12 @@ const SECCIONES_CONFIG = [
   { id: 'reparto', label: 'Reparto de mano de obra' },
   { id: 'bodegaje', label: 'Bodegaje' },
   { id: 'politicas-legales', label: 'Políticas y términos legales' },
-  { id: 'whatsapp', label: 'Mensajes de WhatsApp' },
+  { id: 'whatsapp', label: 'Mensajes de la agenda' },
   { id: 'patentes', label: 'Consulta de patentes' },
   { id: 'planes-inspeccion', label: 'Planes de inspección' },
   { id: 'domicilio', label: 'Atención a domicilio' },
   { id: 'correo', label: 'Correo automático' },
-  { id: 'mensajes-correo', label: 'Mensajes de correo' },
+  { id: 'mensajes-correo', label: 'Mensajes al cliente' },
   { id: 'registro-correos', label: 'Correos enviados' },
   { id: 'horario', label: 'Horario de atención' },
   { id: 'bloqueos', label: 'Bloqueos de agenda' },
@@ -648,7 +648,10 @@ const EVENTOS_CORREO = {
   ot_entregado:       'Vehículo entregado',
   cotizacion_enviada: 'Cotización marcada como enviada (con su link)',
   inspeccion:         'Inspección precompra terminada (con su informe)',
+  recordatorio_cotizacion: 'Recordatorios de cotizaciones sin respuesta (días 3 y 5, y el último día de validez)',
+  cobranza_ot:        'Cobranza de OT entregadas con saldo (días 3, 5 y 15, después de confirmarla en Inicio)',
 };
+// Los recordatorios y la cobranza los envía Supabase solo, cada día desde las 10:00 (sql/v64), aunque la app esté cerrada.
 
 async function correoEventoActivo(evento) {
   const cfg = await getTallerConfig();
@@ -751,7 +754,115 @@ const PLANTILLAS_CORREO = {
     texto: 'Hola {nombre},\n\nLe enviamos el resultado de la inspección precompra {numero} de {vehiculo}:\n\nPuntaje: {puntaje}/100 — {resumen}.\n{recomendacion}\n\nInforme completo, con fotos:\n{link}\n\n{firma}',
     variables: ['nombre', 'numero', 'vehiculo', 'patente', 'plan', 'puntaje', 'resumen', 'recomendacion', 'link', 'taller', 'firma'],
   },
+  // Recordatorios automáticos (los envía sql/v64: mantener los textos iguales allá)
+  cotizacion_recordatorio_1: {
+    titulo: 'Recordatorio de cotización — día 3',
+    asunto: 'Su cotización {cotizacion} sigue disponible - {taller}',
+    texto: 'Hola {nombre},\n\nLe recordamos la cotización {cotizacion} para {vehiculo}, por un total de {total} ({iva}). Aún le quedan {dias_restantes} de validez (hasta el {vence}).\n\nPuede revisarla y aprobarla aquí:\n{link}\n\nSi desea agendar el trabajo, reserve su hora aquí:\n{link_reserva}\n\nCualquier duda, estamos para ayudarle.\n\n{firma}',
+    variables: ['nombre', 'cotizacion', 'vehiculo', 'total', 'iva', 'dias_restantes', 'vence', 'link', 'link_reserva', 'taller', 'firma'],
+  },
+  cotizacion_recordatorio_2: {
+    titulo: 'Recordatorio de cotización — día 5',
+    asunto: '¿Agendamos su trabajo? Cotización {cotizacion} - {taller}',
+    texto: 'Hola {nombre},\n\nQueríamos saber si pudo revisar la cotización {cotizacion} para {vehiculo} ({total}, {iva}). Le quedan {dias_restantes} de validez (hasta el {vence}); después de esa fecha los valores pueden cambiar.\n\nVer y aprobar la cotización:\n{link}\n\nReservar su hora:\n{link_reserva}\n\n{firma}',
+    variables: ['nombre', 'cotizacion', 'vehiculo', 'total', 'iva', 'dias_restantes', 'vence', 'link', 'link_reserva', 'taller', 'firma'],
+  },
+  cotizacion_recordatorio_3: {
+    titulo: 'Recordatorio de cotización — último día de validez',
+    asunto: 'Último día de su cotización {cotizacion} - {taller}',
+    texto: 'Hola {nombre},\n\nHoy es el último día de validez de la cotización {cotizacion} para {vehiculo} ({total}, {iva}). A partir de mañana deja de ser válida y los valores pueden cambiar.\n\nSi desea mantener estos valores, apruébela hoy aquí:\n{link}\n\nO reserve su hora directamente:\n{link_reserva}\n\n{firma}',
+    variables: ['nombre', 'cotizacion', 'vehiculo', 'total', 'iva', 'vence', 'link', 'link_reserva', 'taller', 'firma'],
+  },
+  cobranza_1: {
+    titulo: 'Cobranza de OT — día 3',
+    asunto: 'Saldo pendiente de su {ot} - {taller}',
+    texto: 'Hola {nombre},\n\nLe recordamos que el servicio de {vehiculo} ({ot}), entregado el {fecha_entrega}, tiene un saldo pendiente de {saldo} (total {total}, pagado {pagado}).\n\nSi ya realizó el pago, por favor envíenos el comprobante y disculpe la molestia.\n\n{firma}',
+    variables: ['nombre', 'ot', 'vehiculo', 'fecha_entrega', 'saldo', 'total', 'pagado', 'taller', 'firma'],
+  },
+  cobranza_2: {
+    titulo: 'Cobranza de OT — día 5',
+    asunto: 'Recordatorio de pago - {ot} · {taller}',
+    texto: 'Hola {nombre},\n\nLe escribimos nuevamente por el saldo pendiente de {saldo} del servicio de {vehiculo} ({ot}), entregado el {fecha_entrega}.\n\nLe agradeceremos regularizarlo a la brevedad. Si ya pagó, envíenos el comprobante para actualizar su cuenta.\n\n{firma}',
+    variables: ['nombre', 'ot', 'vehiculo', 'fecha_entrega', 'saldo', 'total', 'pagado', 'taller', 'firma'],
+  },
+  cobranza_3: {
+    titulo: 'Cobranza de OT — día 15',
+    asunto: 'Último aviso: saldo pendiente de su {ot} - {taller}',
+    texto: 'Hola {nombre},\n\nEste es nuestro último aviso por el saldo pendiente de {saldo} del servicio de {vehiculo} ({ot}), entregado el {fecha_entrega}.\n\nLe pedimos regularizar el pago o comunicarse con nosotros para acordar cómo hacerlo. Si ya pagó, envíenos el comprobante y disculpe la molestia.\n\n{firma}',
+    variables: ['nombre', 'ot', 'vehiculo', 'fecha_entrega', 'saldo', 'total', 'pagado', 'taller', 'firma'],
+  },
 };
+
+// ---------- Mensajes de WhatsApp editables (Configuración → Mensajes al cliente) ----------
+// Igual que los correos, sin asunto. Lo editado se guarda en taller_config.correo_plantillas con la misma clave.
+// (Los de la agenda: confirmación y recordatorio de cita, mantención y revisión técnica, están en «Mensajes de la agenda».)
+const PLANTILLAS_WHATSAPP = {
+  wa_cotizacion: {
+    titulo: 'Cotización (botón WhatsApp)',
+    texto: 'Hola {nombre}, le saluda {taller}.\nLe enviamos la cotización {cotizacion} para {vehiculo}:\n{detalle}\nTotal: {total} ({iva}). Válida por {validez} días.\nPuede revisar y aprobar la cotización aquí: {link}',
+    variables: ['nombre', 'cotizacion', 'vehiculo', 'detalle', 'total', 'iva', 'validez', 'link', 'taller'],
+  },
+  wa_cotizacion_recordatorio: {
+    titulo: 'Recordatorio de cotización (botón WhatsApp en Inicio)',
+    texto: 'Hola {nombre}, le saluda {taller}. Le recordamos la cotización {cotizacion} para {vehiculo}, por {total} ({iva}). {validez_texto}\nVer y aprobar: {link}\nReservar su hora: {link_reserva}',
+    variables: ['nombre', 'cotizacion', 'vehiculo', 'total', 'iva', 'validez_texto', 'dias_restantes', 'vence', 'link', 'link_reserva', 'taller'],
+  },
+  wa_diagnostico: {
+    titulo: 'Informe de diagnóstico (botón WhatsApp)',
+    texto: 'Hola {nombre}, le saluda {taller}.\nRevisamos {vehiculo} y le enviamos el informe de diagnóstico {diagnostico}.\n{resumen}\nPuede ver el informe completo, con fotos, y avisarnos si desea realizar los trabajos aquí: {link}',
+    variables: ['nombre', 'diagnostico', 'vehiculo', 'resumen', 'link', 'taller'],
+  },
+  wa_inspeccion_ingreso: {
+    titulo: 'Inspección de ingreso para firmar (diagnóstico y OT)',
+    texto: 'Hola {nombre}, le saluda {taller}. Le compartimos el detalle de la inspección de ingreso de {vehiculo} ({documento}). Puede revisarla y firmarla aquí:\n{link}',
+    variables: ['nombre', 'vehiculo', 'documento', 'link', 'taller'],
+  },
+  wa_ot_recepcion: {
+    titulo: 'OT — recibimos su vehículo',
+    texto: 'Hola {nombre}, le saluda {taller}: recibimos {vehiculo} y pronto comenzaremos el diagnóstico ({ot}).{bloque_seguimiento}',
+    variables: ['nombre', 'vehiculo', 'patente', 'ot', 'bloque_seguimiento', 'taller'],
+  },
+  wa_ot_diagnostico: {
+    titulo: 'OT — en diagnóstico',
+    texto: 'Hola {nombre}, le saluda {taller}: {vehiculo} está en diagnóstico; le enviaremos el detalle a la brevedad ({ot}).{bloque_seguimiento}',
+    variables: ['nombre', 'vehiculo', 'patente', 'ot', 'bloque_seguimiento', 'taller'],
+  },
+  wa_ot_en_proceso: {
+    titulo: 'OT — en proceso',
+    texto: 'Hola {nombre}, le saluda {taller}: {vehiculo} está siendo trabajado en nuestro taller ({ot}).{bloque_seguimiento}',
+    variables: ['nombre', 'vehiculo', 'patente', 'ot', 'bloque_seguimiento', 'taller'],
+  },
+  wa_ot_listo: {
+    titulo: 'OT — listo para retiro',
+    texto: 'Hola {nombre}, le saluda {taller}: {vehiculo} está listo para retiro ({ot}).{bloque_seguimiento}',
+    variables: ['nombre', 'vehiculo', 'patente', 'ot', 'bloque_seguimiento', 'taller'],
+  },
+  wa_ot_entregado: {
+    titulo: 'OT — entregado',
+    texto: 'Hola {nombre}, le saluda {taller}: gracias por confiar en nosotros para el servicio de {vehiculo} ({ot}).{bloque_seguimiento}',
+    variables: ['nombre', 'vehiculo', 'patente', 'ot', 'bloque_seguimiento', 'taller'],
+  },
+  wa_cobranza: {
+    titulo: 'Cobranza de OT (botón WhatsApp en Inicio)',
+    texto: 'Hola {nombre}, le saluda {taller}. Le recordamos que el servicio de {vehiculo} ({ot}), entregado el {fecha_entrega}, tiene un saldo pendiente de {saldo}. Si ya realizó el pago, por favor envíenos el comprobante. ¡Muchas gracias!',
+    variables: ['nombre', 'ot', 'vehiculo', 'fecha_entrega', 'saldo', 'total', 'pagado', 'taller'],
+  },
+  wa_inspeccion: {
+    titulo: 'Inspección precompra (botón WhatsApp)',
+    texto: 'Hola {nombre}, le saluda {taller}.\nResultado de la inspección precompra {numero} de {vehiculo}:\nPlan: {plan}\nPuntaje: {puntaje}/100 — {resumen}.\n{recomendacion}\nInforme completo, con fotos: {link}',
+    variables: ['nombre', 'numero', 'vehiculo', 'patente', 'plan', 'puntaje', 'resumen', 'recomendacion', 'link', 'taller'],
+  },
+};
+
+// Texto de un WhatsApp con sus valores (mismas reglas que armarCorreo)
+function armarWhatsApp(clave, valores, cfg) {
+  const base = PLANTILLAS_WHATSAPP[clave];
+  const propia = (cfg && cfg.correo_plantillas && cfg.correo_plantillas[clave]) || {};
+  const tpl = String(propia.texto || '').trim() ? propia.texto : base.texto;
+  const todos = { taller: (cfg && cfg.nombre) || 'el taller', ...valores };
+  return String(tpl).replace(/\{(\w+)\}/g, (m, k) => (todos[k] != null ? String(todos[k]) : m))
+    .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
 
 // Qué es cada variable (ayuda en Configuración)
 const DESCRIPCION_VARIABLES_CORREO = {
@@ -775,6 +886,14 @@ const DESCRIPCION_VARIABLES_CORREO = {
   plan: 'plan de inspección elegido (ej. Compra Segura Pro)',
   puntaje: 'puntaje de 0 a 100',
   recomendacion: 'recomendación final',
+  dias_restantes: 'días de validez que le quedan (ej. «12 días»)',
+  vence: 'fecha en que vence la cotización',
+  validez_texto: 'frase con los días que le quedan o «hoy es el último día»',
+  link_reserva: 'link para reservar hora en línea (queda anotado el N° de cotización)',
+  fecha_entrega: 'fecha en que se entregó el vehículo',
+  saldo: 'saldo pendiente por pagar',
+  pagado: 'lo ya pagado',
+  documento: 'número del documento (ej. OT-0015 o DIAG-0003)',
 };
 
 // Arma asunto y texto de un mensaje con sus valores. Las {variables} desconocidas quedan tal cual (así se nota

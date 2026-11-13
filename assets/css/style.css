@@ -1113,3 +1113,18 @@ input.cell-precio { min-width: 6.8rem; }
 .exp-texto summary { cursor: pointer; color: var(--color-primary); }
 .exp-texto > div { margin-top: 0.3rem; padding: 0.5rem; background: #fafbfc; border-radius: 6px; }
 .exp-abrir { display: inline-block; margin-top: 0.3rem; font-size: 0.8rem; font-weight: 600; }
+
+/* ---------- Inicio: cobranza de OT y cotizaciones por responder ---------- */
+.avisos-lista { display: flex; flex-direction: column; gap: 0.55rem; }
+.aviso-fila { border: 1px solid var(--color-border); border-left: 4px solid #93c5fd; border-radius: 10px; padding: 0.6rem 0.8rem; background: #fff; }
+.aviso-fila.por-decidir { border-left-color: #f0b429; background: #fffdf5; }
+.aviso-fila.vencida { border-left-color: #cbd5e1; opacity: 0.85; }
+.aviso-cab { display: flex; gap: 0.35rem 0.5rem; align-items: center; flex-wrap: wrap; font-size: 0.92rem; }
+.aviso-fecha { font-size: 0.8rem; color: var(--color-text-muted); }
+.aviso-montos { font-size: 0.86rem; margin-top: 0.2rem; }
+.aviso-estado { font-size: 0.8rem; margin-top: 0.3rem; display: flex; gap: 0.3rem; align-items: center; flex-wrap: wrap; }
+.aviso-nota { font-size: 0.8rem; color: var(--color-text-muted); margin-top: 0.25rem; }
+.aviso-acciones { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-top: 0.5rem; }
+.aviso-acciones button, .aviso-acciones .btn { padding: 0.32rem 0.7rem; font-size: 0.8rem; text-decoration: none; }
+.paso-chip { font-size: 0.72rem; padding: 0.1rem 0.45rem; border-radius: 999px; background: #f1f3f6; color: var(--color-text-muted); }
+.paso-chip.hecho { background: #d8f3dc; color: #1b6e3c; font-weight: 600; }

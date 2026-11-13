@@ -598,9 +598,12 @@
       if (!d) return;
       const tel = d.clientes && d.clientes.telefono;
       if (!tel) { alert('El cliente no tiene teléfono registrado.'); return; }
-      const veh = d.vehiculos ? `su vehículo ${d.vehiculos.patente}` : 'su vehículo';
-      abrirEnlace(linkWhatsApp(tel,
-        `Hola ${d.clientes.nombre}, le saluda ${config.nombre}. Le compartimos el detalle de la inspección de ingreso de ${veh} (${fmtNumero('DIAG', d.numero)}). Puede revisarla y firmarla aquí:\n${linkInspeccionIngreso(d.id)}`));
+      abrirEnlace(linkWhatsApp(tel, armarWhatsApp('wa_inspeccion_ingreso', {
+        nombre: d.clientes.nombre,
+        vehiculo: d.vehiculos ? `su vehículo ${d.vehiculos.patente}` : 'su vehículo',
+        documento: fmtNumero('DIAG', d.numero),
+        link: linkInspeccionIngreso(d.id),
+      }, config)));
     });
     document.getElementById('ingreso-link-btn').addEventListener('click', async () => {
       const d = filaDiagnosticoActual();
@@ -1160,12 +1163,14 @@
     function compartirWhatsApp(d) {
       const tel = d.clientes && d.clientes.telefono;
       if (!tel) { alert('El cliente no tiene teléfono registrado.'); return; }
-      const resumen = resumenParaMensaje(d, t => `• ${t}`);
-      const mensaje =
-        `Hola ${d.clientes.nombre}, le saluda ${config.nombre}.\n` +
-        `Revisamos ${descripcionVehiculo(d)} y le enviamos el informe de diagnóstico ${fmtNumero('DIAG', d.numero)}.\n` +
-        (resumen ? resumen + '\n' : '') +
-        `Puede ver el informe completo, con fotos, y avisarnos si desea realizar los trabajos aquí: ${linkPublicoDiagnostico(d.id)}`;
+      // Texto editable en Configuración → Mensajes al cliente
+      const mensaje = armarWhatsApp('wa_diagnostico', {
+        nombre: d.clientes.nombre,
+        vehiculo: descripcionVehiculo(d),
+        diagnostico: fmtNumero('DIAG', d.numero),
+        resumen: resumenParaMensaje(d, t => `• ${t}`) || '',
+        link: linkPublicoDiagnostico(d.id),
+      }, config);
       abrirEnlace(linkWhatsApp(tel, mensaje));
     }
 

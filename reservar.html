@@ -659,6 +659,9 @@
       document.getElementById('cargando').style.display = 'none';
       document.getElementById('wizard').style.display = 'block';
       renderTrabajos();
+      // Link de los recordatorios de cotización: reservar.html?cotizacion=COT-0007 deja anotado por qué viene
+      const cot = new URLSearchParams(window.location.search).get('cotizacion');
+      if (/^COT-\d{1,7}$/.test(cot || '')) document.getElementById('r-notas').value = `Vengo por la cotización ${cot}`;
     })();
   </script>
 </body>

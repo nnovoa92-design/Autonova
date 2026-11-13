@@ -601,8 +601,12 @@
       }
       const tel = o.clientes && o.clientes.telefono;
       if (!tel) { alert('El cliente no tiene teléfono registrado.'); return; }
-      const link = `${window.location.origin}/inspeccion-ingreso.html?id=${o.id}`;
-      const mensaje = `Hola ${o.clientes.nombre}, le saluda ${config.nombre}. Le compartimos el detalle de la inspección de ingreso de ${o.vehiculos ? `su vehículo ${o.vehiculos.patente}` : 'su vehículo'} (${fmtNumero('OT', o.numero)}). Puede revisarla y firmarla aquí:\n${link}`;
+      const mensaje = armarWhatsApp('wa_inspeccion_ingreso', {
+        nombre: o.clientes.nombre,
+        vehiculo: o.vehiculos ? `su vehículo ${o.vehiculos.patente}` : 'su vehículo',
+        documento: fmtNumero('OT', o.numero),
+        link: `${window.location.origin}/inspeccion-ingreso.html?id=${o.id}`,
+      }, config);
       abrirEnlace(linkWhatsApp(tel, mensaje));
     });
 
@@ -1461,21 +1465,16 @@
       const tel = o.clientes && o.clientes.telefono;
       if (!tel) { alert('El cliente no tiene teléfono registrado.'); return; }
 
-      const vehiculo = o.vehiculos
-        ? `su vehículo ${o.vehiculos.patente} (${[o.vehiculos.marca, o.vehiculos.modelo].filter(Boolean).join(' ')})`
-        : 'su vehículo';
-      const MENSAJES_ESTADO = {
-        recepcion: `recibimos ${vehiculo} y pronto comenzaremos el diagnóstico`,
-        diagnostico: `${vehiculo} está en diagnóstico; le enviaremos el detalle a la brevedad`,
-        en_proceso: `${vehiculo} está siendo trabajado en nuestro taller`,
-        listo: `${vehiculo} está listo para retiro`,
-        entregado: `gracias por confiar en nosotros para el servicio de ${vehiculo}`,
-      };
-      const cuerpo = MENSAJES_ESTADO[o.estado] || `le informamos sobre ${vehiculo}`;
-      let mensaje = `Hola ${o.clientes.nombre}, le saluda ${config.nombre}: ${cuerpo} (${fmtNumero('OT', o.numero)}).`;
-      if (o.vehiculos) {
-        mensaje += `\nPuede seguir el estado de su vehículo aquí: ${window.location.origin}/portal.html?patente=${encodeURIComponent(o.vehiculos.patente)}&ot=${o.numero}`;
-      }
+      // Un mensaje por estado, editables en Configuración → Mensajes al cliente
+      const clave = PLANTILLAS_WHATSAPP['wa_ot_' + o.estado] ? 'wa_ot_' + o.estado : 'wa_ot_recepcion';
+      const mensaje = armarWhatsApp(clave, {
+        nombre: o.clientes.nombre,
+        vehiculo: o.vehiculos ? `su vehículo ${o.vehiculos.patente} (${[o.vehiculos.marca, o.vehiculos.modelo].filter(Boolean).join(' ')})` : 'su vehículo',
+        patente: o.vehiculos ? o.vehiculos.patente : '',
+        ot: fmtNumero('OT', o.numero),
+        bloque_seguimiento: o.vehiculos
+          ? `\nPuede seguir el estado de su vehículo aquí: ${window.location.origin}/portal.html?patente=${encodeURIComponent(o.vehiculos.patente)}&ot=${o.numero}` : '',
+      }, config);
       abrirEnlace(linkWhatsApp(tel, mensaje));
     });
 
