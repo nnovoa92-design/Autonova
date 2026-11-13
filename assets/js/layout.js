@@ -30,6 +30,7 @@ const SECCIONES_CONFIG = [
   { id: 'planes-inspeccion', label: 'Planes de inspección' },
   { id: 'domicilio', label: 'Atención a domicilio' },
   { id: 'club', label: 'Club Autonova (referidos)' },
+  { id: 'encuesta', label: 'Encuesta y reseñas' },
   { id: 'correo', label: 'Correo automático' },
   { id: 'mensajes-correo', label: 'Mensajes al cliente' },
   { id: 'registro-correos', label: 'Correos enviados' },
@@ -582,6 +583,7 @@ async function enviarCorreo({ para, asunto, texto, ref }) {
 // Necesita el script de Gmail versión 2 (Configuración → Correo automático); con el antiguo, sale el texto plano.
 const BOTONES_CORREO = [
   ['#condiciones', '📋 Ver condiciones completas'],
+  ['/encuesta.html', '⭐ Responder la encuesta (30 segundos)'],
   ['/inspeccion-ingreso.html', '✍️ Revisar y firmar la inspección'],
   ['/inspeccion.html', '📋 Ver el informe de inspección'],
   ['/cotizacion.html', '📄 Ver y aprobar la cotización'],
@@ -750,6 +752,7 @@ const EVENTOS_CORREO = {
   recordatorio_cotizacion: 'Recordatorios de cotizaciones sin respuesta (días 3 y 5, y el último día de validez)',
   cobranza_ot:        'Cobranza de OT entregadas con saldo (días 3, 5 y 15, después de confirmarla en Inicio)',
   premio_referido:    'Club: cupón de premio al cliente que recomendó (cuando su referido paga la OT)',
+  encuesta:           'Encuesta de satisfacción a los 7 días de entregado (la envía Supabase sola, desde las 10:00)',
 };
 // Los recordatorios y la cobranza los envía Supabase solo, cada día desde las 10:00 (sql/v64), aunque la app esté cerrada.
 
@@ -898,6 +901,13 @@ const PLANTILLAS_CORREO = {
     texto: 'Hola {nombre},\n\n¡Gracias por recomendarnos! {referido} ya hizo su servicio con nosotros gracias a ti, así que ganaste un cupón de {descuento} de descuento{tope_texto} para tu próxima visita.\n\n🎟 Tu cupón: {cupon}\n📅 Válido hasta el {vence}.\n\nCómo usarlo: escríbelo al reservar en línea o dilo al dejar tu vehículo (después ya no se puede aplicar).\nReserva aquí: {link_reserva}\n\nCondiciones: es personal e intransferible, se usa una sola vez y va un cupón por orden de trabajo. El descuento es sobre el valor del trabajo sin IVA{tope_texto}, no se acumula con otras promociones, no aplica a bodegaje y no es canjeable por dinero.\n\nSigue compartiendo tu código {codigo}: por cada amigo que venga ganas un cupón nuevo.\n{link_compartir}\n\n{firma}',
     variables: ['nombre', 'referido', 'descuento', 'tope_texto', 'cupon', 'vence', 'link_reserva', 'codigo', 'link_compartir', 'taller', 'firma'],
   },
+  // Lo envía Supabase solo (sql/v70, enviar_encuestas): si se cambia el texto por defecto, cambiarlo también allá
+  encuesta_7dias: {
+    titulo: 'Encuesta de satisfacción (a los 7 días de entregado; la envía Supabase sola)',
+    asunto: '⭐ ¿Cómo le fue con nosotros? — {ot} · {taller}',
+    texto: 'Hola {nombre},\n\nHace unos días le entregamos {vehiculo} ({ot}). ¿Cómo le ha funcionado?\n\nSu opinión nos ayuda a mejorar y nos toma solo 30 segundos:\n{link_encuesta}\n\nSi algo no quedó como esperaba, cuéntenos en la encuesta: lo revisamos personalmente.\n\n{firma}',
+    variables: ['nombre', 'vehiculo', 'ot', 'link_encuesta', 'taller', 'firma'],
+  },
 };
 
 // ---------- Mensajes de WhatsApp editables (Configuración → Mensajes al cliente) ----------
@@ -964,6 +974,11 @@ const PLANTILLAS_WHATSAPP = {
     texto: 'Te recomiendo {taller} 🔧 me atendieron muy bien.\nCon mi código *{codigo}* tienes {descuento} de descuento en tu primera visita{tope_texto}.\n⚠ Dilo al reservar o al dejar tu auto (después ya no se aplica).\nReserva y condiciones 👉 {link_club}',
     variables: ['codigo', 'descuento', 'tope_texto', 'link_club', 'taller'],
   },
+  wa_encuesta: {
+    titulo: 'Encuesta de satisfacción (botón WhatsApp en Inicio)',
+    texto: 'Hola {nombre}, le saluda {taller} 👋\nHace unos días le entregamos {vehiculo} ({ot}). ¿Cómo le ha funcionado?\nSu opinión nos ayuda mucho y toma solo 30 segundos: {link_encuesta}',
+    variables: ['nombre', 'vehiculo', 'ot', 'link_encuesta', 'taller'],
+  },
   wa_cobranza: {
     titulo: 'Cobranza de OT (botón WhatsApp en Inicio)',
     texto: 'Hola {nombre}, le saluda {taller}. Le recordamos que el servicio de {vehiculo} ({ot}), entregado el {fecha_entrega}, tiene un saldo pendiente de {saldo}. Si ya realizó el pago, por favor envíenos el comprobante. ¡Muchas gracias!',
@@ -1019,6 +1034,7 @@ const DESCRIPCION_VARIABLES_CORREO = {
   descuento: 'porcentaje del descuento (ej. 15%)',
   tope_texto: 'el máximo del descuento, ej. « (máximo $30.000)»',
   cupon: 'código del cupón de premio (ej. PREMIO-7QX2M)',
+  link_encuesta: 'link de la encuesta de satisfacción (30 segundos)',
   validez_texto: 'frase con los días que le quedan o «hoy es el último día»',
   link_reserva: 'link para reservar hora en línea (queda anotado el N° de cotización)',
   fecha_entrega: 'fecha en que se entregó el vehículo',
@@ -1066,6 +1082,26 @@ function correoEstadoOT(o, estado, cfg) {
 // ---------- Club Autonova (referidos) ----------
 // Configuración en taller_config.club (Configuración → Club Autonova). Los mismos valores por defecto que _club_cfg() (sql/v67).
 const CLUB_POR_DEFECTO = { activo: true, pct: 15, tope: 30000, premio_dias: 90, instagram: '_autonova_' };
+
+// ---------- Encuesta de satisfacción (sql/v70) ----------
+// Configuración en taller_config.encuesta (Configuración → Encuesta y reseñas). Mismos valores que _encuesta_cfg().
+const ENCUESTA_POR_DEFECTO = { activa: true, dias: 7, google_url: '' };
+function encuestaConfig(cfg) {
+  return { ...ENCUESTA_POR_DEFECTO, ...((cfg && cfg.encuesta) || {}) };
+}
+// Qué podemos mejorar: clave guardada → texto (las claves válidas están también en encuesta_responder, sql/v70)
+const MEJORAS_ENCUESTA = {
+  tiempo: '⏱ Tiempo de entrega',
+  comunicacion: '💬 Comunicación y avisos',
+  precio: '💲 Precio',
+  calidad: '🔧 Calidad del trabajo',
+  explicacion: '📋 Explicación de lo que se hizo',
+  limpieza: '🧽 Limpieza del vehículo',
+  atencion: '🤝 Atención',
+  agenda: '📅 Facilidad para agendar',
+  nada: '✨ Nada, todo excelente',
+};
+const linkEncuesta = (id) => `${window.location.origin}/encuesta.html?e=${id}`;
 function clubConfig(cfg) {
   return { ...CLUB_POR_DEFECTO, ...((cfg && cfg.club) || {}) };
 }

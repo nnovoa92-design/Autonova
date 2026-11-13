@@ -65,6 +65,30 @@
           <div id="embajadores"></div>
         </div>
 
+        <!-- Encuestas de satisfacción (sql/v70) -->
+        <div class="card" id="encuestas" hidden>
+          <div class="toolbar">
+            <h2 style="margin:0;">⭐ Encuestas de satisfacción</h2>
+            <select id="enc-periodo" style="max-width:180px;">
+              <option value="30">Últimos 30 días</option>
+              <option value="90" selected>Últimos 90 días</option>
+              <option value="365">Último año</option>
+              <option value="0">Todo</option>
+            </select>
+          </div>
+          <p style="color:var(--color-text-muted); font-size:0.88rem; margin-top:0.25rem;">Salen solas a los días de entregar el vehículo (Configuración → <a href="configuracion.html#encuesta">Encuesta y reseñas</a>). Las notas bajas te llegan en rojo a la campanita y a Inicio.</p>
+          <div class="cards-grid" id="enc-stats"></div>
+          <h3 style="margin:1rem 0 0.5rem;">Qué piden mejorar</h3>
+          <div id="enc-mejoras"></div>
+          <h3 style="margin:1rem 0 0.5rem;">Últimas respuestas</h3>
+          <div style="overflow-x:auto;">
+            <table>
+              <thead><tr><th>Fecha</th><th>Cliente</th><th>Nota</th><th>Recomienda</th><th>Mejorar / comentario</th><th></th></tr></thead>
+              <tbody id="enc-body"></tbody>
+            </table>
+          </div>
+        </div>
+
         <!-- Cupones -->
         <div class="card">
           <div class="toolbar">
@@ -254,6 +278,74 @@
       }).join('');
     }
 
+    // ---------- Encuestas de satisfacción (sql/v70) ----------
+    let encuestas = [];
+    async function cargarEncuestas() {
+      const { data, error } = await supabaseClient.from('encuestas')
+        .select('*, clientes(nombre, telefono), vehiculos(patente), ordenes(id, numero)')
+        .order('creado_en', { ascending: false }).limit(1000);
+      if (error) return;   // sin v70 la sección no aparece
+      encuestas = data || [];
+      document.getElementById('encuestas').hidden = false;
+      renderEncuestas();
+      if (location.hash === '#encuestas') document.getElementById('encuestas').scrollIntoView({ behavior: 'smooth' });
+    }
+    function renderEncuestas() {
+      const dias = Number(document.getElementById('enc-periodo').value);
+      const desde = dias ? Date.now() - dias * 86400000 : 0;
+      const enPeriodo = encuestas.filter(e => new Date(e.creado_en).getTime() >= desde);
+      const enviadas = enPeriodo.filter(e => e.enviada_en && e.canal !== 'omitida');
+      const resp = enPeriodo.filter(e => e.respondida_en);
+      const conNps = resp.filter(e => e.nps != null);
+      const promedio = resp.length ? resp.reduce((s, e) => s + e.nota, 0) / resp.length : null;
+      const nps = conNps.length ? Math.round((conNps.filter(e => e.nps >= 9).length - conNps.filter(e => e.nps <= 6).length) / conNps.length * 100) : null;
+      const google = resp.filter(e => e.google_en).length;
+      const alertas = resp.filter(e => (e.nota <= 3 || (e.nps != null && e.nps <= 6)) && !e.atendida_en).length;
+      const tile = (valor, etiqueta) => `<div class="card stat-card"><div class="stat-value">${valor}</div><div class="stat-label">${etiqueta}</div></div>`;
+      document.getElementById('enc-stats').innerHTML = [
+        tile(promedio == null ? '–' : `${promedio.toLocaleString('es-CL', { maximumFractionDigits: 1 })} ★`, `Nota promedio (${resp.length} respuesta${resp.length === 1 ? '' : 's'})`),
+        tile(nps == null ? '–' : (nps > 0 ? `+${nps}` : nps), 'Índice de recomendación (NPS: −100 a +100)'),
+        tile(enviadas.length ? `${Math.round(resp.length / enviadas.length * 100)}%` : '–', `Responden (${enviadas.length} enviada${enviadas.length === 1 ? '' : 's'})`),
+        tile(google, 'Fueron a dejar reseña en Google'),
+        tile(alertas, alertas ? '🔴 Notas bajas sin atender' : 'Notas bajas sin atender'),
+      ].join('');
+      const cuenta = {};
+      resp.forEach(e => (e.mejoras || []).forEach(m => { cuenta[m] = (cuenta[m] || 0) + 1; }));
+      const ranking = Object.entries(cuenta).sort((a, b) => b[1] - a[1]);
+      const max = ranking.length ? ranking[0][1] : 1;
+      document.getElementById('enc-mejoras').innerHTML = ranking.length
+        ? ranking.map(([m, n]) => `
+          <div class="barra-mejora">
+            <span>${htmlSeguro(MEJORAS_ENCUESTA[m] || m)}</span>
+            <div class="barra"><div style="width:${Math.round(n / max * 100)}%;${m === 'nada' ? 'background:#1b6e3c;' : ''}"></div></div>
+            <strong>${n}</strong>
+          </div>`).join('')
+        : '<p style="color:var(--color-text-muted);">Aún no hay respuestas en este período.</p>';
+      const estrellas = (n) => `<span style="color:#d4a84b; letter-spacing:1px; white-space:nowrap;">${'★'.repeat(n)}${'☆'.repeat(5 - n)}</span>`;
+      document.getElementById('enc-body').innerHTML = resp.slice(0, 30).map(e => {
+        const baja = e.nota <= 3 || (e.nps != null && e.nps <= 6);
+        return `<tr${baja && !e.atendida_en ? ' style="background:#fff4f2;"' : ''}>
+          <td style="white-space:nowrap;">${fmtFecha(e.respondida_en)}</td>
+          <td>${htmlSeguro((e.clientes && e.clientes.nombre) || '–')}${e.vehiculos ? `<br><small style="color:var(--color-text-muted);">${htmlSeguro(e.vehiculos.patente)}</small>` : ''}</td>
+          <td>${estrellas(e.nota)}</td>
+          <td>${e.nps != null ? `${e.nps}/10` : '–'}</td>
+          <td>${(e.mejoras || []).map(m => `<span class="badge ${m === 'nada' ? 'badge-green' : 'badge-yellow'}">${htmlSeguro(MEJORAS_ENCUESTA[m] || m)}</span>`).join(' ')}${e.comentario ? `<div style="font-size:0.85rem; margin-top:0.25rem;">«${htmlSeguro(e.comentario)}»</div>` : ''}${e.google_en ? '<div><span class="badge badge-blue">Fue a Google</span></div>' : ''}</td>
+          <td class="table-actions">${e.ordenes ? `<a class="btn btn-secondary btn-mini" href="ordenes.html?id=${e.ordenes.id}">${fmtNumero('OT', e.ordenes.numero)}</a>` : ''}
+            ${baja && !e.atendida_en ? `<button type="button" class="btn-mini enc-atender" data-id="${e.id}">✓ Atendido</button>` : ''}</td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="6" style="color:var(--color-text-muted);">Aún no hay respuestas.</td></tr>';
+    }
+    document.getElementById('enc-periodo').addEventListener('change', renderEncuestas);
+    document.getElementById('enc-body').addEventListener('click', async (ev) => {
+      const b = ev.target.closest('.enc-atender');
+      if (!b) return;
+      const { error } = await supabaseClient.from('encuestas').update({ atendida_en: new Date().toISOString() }).eq('id', b.dataset.id);
+      if (error) { mostrarToast('Error: ' + error.message, 'error'); return; }
+      const e = encuestas.find(x => x.id === b.dataset.id);
+      if (e) e.atendida_en = new Date().toISOString();
+      renderEncuestas();
+    });
+
     // ---------- Verificador ----------
     async function verificar(codigoTexto) {
       const codigo = String(codigoTexto || document.getElementById('v-codigo').value).trim().toUpperCase();
@@ -354,6 +446,7 @@
       config = await getTallerConfig();
       club = clubConfig(config);
       await cargar();
+      await cargarEncuestas();
       // Desde la campanita: referidos.html?codigo=PREMIO-XXXXX
       const cod = new URLSearchParams(window.location.search).get('codigo');
       if (cod) verificar(cod);

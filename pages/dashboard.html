@@ -65,6 +65,16 @@
           <div id="cotpend-lista" class="avisos-lista"><p style="color:var(--color-text-muted);">Cargando...</p></div>
         </div>
 
+        <!-- Encuestas (sql/v70): notas bajas para llamar y encuestas por enviar por WhatsApp -->
+        <div class="card" id="encuestas-card" hidden>
+          <div class="toolbar">
+            <h2 style="margin:0;">⭐ Encuestas de satisfacción</h2>
+            <a class="btn btn-secondary btn-mini" href="referidos.html#encuestas">Ver resultados</a>
+          </div>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.5rem;" id="encuestas-resumen"></p>
+          <div id="encuestas-lista" class="avisos-lista"></div>
+        </div>
+
         <div class="card">
           <div class="toolbar">
             <h2 style="margin:0;">Recordatorios</h2>
@@ -441,6 +451,95 @@
       }).join('');
     }
 
+    // ---------- Encuestas de satisfacción (sql/v70) ----------
+    // Arriba: notas bajas sin atender (para llamar al cliente). Abajo: encuestas que no salen por correo
+    // (cliente sin correo, o envío apagado) para mandarlas por WhatsApp con un botón.
+    let encAlertas = [], encWhatsapp = [];
+    async function cargarEncuestasInicio() {
+      cfgAvisos = cfgAvisos || await getTallerConfig();
+      const card = document.getElementById('encuestas-card');
+      const { data, error } = await supabaseClient.from('encuestas')
+        .select('*, clientes(nombre, telefono, email), vehiculos(patente, marca, modelo), ordenes(id, numero, fecha_entrega)')
+        .or('and(respondida_en.not.is.null,atendida_en.is.null),and(enviada_en.is.null,respondida_en.is.null)')
+        .order('creado_en', { ascending: false }).limit(60);
+      if (error) { card.hidden = true; return; }   // sin v70: no se muestra
+      const todas = data || [];
+      encAlertas = todas.filter(e => e.respondida_en && !e.atendida_en && (e.nota <= 3 || (e.nps != null && e.nps <= 6)));
+      encWhatsapp = todas.filter(e => !e.respondida_en && !e.enviada_en
+        && !(correoValido(e.clientes && e.clientes.email) && correoActivo('encuesta')));
+      renderEncuestasInicio();
+    }
+    function renderEncuestasInicio() {
+      const card = document.getElementById('encuestas-card');
+      card.hidden = !encAlertas.length && !encWhatsapp.length;
+      document.getElementById('encuestas-resumen').textContent = [
+        encAlertas.length ? `🔴 ${encAlertas.length} cliente${encAlertas.length === 1 ? '' : 's'} con nota baja: llámalo${encAlertas.length === 1 ? '' : 's'} y márcalo como atendido.` : '',
+        encWhatsapp.length ? `💬 ${encWhatsapp.length} encuesta${encWhatsapp.length === 1 ? '' : 's'} por enviar por WhatsApp (sin correo).` : '',
+      ].filter(Boolean).join(' ');
+      const estrellas = (n) => '★'.repeat(n) + '☆'.repeat(5 - n);
+      const filaAlerta = (e, i) => `
+        <div class="aviso-fila vencida">
+          <div class="aviso-cab">
+            <strong>${htmlSeguro((e.clientes && e.clientes.nombre) || '–')}</strong>
+            ${e.vehiculos ? `· <span class="badge">${htmlSeguro(e.vehiculos.patente)}</span>` : ''}
+            <span class="aviso-fecha">respondió el ${fmtFecha(e.respondida_en)}</span>
+          </div>
+          <div class="aviso-montos"><span style="color:#d4a84b; letter-spacing:1px;">${estrellas(e.nota)}</span> ${e.nota}/5${e.nps != null ? ` · recomienda ${e.nps}/10` : ''}</div>
+          ${(e.mejoras || []).length ? `<div class="aviso-estado">${e.mejoras.map(m => `<span class="badge badge-yellow">${htmlSeguro(MEJORAS_ENCUESTA[m] || m)}</span>`).join(' ')}</div>` : ''}
+          ${e.comentario ? `<div class="aviso-nota">💬 «${htmlSeguro(e.comentario)}»</div>` : ''}
+          <div class="aviso-acciones">
+            ${e.clientes && e.clientes.telefono ? `<a class="btn btn-secondary" href="tel:${htmlSeguro(String(e.clientes.telefono).replace(/[^\d+]/g, ''))}">📞 Llamar</a>
+            <button type="button" class="btn-secondary enc-wa-cliente" data-i="${i}">💬 WhatsApp</button>` : ''}
+            <button type="button" class="enc-atendida" data-i="${i}">✓ Ya lo contacté</button>
+            ${e.ordenes ? `<a class="btn btn-secondary" href="ordenes.html?id=${e.ordenes.id}">${fmtNumero('OT', e.ordenes.numero)}</a>` : ''}
+          </div>
+        </div>`;
+      const filaWa = (e, i) => `
+        <div class="aviso-fila">
+          <div class="aviso-cab">
+            <strong>${htmlSeguro((e.clientes && e.clientes.nombre) || '–')}</strong>
+            ${e.vehiculos ? `· <span class="badge">${htmlSeguro(e.vehiculos.patente)}</span>` : ''}
+            <span class="aviso-fecha">${e.ordenes && e.ordenes.fecha_entrega ? `entregado el ${fmtFecha(e.ordenes.fecha_entrega)}` : ''}</span>
+          </div>
+          <div class="aviso-nota">${correoValido(e.clientes && e.clientes.email) ? 'El envío de encuestas por correo está apagado: envíala por WhatsApp.' : 'No tiene correo: envíale la encuesta por WhatsApp.'}</div>
+          <div class="aviso-acciones">
+            ${e.clientes && e.clientes.telefono ? `<button type="button" class="btn-secondary enc-wa" data-i="${i}">💬 Enviar encuesta por WhatsApp</button>` : '<span class="badge badge-gray">Sin teléfono</span>'}
+            <button type="button" class="btn-secondary enc-omitir" data-i="${i}">No enviar</button>
+          </div>
+        </div>`;
+      document.getElementById('encuestas-lista').innerHTML = encAlertas.map(filaAlerta).join('') + encWhatsapp.map(filaWa).join('');
+    }
+    function textoVehiculoEncuesta(v) {
+      return v ? `su vehículo ${v.patente}${[v.marca, v.modelo].filter(Boolean).length ? ` (${[v.marca, v.modelo].filter(Boolean).join(' ')})` : ''}` : 'su vehículo';
+    }
+    document.getElementById('encuestas-lista').addEventListener('click', async (ev) => {
+      const b = ev.target.closest('button');
+      if (!b) return;
+      const i = Number(b.dataset.i);
+      if (b.classList.contains('enc-wa')) {
+        const e = encWhatsapp[i];
+        const msg = armarWhatsApp('wa_encuesta', { nombre: e.clientes.nombre, vehiculo: textoVehiculoEncuesta(e.vehiculos), ot: e.ordenes ? fmtNumero('OT', e.ordenes.numero) : '', link_encuesta: linkEncuesta(e.id) }, cfgAvisos);
+        abrirEnlace(linkWhatsApp(e.clientes.telefono, msg));
+        await supabaseClient.from('encuestas').update({ enviada_en: new Date().toISOString(), canal: 'whatsapp' }).eq('id', e.id);
+        encWhatsapp.splice(i, 1);
+        renderEncuestasInicio();
+      } else if (b.classList.contains('enc-omitir')) {
+        const e = encWhatsapp[i];
+        await supabaseClient.from('encuestas').update({ enviada_en: new Date().toISOString(), canal: 'omitida' }).eq('id', e.id);
+        encWhatsapp.splice(i, 1);
+        renderEncuestasInicio();
+      } else if (b.classList.contains('enc-wa-cliente')) {
+        const e = encAlertas[i];
+        abrirEnlace(linkWhatsApp(e.clientes.telefono, `Hola ${e.clientes.nombre}, le saluda ${cfgAvisos.nombre || 'el taller'}. Vimos su respuesta a la encuesta y queremos solucionarlo. ¿Cuándo podemos conversar?`));
+      } else if (b.classList.contains('enc-atendida')) {
+        const e = encAlertas[i];
+        const { error } = await supabaseClient.from('encuestas').update({ atendida_en: new Date().toISOString() }).eq('id', e.id);
+        if (error) { mostrarToast('No se pudo guardar: ' + error.message, 'error'); return; }
+        encAlertas.splice(i, 1);
+        renderEncuestasInicio();
+      }
+    });
+
     function valoresCotizacion(c) {
       const validezTexto = c.restantes > 0 ? `Le quedan ${textoDias(c.restantes)} de validez (hasta el ${fmtFecha(c.vence + 'T12:00:00')}).`
         : c.restantes === 0 ? 'Hoy es el último día de validez: a partir de mañana los valores pueden cambiar.'
@@ -587,7 +686,7 @@
 
       // Cobranza de OT y cotizaciones por responder (recordatorios automáticos)
       sincronizarDireccionApp();
-      await Promise.all([cargarCobranza(), cargarCotizacionesPendientes()]);
+      await Promise.all([cargarCobranza(), cargarCotizacionesPendientes(), cargarEncuestasInicio()]);
 
       // Recordatorios del mes (mantención por avisar + revisión técnica)
       await cargarRecordatorios();

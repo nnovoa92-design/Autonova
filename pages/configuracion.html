@@ -293,6 +293,38 @@
           <p id="club-ok" style="color:#1b6e3c; font-size:0.85rem;"></p>
         </div>
 
+        <div class="card" id="encuesta-card">
+          <h2 data-cfg="encuesta" style="margin-top:0;">Encuesta de satisfacción y reseñas en Google</h2>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
+            A los días que indiques después de entregar el vehículo (OT «Entregado»), al cliente le llega por correo una encuesta de 30 segundos
+            (sale sola desde las 10:00). Al terminar, a <strong>todos</strong> se les invita a dejar su reseña en Google (Google no permite pedírsela
+            solo a los contentos) y se les recuerda su código del Club. Si alguien pone de 1 a 3 estrellas, te llega un aviso en rojo para llamarlo.
+            Los clientes sin correo aparecen en Inicio para enviarles la encuesta por WhatsApp.
+          </p>
+          <label style="display:flex; gap:0.5rem; align-items:center; margin-bottom:0.75rem;">
+            <input type="checkbox" id="enc-activa" style="width:auto;" /> Encuesta activa
+          </label>
+          <div class="form-row">
+            <div class="form-group" style="max-width:200px;">
+              <label for="enc-dias">Días después de entregado</label>
+              <input type="number" id="enc-dias" min="1" max="60" step="1" value="7" />
+            </div>
+            <div class="form-group" style="flex:3;">
+              <label for="enc-google">Link de reseñas de Google</label>
+              <input type="url" id="enc-google" placeholder="https://g.page/r/…/review" data-autolista="no" autocomplete="off" />
+              <small style="display:block; color:var(--color-text-muted); font-size:0.75rem; margin-top:0.25rem;">
+                Cómo sacarlo: busca tu taller en Google Maps con la cuenta del negocio → «Pedir reseñas» (o «Compartir formulario de reseñas») → copiar enlace.
+                Sin link, la encuesta funciona igual pero sin el botón de Google.
+              </small>
+            </div>
+          </div>
+          <button type="button" id="guardar-encuesta-btn">Guardar</button>
+          <button type="button" id="probar-google-btn" class="btn-secondary">Probar el link de Google</button>
+          <a class="btn btn-secondary" href="referidos.html#encuestas" style="margin-left:0.2rem;">Ver resultados →</a>
+          <p class="error-message" id="encuesta-error"></p>
+          <p id="encuesta-ok" style="color:#1b6e3c; font-size:0.85rem;"></p>
+        </div>
+
         <div class="card" id="correo-card">
           <h2 data-cfg="correo" style="margin-top:0;">Correo automático (desde tu Gmail)</h2>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
@@ -917,7 +949,7 @@
       dias_restantes: '12 días', vence: '25-11-26', validez_texto: 'Le quedan 12 días de validez (hasta el 25-11-26).',
       link_reserva: `${window.location.origin}/reservar.html?cotizacion=COT-0007`,
       fecha_entrega: '10-11-26', saldo: '$18.068', pagado: '$20.000', documento: 'OT-0015',
-      referido: 'Pedro', cupon: 'PREMIO-7QX2M',
+      referido: 'Pedro', cupon: 'PREMIO-7QX2M', link_encuesta: `${window.location.origin}/encuesta.html?e=…`,
     };
     const valoresEjemplo = (clave) => {
       // Club: código de ejemplo con las condiciones que están en pantalla
@@ -1383,6 +1415,38 @@
         : 'Guardado: el programa quedó apagado.';
     });
 
+    // ---------- Encuesta de satisfacción y reseñas en Google (sql/v70) ----------
+    function cargarEncuesta(cfg) {
+      const e = encuestaConfig(cfg);
+      document.getElementById('enc-activa').checked = e.activa !== false;
+      document.getElementById('enc-dias').value = e.dias;
+      document.getElementById('enc-google').value = e.google_url || '';
+    }
+    document.getElementById('probar-google-btn').addEventListener('click', () => {
+      const url = document.getElementById('enc-google').value.trim();
+      if (!/^https?:\/\//i.test(url)) { document.getElementById('encuesta-error').textContent = 'Primero pega el link de reseñas de Google.'; return; }
+      abrirEnlace(url);
+    });
+    document.getElementById('guardar-encuesta-btn').addEventListener('click', async () => {
+      const errorEl = document.getElementById('encuesta-error'), okEl = document.getElementById('encuesta-ok');
+      errorEl.textContent = ''; okEl.textContent = '';
+      const dias = Math.round(Number(document.getElementById('enc-dias').value));
+      const google = document.getElementById('enc-google').value.trim();
+      if (!(dias >= 1 && dias <= 60)) { errorEl.textContent = 'Los días deben estar entre 1 y 60.'; return; }
+      if (google && !/^https:\/\/\S+$/i.test(google)) { errorEl.textContent = 'El link de Google debe empezar con https://'; return; }
+      const enc = { activa: document.getElementById('enc-activa').checked, dias, google_url: google };
+      const { error } = await supabaseClient.from('taller_config').update({ encuesta: enc }).eq('id', 1);
+      if (error) {
+        errorEl.textContent = /encuesta/.test(error.message || '')
+          ? 'Falta ejecutar sql/actualizacion-v70-encuesta-de-satisfaccion.sql en el SQL Editor de Supabase.' : `Error: ${error.message}`;
+        return;
+      }
+      tallerConfigCache = null;
+      okEl.textContent = enc.activa
+        ? `Guardado: la encuesta sale ${dias} día${dias === 1 ? '' : 's'} después de entregar el vehículo${google ? ', con el botón de reseña en Google' : ' (aún sin link de Google)'}.`
+        : 'Guardado: la encuesta quedó apagada.';
+    });
+
     // ---------- Correo de confirmaciones (Google Apps Script con el Gmail del taller) ----------
     const CODIGO_SCRIPT_CORREO = String.raw`// Script de correo de Autonova. Se pega en script.google.com con la cuenta de Gmail del taller.
 const CLAVE = '__CLAVE__';
@@ -1719,6 +1783,7 @@ function responder(obj) {
       refrescarScriptCorreo();
       cargarDomicilio(data).catch(e => console.error('Error en cargarDomicilio:', e));
       try { cargarClub(data); } catch (e) { console.error('Error en cargarClub:', e); }
+      try { cargarEncuesta(data); } catch (e) { console.error('Error en cargarEncuesta:', e); }
       correoEventos = (data.correo_eventos && typeof data.correo_eventos === 'object') ? data.correo_eventos : {};
       renderCorreoEventos();
       renderCopiaCorreo(data);

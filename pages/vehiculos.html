@@ -149,6 +149,7 @@
       inspeccion:   { icono: '🔍', label: 'Inspecciones precompra' },
       recordatorio: { icono: '⏰', label: 'Recordatorios' },
       correo:       { icono: '✉️', label: 'Correos' },
+      encuesta:     { icono: '⭐', label: 'Encuestas' },
     };
     const ESTADOS_CITA_EXP = {
       pendiente:  { label: 'Por confirmar', badge: 'badge-yellow' },
@@ -168,7 +169,7 @@
     async function cargarExpediente(v) {
       const pat = normalizarPatente(v.patente);
       const q = (p) => p.then(r => r.data || []).catch(() => []);
-      const [citas, diags, cots, ots, insps, recs, correos] = await Promise.all([
+      const [citas, diags, cots, ots, insps, recs, correos, encs] = await Promise.all([
         q(supabaseClient.from('citas').select('*, trabajos(nombre), clientes(nombre)').or(`vehiculo_id.eq.${v.id},patente_contacto.ilike.${pat}`)),
         q(supabaseClient.from('diagnosticos').select('*, diagnostico_items(*), clientes(nombre)').eq('vehiculo_id', v.id)),
         q(supabaseClient.from('cotizaciones').select('*, cotizacion_items(*), clientes(nombre), ordenes(id, numero, estado, descuento_tipo, descuento_pct, descuento_monto, descuento_base, con_iva, orden_items(cantidad, precio_unitario, tipo, tipo_otro))').eq('vehiculo_id', v.id)),
@@ -176,6 +177,7 @@
         q(supabaseClient.from('inspecciones').select('*').or(`vehiculo_id.eq.${v.id},patente.ilike.${pat}`)),
         q(supabaseClient.from('recordatorios').select('*').eq('vehiculo_id', v.id)),
         q(supabaseClient.from('correos_enviados').select('*').eq('vehiculo_id', v.id)),
+        q(supabaseClient.from('encuestas').select('*, ordenes(id, numero)').eq('vehiculo_id', v.id).not('respondida_en', 'is', null)),   // sin v70: vacío
       ]);
       const hoy = hoyChile();
       const eventos = [];
@@ -269,6 +271,16 @@
           estado: badge(`${i.score ?? '–'}/100`, nivel),
           detalle: [i.nombre_comprador ? `Comprador: ${i.nombre_comprador}` : '', i.recomendacion].filter(Boolean).join(' · '),
           link: `inspecciones.html?id=${i.id}`,
+        });
+      });
+
+      encs.forEach(e => {
+        eventos.push({
+          tipo: 'encuesta', fecha: e.respondida_en,
+          titulo: `Encuesta${e.ordenes ? ` de la ${fmtNumero('OT', e.ordenes.numero)}` : ''}`,
+          estado: badge(`${'★'.repeat(e.nota)}${'☆'.repeat(5 - e.nota)} ${e.nota}/5`, e.nota >= 4 ? 'badge-green' : (e.nota === 3 ? 'badge-yellow' : 'badge-red')),
+          detalle: [e.nps != null ? `Recomienda ${e.nps}/10` : '', (e.mejoras || []).length ? `Mejorar: ${(e.mejoras || []).map(m => MEJORAS_ENCUESTA[m] || m).join(', ')}` : '', e.comentario ? `«${e.comentario}»` : ''].filter(Boolean).join(' · '),
+          link: e.ordenes ? `ordenes.html?id=${e.ordenes.id}` : '',
         });
       });
 
