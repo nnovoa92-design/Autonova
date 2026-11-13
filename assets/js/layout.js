@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { key: 'trabajos', label: 'Catálogo de trabajos', href: 'trabajos.html' },
   { key: 'inventario', label: 'Inventario', href: 'inventario.html' },
   { key: 'pagos', label: 'Pagos', href: 'pagos.html' },
+  { key: 'referidos', label: 'Club Autonova', href: 'referidos.html' },
   { key: 'contabilidad', label: 'Contabilidad', href: 'contabilidad.html' },
   { key: 'configuracion', label: 'Configuración', href: 'configuracion.html' },
 ];
@@ -28,6 +29,7 @@ const SECCIONES_CONFIG = [
   { id: 'patentes', label: 'Consulta de patentes' },
   { id: 'planes-inspeccion', label: 'Planes de inspección' },
   { id: 'domicilio', label: 'Atención a domicilio' },
+  { id: 'club', label: 'Club Autonova (referidos)' },
   { id: 'correo', label: 'Correo automático' },
   { id: 'mensajes-correo', label: 'Mensajes al cliente' },
   { id: 'registro-correos', label: 'Correos enviados' },
@@ -652,6 +654,7 @@ const EVENTOS_CORREO = {
   inspeccion:         'Inspección precompra terminada (con su informe)',
   recordatorio_cotizacion: 'Recordatorios de cotizaciones sin respuesta (días 3 y 5, y el último día de validez)',
   cobranza_ot:        'Cobranza de OT entregadas con saldo (días 3, 5 y 15, después de confirmarla en Inicio)',
+  premio_referido:    'Club: cupón de premio al cliente que recomendó (cuando su referido paga la OT)',
 };
 // Los recordatorios y la cobranza los envía Supabase solo, cada día desde las 10:00 (sql/v64), aunque la app esté cerrada.
 
@@ -735,8 +738,8 @@ const PLANTILLAS_CORREO = {
   ot_entregado: {
     titulo: 'Vehículo entregado',
     asunto: 'Gracias por su visita — {ot} · {taller}',
-    texto: 'Hola {nombre},\n\nGracias por confiar en nosotros para el servicio de {vehiculo} ({ot}). Si tiene cualquier consulta sobre el trabajo realizado, estamos para ayudarle.\n\n{firma}',
-    variables: ['nombre', 'vehiculo', 'patente', 'ot', 'taller', 'firma'],
+    texto: 'Hola {nombre},\n\nGracias por confiar en nosotros para el servicio de {vehiculo} ({ot}). Si tiene cualquier consulta sobre el trabajo realizado, estamos para ayudarle.{bloque_club}\n\n{firma}',
+    variables: ['nombre', 'vehiculo', 'patente', 'ot', 'taller', 'bloque_club', 'codigo', 'link_compartir', 'instagram', 'firma'],
   },
   cotizacion_enviada: {
     titulo: 'Cotización (al marcarla enviada y botón ✉ Correo)',
@@ -793,6 +796,13 @@ const PLANTILLAS_CORREO = {
     texto: 'Hola {nombre},\n\nEste es nuestro último aviso por el saldo pendiente de {saldo} del servicio de {vehiculo} ({ot}), entregado el {fecha_entrega}.\n\nLe pedimos regularizar el pago o comunicarse con nosotros para acordar cómo hacerlo. Si ya pagó, envíenos el comprobante y disculpe la molestia.\n\n{firma}',
     variables: ['nombre', 'ot', 'vehiculo', 'fecha_entrega', 'saldo', 'total', 'pagado', 'taller', 'firma'],
   },
+  // Lo envía Supabase solo (sql/v67, procesar_referidos): si se cambia el texto por defecto, cambiarlo también allá
+  premio_referido: {
+    titulo: 'Club: premio por referido (cupón; lo envía Supabase solo)',
+    asunto: '🎁 Ganaste un cupón de {descuento} en {taller}',
+    texto: 'Hola {nombre},\n\n¡Gracias por recomendarnos! {referido} ya hizo su servicio con nosotros gracias a ti, así que ganaste un cupón de {descuento} de descuento{tope_texto} para tu próxima visita.\n\nTu cupón: {cupon}\nVálido hasta el {vence}. Es personal y se usa una sola vez: escríbelo al reservar o muéstralo al llegar.\nReserva aquí: {link_reserva}\n\nSigue compartiendo tu código {codigo}: cada amigo que venga te da un cupón nuevo.\n{link_compartir}\n\n{firma}',
+    variables: ['nombre', 'referido', 'descuento', 'tope_texto', 'cupon', 'vence', 'link_reserva', 'codigo', 'link_compartir', 'taller', 'firma'],
+  },
 };
 
 // ---------- Mensajes de WhatsApp editables (Configuración → Mensajes al cliente) ----------
@@ -841,8 +851,23 @@ const PLANTILLAS_WHATSAPP = {
   },
   wa_ot_entregado: {
     titulo: 'OT — entregado',
-    texto: 'Hola {nombre}, le saluda {taller}: gracias por confiar en nosotros para el servicio de {vehiculo} ({ot}).{bloque_seguimiento}',
-    variables: ['nombre', 'vehiculo', 'patente', 'ot', 'bloque_seguimiento', 'taller'],
+    texto: 'Hola {nombre}, le saluda {taller}: gracias por confiar en nosotros para el servicio de {vehiculo} ({ot}).{bloque_club}',
+    variables: ['nombre', 'vehiculo', 'patente', 'ot', 'bloque_seguimiento', 'bloque_club', 'codigo', 'link_compartir', 'instagram', 'taller'],
+  },
+  wa_club_codigo: {
+    titulo: 'Club: enviarle a un cliente su código (botón en Club Autonova)',
+    texto: 'Hola {nombre}, le saluda {taller} 🎁\nTu código personal del Club es *{codigo}*.\nCompártelo: tus amigos tienen {descuento} de descuento en su primera visita{tope_texto} y, cuando hagan su servicio, a ti te llega un cupón de {descuento} para tu próxima visita.\nCompártelo fácil desde aquí: {link_compartir}',
+    variables: ['nombre', 'codigo', 'descuento', 'tope_texto', 'link_compartir', 'instagram', 'taller'],
+  },
+  wa_premio_referido: {
+    titulo: 'Club: avisar el premio por referido (botón en Club Autonova)',
+    texto: 'Hola {nombre}, le saluda {taller} 🎁\n¡Gracias por recomendarnos! {referido} ya hizo su servicio gracias a ti, así que ganaste un cupón de {descuento} de descuento{tope_texto} para tu próxima visita: *{cupon}*\nVálido hasta el {vence}, personal y de un solo uso. Reserva aquí: {link_reserva}',
+    variables: ['nombre', 'referido', 'descuento', 'tope_texto', 'cupon', 'vence', 'link_reserva', 'codigo', 'taller'],
+  },
+  wa_compartir_codigo: {
+    titulo: 'Club: mensaje que el cliente le manda a sus amigos (botón «Compartir»)',
+    texto: 'Te recomiendo {taller} 🔧 me atendieron muy bien.\nCon mi código *{codigo}* tienes {descuento} de descuento en tu primera visita{tope_texto}.\nReserva aquí 👉 {link_club}',
+    variables: ['codigo', 'descuento', 'tope_texto', 'link_club', 'taller'],
   },
   wa_cobranza: {
     titulo: 'Cobranza de OT (botón WhatsApp en Inicio)',
@@ -889,7 +914,16 @@ const DESCRIPCION_VARIABLES_CORREO = {
   puntaje: 'puntaje de 0 a 100',
   recomendacion: 'recomendación final',
   dias_restantes: 'días de validez que le quedan (ej. «12 días»)',
-  vence: 'fecha en que vence la cotización',
+  vence: 'fecha en que vence (la cotización o el cupón)',
+  bloque_club: 'párrafo del Club: Instagram, el código personal del cliente y el link para compartirlo',
+  codigo: 'código personal del cliente en el Club (ej. JUAN-4K7)',
+  link_compartir: 'link donde el cliente comparte su código con sus amigos',
+  link_club: 'link que reciben los amigos (muestra el descuento y lleva a reservar)',
+  instagram: 'link al Instagram del taller',
+  referido: 'nombre del amigo que llegó recomendado',
+  descuento: 'porcentaje del descuento (ej. 15%)',
+  tope_texto: 'el máximo del descuento, ej. « (máximo $30.000)»',
+  cupon: 'código del cupón de premio (ej. PREMIO-7QX2M)',
   validez_texto: 'frase con los días que le quedan o «hoy es el último día»',
   link_reserva: 'link para reservar hora en línea (queda anotado el N° de cotización)',
   fecha_entrega: 'fecha en que se entregó el vehículo',
@@ -930,12 +964,53 @@ function correoEstadoOT(o, estado, cfg) {
       ? `\n\nPuede revisar la inspección de ingreso de su vehículo${firmada ? '' : ' (y firmarla)'} aquí:\n${window.location.origin}/inspeccion-ingreso.html?id=${o.id}` : '',
     bloque_seguimiento: (v && v.patente)
       ? `\n\nPuede seguir el estado de su vehículo aquí:\n${window.location.origin}/portal.html?patente=${encodeURIComponent(v.patente)}&ot=${o.numero}` : '',
+    ...valoresClub(o.clientes && o.clientes.codigo_referido, cfg),
   }, cfg);
+}
+
+// ---------- Club Autonova (referidos) ----------
+// Configuración en taller_config.club (Configuración → Club Autonova). Los mismos valores por defecto que _club_cfg() (sql/v67).
+const CLUB_POR_DEFECTO = { activo: true, pct: 15, tope: 30000, premio_dias: 90, instagram: '_autonova_' };
+function clubConfig(cfg) {
+  return { ...CLUB_POR_DEFECTO, ...((cfg && cfg.club) || {}) };
+}
+function instagramUrl(club) {
+  const u = String((club && club.instagram) || '').trim().replace(/^@/, '').replace(/^https?:\/\/(www\.)?instagram\.com\//i, '').replace(/\/.*$/, '');
+  return u ? `https://instagram.com/${u}` : '';
+}
+function topeClubTexto(tope) {
+  return Number(tope) > 0 ? ` (máximo ${fmtMoneda(tope)})` : '';
+}
+function linkClub(codigo, compartir) {
+  return `${window.location.origin}/club.html?c=${encodeURIComponent(codigo)}${compartir ? '&compartir=1' : ''}`;
+}
+// Valores del Club para los mensajes (al entregar el vehículo y botones de Club Autonova)
+function valoresClub(codigo, cfg) {
+  const club = clubConfig(cfg);
+  const ig = instagramUrl(club);
+  const descuento = `${fmtPorcentaje(club.pct)}%`;
+  const tope_texto = topeClubTexto(club.tope);
+  const base = { codigo: codigo || '', instagram: ig, descuento, tope_texto, link_compartir: '', link_club: '' };
+  const lineaIg = ig ? `📸 Síguenos en Instagram: ${ig}` : '';
+  if (!codigo || club.activo === false) return { ...base, bloque_club: lineaIg ? `\n\n${lineaIg}` : '' };
+  const taller = (cfg && cfg.nombre) || 'el taller';
+  const bloque = [
+    lineaIg,
+    `🎁 Club ${taller}: su código personal es ${codigo}.`,
+    `Compártalo: sus amigos tienen ${descuento} de descuento en su primera visita${tope_texto} y, cuando hagan su servicio, a usted le llega un cupón de ${descuento} para su próxima visita.`,
+    `Compártalo fácil desde aquí: ${linkClub(codigo, true)}`,
+  ].filter(Boolean).join('\n');
+  return { ...base, link_compartir: linkClub(codigo, true), link_club: linkClub(codigo), bloque_club: `\n\n${bloque}` };
 }
 
 // Aviso automático de una OT (ingreso o cambio de estado) al correo del cliente
 async function avisarCorreoOT(o, estado) {
   const cfg = await getTallerConfig();
+  // Al entregar va el código del Club del cliente: si la OT no lo trae, se busca en su ficha
+  if (estado === 'entregado' && o.cliente_id && !(o.clientes && o.clientes.codigo_referido)) {
+    const { data } = await supabaseClient.from('clientes').select('codigo_referido').eq('id', o.cliente_id).maybeSingle();
+    if (data && data.codigo_referido) o = { ...o, clientes: { ...(o.clientes || {}), codigo_referido: data.codigo_referido } };
+  }
   const msg = correoEstadoOT(o, estado, cfg);
   if (!msg) return { estado: 'sin_aviso' };
   return correoAutomatico(estado === 'recepcion' ? 'ot_ingreso' : `ot_${estado}`, {

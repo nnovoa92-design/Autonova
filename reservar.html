@@ -49,6 +49,7 @@
     <p id="cargando">Cargando...</p>
 
     <div id="wizard" style="display:none;">
+      <div id="banner-codigo" class="banner-codigo" hidden></div>
       <!-- Paso 1: servicio -->
       <div class="paso" id="p-servicio">
         <h3 style="margin-top:0;">1. ¿Qué necesitas?</h3>
@@ -170,6 +171,11 @@
           <input type="text" id="r-trampa" name="trampa_q7x" tabindex="-1" autocomplete="off" />
         </div>
         <div class="form-group" id="g-notas" hidden><label for="r-notas">Comentario (opcional)</label><input type="text" id="r-notas" /></div>
+        <div class="form-group" id="g-codigo" hidden>
+          <label for="r-codigo">🎁 Código de descuento (opcional)</label>
+          <input type="text" id="r-codigo" placeholder="Ej: JUAN-4K7" maxlength="20" autocomplete="off" style="text-transform:uppercase;" />
+          <p class="reconocer-estado" id="r-codigo-estado" style="margin:0.3rem 0 0;"></p>
+        </div>
         <button type="button" id="reservar-btn" hidden>Confirmar reserva</button>
         <p class="error-message" id="error"></p>
       </div>
@@ -336,6 +342,52 @@
     let rutTimer = null, rutSeq = 0;
     let usarOtroTel = false;       // el cliente reconocido quiere indicar otro teléfono
 
+    // ---------- Código del Club (amigo que recomendó o cupón de premio), sql/v67 ----------
+    let clubDisponible = true;     // pasa a false si el servidor aún no tiene el Club
+    let codigoReserva = null;      // código validado (como está registrado)
+    let codigoRevisado = '';       // texto que se validó por última vez
+    const setEstadoCodigo = (texto, clase) => {
+      const el = document.getElementById('r-codigo-estado');
+      el.textContent = texto;
+      el.className = 'reconocer-estado' + (clase ? ` ${clase}` : '');
+    };
+    function textoCodigo(d) {
+      const tope = Number(d.tope) > 0 ? ` (máximo ${fmtMoneda(d.tope)})` : '';
+      return d.tipo === 'premio'
+        ? `✓ Cupón de premio: ${fmtPorcentaje(d.pct)}% de descuento${tope}. Se aplica al ingresar tu vehículo.`
+        : `✓ Código de ${d.nombre}: tienes ${fmtPorcentaje(d.pct)}% de descuento en tu primera visita${tope}.`;
+    }
+    async function validarCodigoReserva() {
+      const texto = document.getElementById('r-codigo').value.trim().toUpperCase();
+      if (texto === codigoRevisado) return;
+      codigoRevisado = texto;
+      codigoReserva = null;
+      if (!texto) { setEstadoCodigo(''); return; }
+      setEstadoCodigo('Revisando el código…');
+      const { data, error } = await supabaseClient.rpc('club_info', { p_codigo: texto });
+      if (texto !== codigoRevisado) return;   // se siguió escribiendo
+      if (error) {
+        if (error.code === 'PGRST202') { clubDisponible = false; document.getElementById('g-codigo').hidden = true; }
+        setEstadoCodigo('');
+        return;
+      }
+      if (data && data.ok) {
+        codigoReserva = data.codigo;
+        setEstadoCodigo(textoCodigo(data), 'ok');
+        mostrarBannerCodigo(data);
+      } else {
+        setEstadoCodigo((data && data.error) || 'Código no válido.', 'error');
+      }
+    }
+    function mostrarBannerCodigo(d) {
+      const b = document.getElementById('banner-codigo');
+      if (!b) return;
+      b.innerHTML = d.tipo === 'premio'
+        ? `🎁 <strong>Tu cupón ${htmlSeguro(d.codigo)}</strong> quedará aplicado a esta reserva.`
+        : `🎁 <strong>${htmlSeguro(d.nombre)} te recomendó:</strong> tienes ${fmtPorcentaje(d.pct)}% de descuento en tu primera visita${Number(d.tope) > 0 ? ` (máximo ${fmtMoneda(d.tope)})` : ''}.`;
+      b.hidden = false;
+    }
+
     const setEstadoRut = (texto, clase) => {
       const el = document.getElementById('r-rut-estado');
       el.textContent = texto;
@@ -362,6 +414,7 @@
       }
       mostrar('g-vehiculo', nuevo || clasico || (reco && vehiculoElegido === '__nuevo__'));
       mostrar('g-notas', reco || nuevo || clasico);
+      mostrar('g-codigo', (reco || nuevo || clasico) && clubDisponible);
       mostrar('g-correo', reco || nuevo || clasico);
       mostrar('reservar-btn', reco || nuevo || clasico);
       document.getElementById('g-rut').hidden = clasico;
@@ -559,6 +612,16 @@
         if (!document.getElementById('r-combustible').value) return falta('r-combustible', 'Elige el combustible de tu vehículo.');
       }
 
+      // Código del Club escrito: debe ser válido (o borrarse) antes de reservar
+      if (clubDisponible && !document.getElementById('g-codigo').hidden) {
+        await validarCodigoReserva();
+        if (document.getElementById('r-codigo').value.trim() && !codigoReserva) {
+          errorEl.textContent = 'El código de descuento no es válido: corrígelo o bórralo para continuar.';
+          document.getElementById('r-codigo').focus();
+          return;
+        }
+      }
+
       const btn = document.getElementById('reservar-btn');
       btn.disabled = true; btn.textContent = 'Reservando...';
       // Día y hora viajan por separado: el servidor los interpreta en hora de Chile
@@ -597,7 +660,14 @@
           { ...base, ...tecnicos, p_notas: notasCorreo },
           { ...base, p_notas: notasCorreo },
         ];
-        for (const args of intentos) {
+        // Con código del Club: la reserva con código (v67); si el servidor aún no la tiene, el código va en el comentario
+        let reservado = false;
+        if (codigoReserva) {
+          ({ data, error } = await supabaseClient.rpc('reservar_cita_v5', { ...intentos[0], p_codigo: codigoReserva }));
+          reservado = !(error && error.code === 'PGRST202');
+          if (!reservado) intentos.forEach(a => { a.p_notas = [a.p_notas, `Código: ${codigoReserva}`].filter(Boolean).join(' · '); });
+        }
+        if (!reservado) for (const args of intentos) {
           ({ data, error } = await supabaseClient.rpc('reservar_cita_v4', args));
           if (!(error && error.code === 'PGRST202')) break;
         }
@@ -637,7 +707,9 @@
         <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>Día</span><strong>${textoDia(selYmd, { weekday: 'long', day: 'numeric', month: 'long' })}</strong></div>
         <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>Hora</span><strong>${selSlot} hrs</strong></div>${filaAtencion}
         <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>A nombre de</span><strong>${htmlSeguro(nombreMostrado)}</strong></div>
-        <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>Confirmación a</span><strong style="text-align:right; word-break:break-all;">${htmlSeguro(correo)}</strong></div>`;
+        <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>Confirmación a</span><strong style="text-align:right; word-break:break-all;">${htmlSeguro(correo)}</strong></div>${codigoReserva ? `
+        <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>🎁 Código de descuento</span><strong style="text-align:right;">${htmlSeguro(codigoReserva)}</strong></div>
+        <p style="font-size:0.82rem; color:var(--color-text-muted); margin:0.25rem 0 0;">El descuento se aplica al ingresar tu vehículo al taller.</p>` : ""}`;
       document.getElementById('wizard').style.display = 'none';
       document.getElementById('confirmacion').style.display = 'block';
       document.getElementById('confirmacion').scrollIntoView({ behavior: 'smooth' });
@@ -662,7 +734,22 @@
       // Link de los recordatorios de cotización: reservar.html?cotizacion=COT-0007 deja anotado por qué viene
       const cot = new URLSearchParams(window.location.search).get('cotizacion');
       if (/^COT-\d{1,7}$/.test(cot || '')) document.getElementById('r-notas').value = `Vengo por la cotización ${cot}`;
+      // Link del Club: reservar.html?codigo=JUAN-4K7 (de un amigo) o ?codigo=PREMIO-XXXXX (cupón)
+      const codigoLink = String(new URLSearchParams(window.location.search).get('codigo') || '').trim().toUpperCase();
+      if (/^[A-Z0-9-]{4,20}$/.test(codigoLink)) {
+        document.getElementById('r-codigo').value = codigoLink;
+        validarCodigoReserva();
+      }
     })();
+
+    const campoCodigo = document.getElementById('r-codigo');
+    let codigoTimer = null;
+    campoCodigo.addEventListener('input', () => {
+      campoCodigo.value = campoCodigo.value.toUpperCase().replace(/\s+/g, '');
+      clearTimeout(codigoTimer);
+      codigoTimer = setTimeout(validarCodigoReserva, 700);
+    });
+    campoCodigo.addEventListener('blur', () => { clearTimeout(codigoTimer); validarCodigoReserva(); });
   </script>
 </body>
 </html>

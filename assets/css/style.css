@@ -1137,3 +1137,32 @@ input.cell-precio { min-width: 6.8rem; }
 .btn-pago-total { background: #15803d; border-color: #15803d; }
 .btn-pago-total:hover { background: #116632; border-color: #116632; }
 .btn-pago-total:disabled { background: #9aa3ae; border-color: #9aa3ae; cursor: default; transform: none; }
+
+/* Club Autonova: código en la OT y aviso en la reserva */
+.codigo-ot-form { display: flex; gap: 0.4rem; }
+.codigo-ot-form input { flex: 1; min-width: 0; }
+.codigo-ot-aplicado { background: #f0faf3; border: 1px solid #b7e2c4; border-radius: var(--radius); padding: 0.5rem 0.7rem; display: grid; gap: 0.3rem; justify-items: start; }
+.banner-codigo { background: linear-gradient(135deg, #15181e, #2a2f3a); color: #fff; border-left: 4px solid #d4a84b; border-radius: var(--radius);
+  padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.95rem; }
+.banner-codigo strong { color: #f0cf7e; }
+.club-hero { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+  background: linear-gradient(135deg, #15181e, #262b35); color: #fff; border: none; }
+.club-hero h2 { margin: 0 0 0.35rem; color: #fff; }
+.club-hero p { margin: 0; color: #c9ced6; font-size: 0.9rem; max-width: 46rem; }
+.club-hero .club-hero-eyebrow { color: #d4a84b; letter-spacing: 0.18em; text-transform: uppercase; font-size: 0.72rem; margin-bottom: 0.25rem; }
+.club-hero .btn-secondary { color: #f0cf7e; border-color: #d4a84b; background: transparent; }
+.club-hero .btn-secondary:hover { background: #d4a84b; color: #15181e; }
+.embajadores { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+.embajadores li { display: grid; grid-template-columns: 2.2rem 1fr auto auto; gap: 0.75rem; align-items: center;
+  padding: 0.5rem 0.6rem; border: 1px solid var(--color-border); border-radius: var(--radius); }
+.emb-pos { font-size: 1.2rem; text-align: center; font-weight: 700; }
+.emb-nombre, .emb-dato { display: grid; }
+.emb-nombre small, .emb-dato small { color: var(--color-text-muted); font-size: 0.75rem; }
+.emb-dato { text-align: right; }
+@media (max-width: 560px) { .embajadores li { grid-template-columns: 2rem 1fr auto; } .embajadores li .emb-dato:last-child { display: none; } }
+.verif { border: 1px solid var(--color-border); border-left: 5px solid #1b6e3c; border-radius: var(--radius); padding: 0.75rem 0.9rem; display: grid; gap: 0.3rem; font-size: 0.9rem; }
+.verif-canjeado { border-left-color: #1d4ed8; }
+.verif-vencido { border-left-color: #9aa3ae; }
+.verif-anulado { border-left-color: var(--color-danger); }
+.verif-titulo { font-size: 1rem; margin-bottom: 0.2rem; }
+.verif-acciones { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.35rem; }

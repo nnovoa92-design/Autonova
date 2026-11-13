@@ -136,6 +136,16 @@
               <small id="detalle-descuento-equiv" class="descuento-equiv"></small>
               <small id="detalle-descuento-base" style="display:block; color:var(--color-text-muted); font-size:0.75rem;">Solo sobre la mano de obra: no afecta repuestos, insumos ni trabajos externos.</small>
             </div>
+            <!-- Club Autonova: código de un amigo (referido) o cupón de premio. Manda sobre el descuento manual. -->
+            <div class="form-group codigo-ot" id="codigo-ot-grupo" style="max-width:340px;">
+              <label for="codigo-ot">🎁 Código de descuento (Club)</label>
+              <div id="codigo-ot-form" class="codigo-ot-form">
+                <input type="text" id="codigo-ot" placeholder="Ej: JUAN-4K7 o PREMIO-7QX2M" autocomplete="off" data-autolista="no" style="text-transform:uppercase;" />
+                <button type="button" id="codigo-ot-aplicar" class="btn-secondary">Aplicar</button>
+              </div>
+              <div id="codigo-ot-aplicado" class="codigo-ot-aplicado" hidden></div>
+              <small id="codigo-ot-msg" style="display:block; font-size:0.78rem; margin-top:0.25rem;"></small>
+            </div>
           </div>
           <div class="totales" id="totales"></div>
 
@@ -751,6 +761,9 @@
       document.getElementById('detalle-con-iva').value = (o.con_iva === false) ? 'false' : 'true';
       escribirDescuentoUI('detalle-descuento', 'detalle-descuento-tipo', o);
       resumenChecklist(o.checklist_recepcion);
+      renderCodigoOT();
+      // Código del Club del cliente, listo para el WhatsApp de entrega (sin esperar al tocar el botón)
+      if (o.clientes && !o.clientes.codigo_referido) codigoClubDe(o).then(c => { if (c) o.clientes.codigo_referido = c; });
 
       avanceFotosPendientes = [];
       avanceEditando = null;
@@ -1214,7 +1227,17 @@
       else mostrarToast('✓ Línea guardada', 'ok', 1800);
     }
 
+    // Línea del descuento: con código del Club se nombra el código (el cliente ve de dónde sale)
+    function etiquetaDescuentoOT(o, t) {
+      if (o && o.codigo_descuento) {
+        const tipo = o.codigo_tipo === 'premio' ? 'Cupón' : 'Código';
+        return `Descuento ${tipo} ${o.codigo_descuento} (${fmtPorcentaje(o.codigo_pct)}%${Number(o.codigo_tope) > 0 && t.descuento >= Number(o.codigo_tope) - 0.5 ? `, máx. ${fmtMoneda(o.codigo_tope)}` : ''})`;
+      }
+      return etiquetaDescuento(t.descuentoSobre, t.descuentoPct, t.baseDescuento);
+    }
+
     function renderTotalesOT() {
+      sincronizarDescuentoCodigo();   // con código del Club, el descuento sigue a los ítems
       const items = ordenActual.orden_items || [];
       const t = calcularTotal(items, ordenActual.con_iva !== false, ordenActual);
       actualizarEquivDescuentoUI('detalle-descuento', 'detalle-descuento-tipo', t.baseDescuento);
@@ -1238,7 +1261,7 @@
 
       document.getElementById('totales').innerHTML = `
         ${t.descuento > 0 ? `<div class="fila" style="color:var(--color-text-muted);"><span>Subtotal</span><span>${fmtMoneda(t.subtotal)}</span></div>
-        <div class="fila" style="color:var(--color-text-muted);"><span>${etiquetaDescuento(t.descuentoSobre, t.descuentoPct, t.baseDescuento)}</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
+        <div class="fila" style="color:var(--color-text-muted);"><span>${etiquetaDescuentoOT(ordenActual, t)}</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
         <div class="fila"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
         ${t.conIva ? `<div class="fila"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>` : '<div class="fila" style="color:var(--color-text-muted);"><span>Sin IVA</span><span>–</span></div>'}
         <div class="fila total"><span>Total</span><span>${fmtMoneda(t.total)}</span></div>
@@ -1307,6 +1330,109 @@
       btnRegistrar.textContent = '✅ Registrar pago';
       btnRegistrar.classList.add('btn-pago-total');
     });
+
+    // ---------- Club Autonova: código de descuento en la OT (sql/v67) ----------
+    // El código manda sobre el descuento manual: X% de todo el trabajo (neto), con tope en pesos. El monto se
+    // recalcula solo cuando cambian los ítems y se guarda como descuento en pesos, así el PDF, el link del
+    // cliente y la cobranza muestran exactamente lo mismo.
+    function descuentoPorCodigo(o, items) {
+      const subtotal = (items || []).reduce((s, i) => s + Number(i.cantidad || 0) * Number(i.precio_unitario || 0), 0);
+      const tope = Number(o.codigo_tope) > 0 ? Number(o.codigo_tope) : Infinity;
+      const monto = Math.round(Math.min(subtotal * Number(o.codigo_pct || 0) / 100, tope));
+      return { monto, pct: subtotal > 0 ? Math.round(monto / subtotal * 10000) / 100 : 0 };
+    }
+    function sincronizarDescuentoCodigo() {
+      const o = ordenActual;
+      if (!o || !o.codigo_descuento || !(Number(o.codigo_pct) > 0)) return;
+      const d = descuentoPorCodigo(o, o.orden_items);
+      if (o.descuento_tipo === 'monto' && o.descuento_base === 'total' && Math.round(Number(o.descuento_monto || 0)) === d.monto) return;
+      const cambios = { descuento_tipo: 'monto', descuento_base: 'total', descuento_monto: d.monto, descuento_pct: d.pct };
+      Object.assign(o, cambios);
+      escribirDescuentoUI('detalle-descuento', 'detalle-descuento-tipo', o);
+      document.getElementById('detalle-descuento-base').textContent = 'Lo fija el código del Club (no se acumula con otro descuento). Para cambiarlo, quita el código.';
+      supabaseClient.from('ordenes').update(cambios).eq('id', o.id).then(({ error }) => {
+        if (error) mostrarToast('No se pudo guardar el descuento del código: ' + error.message, 'error');
+      });
+    }
+
+    const nombreCodigoCache = {};
+    async function renderCodigoOT() {
+      const o = ordenActual;
+      const form = document.getElementById('codigo-ot-form');
+      const aplicado = document.getElementById('codigo-ot-aplicado');
+      const msg = document.getElementById('codigo-ot-msg');
+      if (!o || !form) return;
+      const tieneCodigo = !!o.codigo_descuento;
+      form.hidden = tieneCodigo;
+      aplicado.hidden = !tieneCodigo;
+      // Con código, el descuento manual queda bloqueado (no se acumulan)
+      ['detalle-descuento', 'detalle-descuento-tipo'].forEach(id => { document.getElementById(id).disabled = tieneCodigo; });
+      document.getElementById('detalle-descuento-base').textContent = tieneCodigo
+        ? 'Lo fija el código del Club (no se acumula con otro descuento). Para cambiarlo, quita el código.'
+        : 'Solo sobre la mano de obra: no afecta repuestos, insumos ni trabajos externos.';
+      if (!tieneCodigo) { aplicado.innerHTML = ''; return; }
+      msg.textContent = '';
+      const condicion = `${fmtPorcentaje(o.codigo_pct)}% de todo el trabajo${topeClubTexto(o.codigo_tope)}`;
+      let detalle = o.codigo_tipo === 'premio' ? 'Cupón de premio (personal)' : 'Referido';
+      if (o.codigo_tipo === 'referido') {
+        if (!(o.codigo_descuento in nombreCodigoCache)) {
+          const { data } = await supabaseClient.from('clientes').select('nombre').eq('codigo_referido', o.codigo_descuento).maybeSingle();
+          nombreCodigoCache[o.codigo_descuento] = data ? data.nombre : '';
+        }
+        if (nombreCodigoCache[o.codigo_descuento]) detalle = `Recomendado por ${nombreCodigoCache[o.codigo_descuento]}`;
+      }
+      if (ordenActual !== o) return;   // se cambió de OT mientras se buscaba el nombre
+      aplicado.innerHTML = `
+        <div><strong>${htmlSeguro(o.codigo_descuento)}</strong> · ${htmlSeguro(detalle)}</div>
+        <div style="font-size:0.82rem;">${htmlSeguro(condicion)}</div>
+        <button type="button" id="codigo-ot-quitar" class="btn-secondary btn-mini">Quitar código</button>`;
+      document.getElementById('codigo-ot-quitar').addEventListener('click', quitarCodigoOT);
+    }
+
+    async function aplicarCodigoOT() {
+      if (!ordenActual) return;
+      const input = document.getElementById('codigo-ot');
+      const msg = document.getElementById('codigo-ot-msg');
+      const codigo = input.value.trim().toUpperCase();
+      msg.style.color = 'var(--color-danger)';
+      if (codigo.length < 4) { msg.textContent = 'Escribe el código completo.'; return; }
+      if (Number(ordenActual.descuento_pct) > 0 || Number(ordenActual.descuento_monto) > 0) {
+        if (!confirm('Esta OT ya tiene un descuento manual. El código lo reemplaza (no se acumulan). ¿Continuar?')) return;
+      }
+      const btn = document.getElementById('codigo-ot-aplicar');
+      btn.disabled = true;
+      const { data, error } = await supabaseClient.rpc('aplicar_codigo_ot', { p_orden: ordenActual.id, p_codigo: codigo });
+      btn.disabled = false;
+      if (error) {
+        msg.textContent = /aplicar_codigo_ot|PGRST202/.test((error.message || '') + error.code)
+          ? 'Falta ejecutar sql/actualizacion-v67-club-autonova-referidos.sql en Supabase.' : 'Error: ' + error.message;
+        return;
+      }
+      if (!data || !data.ok) { msg.textContent = (data && data.error) || 'No se pudo aplicar el código.'; return; }
+      input.value = '';
+      mostrarToast(data.tipo === 'premio'
+        ? `🎁 Cupón ${data.codigo} aplicado: ${fmtPorcentaje(data.pct)}%${topeClubTexto(data.tope)}.`
+        : `🎁 Código de ${data.referente} aplicado: ${fmtPorcentaje(data.pct)}%${topeClubTexto(data.tope)}. Cuando esta OT quede pagada y entregada, ${String(data.referente || '').split(' ')[0]} recibe su cupón.`, 'ok', 10000);
+      await abrirDetalle(ordenActual.id);
+    }
+
+    async function quitarCodigoOT() {
+      if (!ordenActual || !confirm(`¿Quitar el código ${ordenActual.codigo_descuento} de esta OT? El descuento vuelve a 0.`)) return;
+      const { data, error } = await supabaseClient.rpc('quitar_codigo_ot', { p_orden: ordenActual.id });
+      if (error || !data || !data.ok) { mostrarToast((data && data.error) || ('Error: ' + (error && error.message)), 'error'); return; }
+      await abrirDetalle(ordenActual.id);
+    }
+
+    document.getElementById('codigo-ot-aplicar').addEventListener('click', aplicarCodigoOT);
+    document.getElementById('codigo-ot').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); aplicarCodigoOT(); } });
+
+    // Código del Club del cliente (para los mensajes de entrega): de la OT o de su ficha
+    async function codigoClubDe(o) {
+      if (o.clientes && o.clientes.codigo_referido) return o.clientes.codigo_referido;
+      if (!o.cliente_id) return '';
+      const { data } = await supabaseClient.from('clientes').select('codigo_referido').eq('id', o.cliente_id).maybeSingle();
+      return (data && data.codigo_referido) || '';
+    }
 
     function renderHoras() {
       const horas = ordenActual.registro_horas || [];
@@ -1554,6 +1680,7 @@
         ot: fmtNumero('OT', o.numero),
         bloque_seguimiento: o.vehiculos
           ? `\nPuede seguir el estado de su vehículo aquí: ${window.location.origin}/portal.html?patente=${encodeURIComponent(o.vehiculos.patente)}&ot=${o.numero}` : '',
+        ...valoresClub(o.clientes.codigo_referido, config),   // al entregar: Instagram + código del Club
       }, config);
       abrirEnlace(linkWhatsApp(tel, mensaje));
     });
@@ -1627,7 +1754,7 @@
         </table>
         <div style="margin-top:1rem; margin-left:auto; max-width:300px;">
           ${t.descuento > 0 ? `<div style="display:flex;justify-content:space-between;color:#666;"><span>Subtotal</span><span>${fmtMoneda(t.subtotal)}</span></div>
-          <div style="display:flex;justify-content:space-between;color:#666;"><span>${etiquetaDescuento(t.descuentoSobre, t.descuentoPct, t.baseDescuento)}</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
+          <div style="display:flex;justify-content:space-between;color:#666;"><span>${etiquetaDescuentoOT(o, t)}</span><span>-${fmtMoneda(t.descuento)}</span></div>` : ''}
           <div style="display:flex;justify-content:space-between;"><span>Neto</span><span>${fmtMoneda(t.neto)}</span></div>
           ${t.conIva ? `<div style="display:flex;justify-content:space-between;"><span>IVA ${Number(config.iva_pct)}%</span><span>${fmtMoneda(t.iva)}</span></div>` : '<div style="display:flex;justify-content:space-between;"><span>Sin IVA</span><span>–</span></div>'}
           <div style="display:flex;justify-content:space-between;font-weight:bold;border-top:2px solid #000;margin-top:4px;padding-top:4px;"><span>TOTAL</span><span>${fmtMoneda(t.total)}</span></div>
@@ -1721,7 +1848,7 @@
           <tbody>${items.map(i => `<tr style="border-bottom:1px solid #ccc;"><td style="padding:4px;">${badgeItemDe(i)}<div style="margin-top:2px;">${htmlSeguro(i.descripcion)}</div></td>${celdasLinea(i, 'padding:4px; ')}</tr>`).join('')}</tbody>
         </table>
         <p style="text-align:right; margin-top:0.5rem;">
-          ${t.descuento > 0 ? `Subtotal: ${fmtMoneda(t.subtotal)} · ${etiquetaDescuento(t.descuentoSobre, t.descuentoPct, t.baseDescuento)}: -${fmtMoneda(t.descuento)} · ` : ''}Neto: ${fmtMoneda(t.neto)} · IVA: ${fmtMoneda(t.iva)} · Total: ${fmtMoneda(t.total)}
+          ${t.descuento > 0 ? `Subtotal: ${fmtMoneda(t.subtotal)} · ${etiquetaDescuentoOT(o, t)}: -${fmtMoneda(t.descuento)} · ` : ''}Neto: ${fmtMoneda(t.neto)} · IVA: ${fmtMoneda(t.iva)} · Total: ${fmtMoneda(t.total)}
           ${bodegaje.monto > 0 ? ` · Bodegaje (${bodegaje.dias} días): ${fmtMoneda(bodegaje.monto)}` : ''}
           · Pagado: ${fmtMoneda(pagado)} · <strong>Saldo: ${fmtMoneda(t.total + bodegaje.monto - pagado)}</strong>
         </p>

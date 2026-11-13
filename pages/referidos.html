@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Club Autonova · Autonova</title>
+  <link rel="stylesheet" href="../assets/css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar">
+        <h1>Club Autonova</h1>
+      </header>
+      <div class="content">
+
+        <p class="error-message" id="falta-sql" hidden>Falta ejecutar <strong>sql/actualizacion-v67-club-autonova-referidos.sql</strong> en el SQL Editor de Supabase.</p>
+
+        <div class="club-hero card">
+          <div>
+            <p class="club-hero-eyebrow">Recomienda y gana</p>
+            <h2>Cada cliente es un vendedor</h2>
+            <p id="club-condicion">Cada cliente tiene su código. Sus amigos tienen descuento en la primera visita y, cuando pagan su OT, quien los recomendó recibe un cupón por correo.</p>
+          </div>
+          <a class="btn btn-secondary" href="configuracion.html#club">⚙ Condiciones</a>
+        </div>
+
+        <div class="cards-grid">
+          <div class="card stat-card"><div class="stat-value" id="st-referidos">–</div><div class="stat-label">Amigos que llegaron recomendados</div></div>
+          <div class="card stat-card"><div class="stat-value" id="st-ventas">–</div><div class="stat-label">Vendido gracias a referidos</div></div>
+          <div class="card stat-card"><div class="stat-value" id="st-premios">–</div><div class="stat-label">Cupones de premio entregados</div></div>
+          <div class="card stat-card"><div class="stat-value" id="st-vigentes">–</div><div class="stat-label">Cupones vigentes por usar</div></div>
+        </div>
+
+        <!-- Verificador -->
+        <div class="card" id="verificar-card">
+          <h2 style="margin-top:0;">🔎 Verificar un código</h2>
+          <p style="color:var(--color-text-muted); font-size:0.88rem; margin-top:-0.25rem;">Escribe el código de un cliente (ej. JUAN-4K7) o un cupón (ej. PREMIO-7QX2M): ves de quién es, si está vigente y si ya se usó. Para aplicarlo, escríbelo en la OT.</p>
+          <div class="codigo-ot-form" style="max-width:460px;">
+            <input type="text" id="v-codigo" placeholder="Código o cupón" autocomplete="off" data-autolista="no" style="text-transform:uppercase;" />
+            <button type="button" id="v-buscar">Verificar</button>
+          </div>
+          <div id="v-resultado" style="margin-top:0.75rem;"></div>
+        </div>
+
+        <!-- Referidos -->
+        <div class="card">
+          <div class="toolbar">
+            <h2 style="margin:0;">🤝 Referidos</h2>
+            <span class="badge badge-yellow" id="ref-resumen"></span>
+          </div>
+          <div style="overflow-x:auto;">
+            <table>
+              <thead><tr><th>Fecha</th><th>Recomendó</th><th>Llegó</th><th>OT</th><th>Estado</th><th></th></tr></thead>
+              <tbody id="ref-body"><tr><td colspan="6">Cargando…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Embajadores -->
+        <div class="card">
+          <h2 style="margin-top:0;">🏆 Embajadores</h2>
+          <p style="color:var(--color-text-muted); font-size:0.88rem; margin-top:-0.25rem;">Los clientes que más amigos te traen. Cuídalos: un saludo o un detalle extra los mantiene recomendándote.</p>
+          <div id="embajadores"></div>
+        </div>
+
+        <!-- Cupones -->
+        <div class="card">
+          <div class="toolbar">
+            <h2 style="margin:0;">🎟 Cupones de premio</h2>
+            <select id="cup-filtro" style="max-width:180px;">
+              <option value="vigente">Vigentes</option>
+              <option value="canjeado">Usados</option>
+              <option value="vencido">Vencidos</option>
+              <option value="">Todos</option>
+            </select>
+          </div>
+          <div style="overflow-x:auto;">
+            <table>
+              <thead><tr><th>Cupón</th><th>Cliente</th><th>Descuento</th><th>Vence</th><th>Estado</th><th></th></tr></thead>
+              <tbody id="cup-body"><tr><td colspan="6">Cargando…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Códigos de clientes -->
+        <div class="card">
+          <h2 style="margin-top:0;">🎁 Código de cada cliente</h2>
+          <p style="color:var(--color-text-muted); font-size:0.88rem; margin-top:-0.25rem;">Todos tus clientes ya tienen su código. Busca uno para enviárselo por WhatsApp o abrir su página para compartir. Al entregar un vehículo, el código va solo en el correo y en el WhatsApp de entrega.</p>
+          <input type="text" id="cli-buscar" placeholder="Buscar cliente por nombre, teléfono o código…" autocomplete="off" data-autolista="no" style="max-width:460px;" />
+          <div style="overflow-x:auto; margin-top:0.5rem;">
+            <table>
+              <thead><tr><th>Cliente</th><th>Código</th><th>Amigos traídos</th><th></th></tr></thead>
+              <tbody id="cli-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="../assets/vendor/supabase.min.js"></script>
+  <script src="../assets/js/supabaseClient.js"></script>
+  <script src="../assets/js/layout.js"></script>
+  <script>
+    let config = {};
+    let club = {};
+    let referidos = [], cupones = [], clientesClub = [];
+
+    const totalOT = (o) => {
+      if (!o) return 0;
+      const neto = descuentoDeItems(o.orden_items || [], o).neto;
+      return o.con_iva === false ? neto : neto * (1 + Number(config.iva_pct ?? 19) / 100);
+    };
+    const pagadoOT = (o) => o ? [...(o.pagos || []), ...(o.abonos || [])].reduce((s, p) => s + Number(p.monto || 0), 0) : 0;
+    const primerNombre = (n) => String(n || '').trim().split(/\s+/)[0] || '';
+    const estadoCupon = (c) => c.estado === 'vigente' && c.vence && c.vence < hoyChile() ? 'vencido' : c.estado;
+    const BADGE_CUPON = {
+      vigente: ['Vigente', 'badge-green'], canjeado: ['Usado', 'badge-blue'], vencido: ['Vencido', 'badge-gray'], anulado: ['Anulado', 'badge-red'],
+    };
+
+    async function cargar() {
+      const [r, c, cl] = await Promise.all([
+        supabaseClient.from('referidos')
+          .select('*, referente:clientes!referente_id(id, nombre, telefono, email, codigo_referido), referido:clientes!referido_cliente_id(id, nombre, telefono), ordenes(id, numero, estado, con_iva, descuento_tipo, descuento_pct, descuento_monto, descuento_base, orden_items(cantidad, precio_unitario, tipo, tipo_otro), pagos(monto), abonos(monto)), cupones(id, codigo, estado, vence, pct, tope)')
+          .order('creado_en', { ascending: false }),
+        supabaseClient.from('cupones').select('*, clientes(id, nombre, telefono, email, codigo_referido), ordenes(id, numero)').order('creado_en', { ascending: false }),
+        supabaseClient.from('clientes').select('id, nombre, telefono, email, codigo_referido').eq('activo', true).order('nombre'),
+      ]);
+      const err = r.error || c.error || cl.error;
+      if (err) {
+        document.getElementById('falta-sql').hidden = !/referidos|cupones|codigo_referido|PGRST20|42P01|42703/.test(`${err.message} ${err.code}`);
+        if (document.getElementById('falta-sql').hidden) mostrarToast('Error al cargar: ' + err.message, 'error');
+        return;
+      }
+      referidos = r.data || [];
+      cupones = c.data || [];
+      clientesClub = cl.data || [];
+      renderResumen();
+      renderReferidos();
+      renderEmbajadores();
+      renderCupones();
+      renderClientes();
+    }
+
+    function renderResumen() {
+      const validos = referidos.filter(x => x.estado !== 'anulado');
+      document.getElementById('st-referidos').textContent = validos.length;
+      document.getElementById('st-ventas').textContent = fmtMoneda(validos.reduce((s, x) => s + (x.ordenes && x.ordenes.estado !== 'cancelado' ? totalOT(x.ordenes) : 0), 0));
+      document.getElementById('st-premios').textContent = cupones.length;
+      document.getElementById('st-vigentes').textContent = cupones.filter(x => estadoCupon(x) === 'vigente').length;
+      document.getElementById('club-condicion').textContent = club.activo === false
+        ? 'El programa está DESACTIVADO: los códigos no dan descuento. Actívalo en Condiciones.'
+        : `Cada cliente tiene su código. Sus amigos tienen ${fmtPorcentaje(club.pct)}% de descuento en la primera visita${topeClubTexto(club.tope)} y, cuando pagan su OT entregada, quien los recomendó recibe por correo un cupón de ${fmtPorcentaje(club.pct)}% (vence en ${club.premio_dias} días).`;
+    }
+
+    function renderReferidos() {
+      const body = document.getElementById('ref-body');
+      const pendientes = referidos.filter(x => x.estado === 'pendiente').length;
+      document.getElementById('ref-resumen').textContent = pendientes ? `${pendientes} esperando pago` : '';
+      if (!referidos.length) { body.innerHTML = '<tr><td colspan="6" style="color:var(--color-text-muted);">Todavía no llega nadie recomendado. Comparte los códigos: van solos en el mensaje de entrega.</td></tr>'; return; }
+      body.innerHTML = referidos.map(x => {
+        const o = x.ordenes;
+        let estado;
+        if (x.estado === 'premiado') {
+          const cup = x.cupones;
+          estado = `<span class="badge badge-green">🎁 Premio entregado</span>${cup ? `<br><small><a href="#" class="ver-codigo" data-codigo="${htmlSeguro(cup.codigo)}">${htmlSeguro(cup.codigo)}</a></small>` : ''}`;
+        } else if (x.estado === 'anulado') estado = '<span class="badge badge-gray">Anulado</span>';
+        else if (!o) estado = '<span class="badge badge-gray">Sin OT</span>';
+        else if (o.estado === 'cancelado') estado = '<span class="badge badge-gray">OT cancelada</span>';
+        else {
+          const saldo = totalOT(o) - pagadoOT(o);
+          estado = o.estado !== 'entregado'
+            ? '<span class="badge badge-yellow">En taller</span><br><small>El premio sale al entregar y pagar</small>'
+            : (saldo > 1 ? `<span class="badge badge-yellow">Debe ${fmtMoneda(saldo)}</span><br><small>El premio sale al pagar</small>` : '<span class="badge badge-blue">Pagado</span><br><small>El premio sale en menos de 1 hora</small>');
+        }
+        const premioWa = x.estado === 'premiado' && x.cupones && x.referente && x.referente.telefono
+          ? `<button type="button" class="btn-secondary btn-mini wa-premio" data-cupon="${x.cupones.id}">💬 Avisar premio</button>` : '';
+        return `<tr>
+          <td style="white-space:nowrap;">${fmtFecha(x.creado_en)}</td>
+          <td>${htmlSeguro((x.referente && x.referente.nombre) || '–')}<br><small style="color:var(--color-text-muted);">${htmlSeguro(x.codigo)}</small></td>
+          <td>${htmlSeguro((x.referido && x.referido.nombre) || '–')}</td>
+          <td style="white-space:nowrap;">${o ? `<a href="ordenes.html?id=${o.id}">${fmtNumero('OT', o.numero)}</a><br><small>${fmtMoneda(totalOT(o))}</small>` : '–'}</td>
+          <td>${estado}</td>
+          <td class="table-actions">${premioWa}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    function renderEmbajadores() {
+      const cont = document.getElementById('embajadores');
+      const porCliente = {};
+      referidos.filter(x => x.estado !== 'anulado' && x.referente).forEach(x => {
+        const k = x.referente.id;
+        porCliente[k] = porCliente[k] || { cliente: x.referente, total: 0, premiados: 0, ventas: 0 };
+        porCliente[k].total++;
+        if (x.estado === 'premiado') porCliente[k].premiados++;
+        if (x.ordenes && x.ordenes.estado !== 'cancelado') porCliente[k].ventas += totalOT(x.ordenes);
+      });
+      const lista = Object.values(porCliente).sort((a, b) => b.total - a.total || b.ventas - a.ventas).slice(0, 10);
+      if (!lista.length) { cont.innerHTML = '<p style="color:var(--color-text-muted);">Aquí aparecerán tus mejores embajadores.</p>'; return; }
+      const medallas = ['🥇', '🥈', '🥉'];
+      cont.innerHTML = `<ol class="embajadores">${lista.map((e, i) => `
+        <li>
+          <span class="emb-pos">${medallas[i] || (i + 1)}</span>
+          <span class="emb-nombre"><strong>${htmlSeguro(e.cliente.nombre)}</strong><small>${htmlSeguro(e.cliente.codigo_referido || '')}</small></span>
+          <span class="emb-dato"><strong>${e.total}</strong><small>amigo${e.total === 1 ? '' : 's'}</small></span>
+          <span class="emb-dato"><strong>${fmtMoneda(e.ventas)}</strong><small>en ventas</small></span>
+        </li>`).join('')}</ol>`;
+    }
+
+    function renderCupones() {
+      const filtro = document.getElementById('cup-filtro').value;
+      const lista = filtro ? cupones.filter(c => estadoCupon(c) === filtro) : cupones;
+      const body = document.getElementById('cup-body');
+      if (!lista.length) { body.innerHTML = `<tr><td colspan="6" style="color:var(--color-text-muted);">${cupones.length ? 'No hay cupones en este filtro.' : 'Aún no hay cupones: se crean solos cuando un referido paga su OT.'}</td></tr>`; return; }
+      body.innerHTML = lista.map(c => {
+        const est = estadoCupon(c);
+        const [lbl, cls] = BADGE_CUPON[est] || [est, ''];
+        const cli = c.clientes || {};
+        return `<tr>
+          <td style="white-space:nowrap;"><a href="#" class="ver-codigo" data-codigo="${htmlSeguro(c.codigo)}"><strong>${htmlSeguro(c.codigo)}</strong></a></td>
+          <td>${htmlSeguro(cli.nombre || '–')}</td>
+          <td style="white-space:nowrap;">${fmtPorcentaje(c.pct)}%${Number(c.tope) > 0 ? `<br><small>máx. ${fmtMoneda(c.tope)}</small>` : ''}</td>
+          <td style="white-space:nowrap;">${c.vence ? fmtFecha(c.vence) : '–'}</td>
+          <td><span class="badge ${cls}">${lbl}</span>${c.estado === 'canjeado' && c.ordenes ? `<br><small><a href="ordenes.html?id=${c.ordenes.id}">${fmtNumero('OT', c.ordenes.numero)}</a></small>` : ''}${c.estado === 'vigente' && !c.correo_enviado_en ? '<br><small style="color:#92600a;">correo no enviado</small>' : ''}</td>
+          <td class="table-actions">${est === 'vigente' && cli.telefono ? `<button type="button" class="btn-secondary btn-mini wa-premio" data-cupon="${c.id}">💬 WhatsApp</button>` : ''}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    function renderClientes() {
+      const q = document.getElementById('cli-buscar').value.trim().toLowerCase();
+      const body = document.getElementById('cli-body');
+      if (q.length < 2) { body.innerHTML = '<tr><td colspan="4" style="color:var(--color-text-muted);">Escribe al menos 2 letras para buscar.</td></tr>'; return; }
+      const digitos = q.replace(/\D/g, '');
+      const lista = clientesClub.filter(c => String(c.nombre || '').toLowerCase().includes(q)
+        || String(c.codigo_referido || '').toLowerCase().includes(q)
+        || (digitos.length >= 4 && String(c.telefono || '').replace(/\D/g, '').includes(digitos))).slice(0, 20);
+      if (!lista.length) { body.innerHTML = '<tr><td colspan="4">Sin resultados.</td></tr>'; return; }
+      body.innerHTML = lista.map(c => {
+        const traidos = referidos.filter(x => x.referente && x.referente.id === c.id && x.estado !== 'anulado').length;
+        return `<tr>
+          <td>${htmlSeguro(c.nombre)}</td>
+          <td style="white-space:nowrap;"><strong>${htmlSeguro(c.codigo_referido || '–')}</strong></td>
+          <td>${traidos}</td>
+          <td class="table-actions">
+            ${c.codigo_referido && c.telefono ? `<button type="button" class="btn-secondary btn-mini wa-codigo" data-id="${c.id}">💬 Enviar su código</button>` : ''}
+            ${c.codigo_referido ? `<a class="btn btn-secondary btn-mini" href="${htmlSeguro(linkClub(c.codigo_referido, true))}" target="_blank" rel="noopener">Ver su página</a>` : ''}
+          </td>
+        </tr>`;
+      }).join('');
+    }
+
+    // ---------- Verificador ----------
+    async function verificar(codigoTexto) {
+      const codigo = String(codigoTexto || document.getElementById('v-codigo').value).trim().toUpperCase();
+      const res = document.getElementById('v-resultado');
+      if (codigo.length < 4) { res.innerHTML = '<p class="error-message">Escribe el código completo.</p>'; return; }
+      document.getElementById('v-codigo').value = codigo;
+      res.innerHTML = '<p style="color:var(--color-text-muted);">Buscando…</p>';
+      const [cup, cli] = await Promise.all([
+        supabaseClient.from('cupones').select('*, clientes(id, nombre, telefono, email, codigo_referido), ordenes(id, numero)').ilike('codigo', codigo).maybeSingle(),
+        supabaseClient.from('clientes').select('id, nombre, telefono, email, codigo_referido, activo').ilike('codigo_referido', codigo).maybeSingle(),
+      ]);
+      if (cup.data) {
+        const c = cup.data, est = estadoCupon(c), [lbl, cls] = BADGE_CUPON[est] || [est, ''];
+        const ref = referidos.find(x => x.cupon_id === c.id || (x.cupones && x.cupones.id === c.id));
+        res.innerHTML = `
+          <div class="verif verif-${est}">
+            <div class="verif-titulo">🎟 Cupón <strong>${htmlSeguro(c.codigo)}</strong> <span class="badge ${cls}">${lbl}</span></div>
+            <div>Dueño: <strong>${htmlSeguro((c.clientes && c.clientes.nombre) || '–')}</strong> (es personal: solo lo usa este cliente)</div>
+            <div>Descuento: <strong>${fmtPorcentaje(c.pct)}%</strong> de todo el trabajo${topeClubTexto(c.tope)}</div>
+            <div>Válido hasta: <strong>${c.vence ? fmtFecha(c.vence) : 'sin vencimiento'}</strong></div>
+            ${ref ? `<div>Lo ganó porque recomendó a <strong>${htmlSeguro((ref.referido && ref.referido.nombre) || 'un amigo')}</strong>${ref.ordenes ? ` (${fmtNumero('OT', ref.ordenes.numero)})` : ''}.</div>` : ''}
+            ${c.estado === 'canjeado' ? `<div>Usado el ${fmtFecha(c.canjeado_en)}${c.ordenes ? ` en la <a href="ordenes.html?id=${c.ordenes.id}">${fmtNumero('OT', c.ordenes.numero)}</a>` : ''}.</div>` : ''}
+            <div>Correo con el cupón: ${c.correo_enviado_en ? `enviado el ${fmtFechaHora(c.correo_enviado_en)}` : 'no enviado (sin correo o envío apagado)'}</div>
+            <div class="verif-acciones">
+              ${est === 'vigente' && c.clientes && c.clientes.telefono ? `<button type="button" class="btn-secondary btn-mini wa-premio" data-cupon="${c.id}">💬 Enviar por WhatsApp</button>` : ''}
+              ${est === 'vigente' ? `<button type="button" class="btn-danger btn-mini anular-cupon" data-cupon="${c.id}">Anular</button>` : ''}
+            </div>
+          </div>`;
+        return;
+      }
+      if (cli.data) {
+        const c = cli.data;
+        const suyos = referidos.filter(x => x.referente && x.referente.id === c.id && x.estado !== 'anulado');
+        res.innerHTML = `
+          <div class="verif verif-vigente">
+            <div class="verif-titulo">🎁 Código de cliente <strong>${htmlSeguro(c.codigo_referido)}</strong> ${club.activo === false ? '<span class="badge badge-gray">Programa desactivado</span>' : '<span class="badge badge-green">Activo</span>'}</div>
+            <div>Es de: <strong>${htmlSeguro(c.nombre)}</strong>${c.telefono ? ` · ${htmlSeguro(c.telefono)}` : ''}</div>
+            <div>Da a sus amigos (clientes nuevos, primera OT): <strong>${fmtPorcentaje(club.pct)}%</strong> de todo el trabajo${topeClubTexto(club.tope)}.</div>
+            <div>Amigos que ha traído: <strong>${suyos.length}</strong>${suyos.length ? ` — ${suyos.map(x => htmlSeguro((x.referido && primerNombre(x.referido.nombre)) || '?') + (x.estado === 'premiado' ? ' 🎁' : ' ⏳')).join(', ')}` : ''}</div>
+            <div class="verif-acciones">
+              ${c.telefono ? `<button type="button" class="btn-secondary btn-mini wa-codigo" data-id="${c.id}">💬 Enviarle su código</button>` : ''}
+              <a class="btn btn-secondary btn-mini" href="${htmlSeguro(linkClub(c.codigo_referido, true))}" target="_blank" rel="noopener">Ver su página para compartir</a>
+            </div>
+          </div>`;
+        if (!clientesClub.some(x => x.id === c.id)) clientesClub.push(c);
+        return;
+      }
+      res.innerHTML = `<div class="verif verif-anulado"><div class="verif-titulo">❌ <strong>${htmlSeguro(codigo)}</strong> no existe</div><div>No es un código de cliente ni un cupón. Revisa cómo está escrito.</div></div>`;
+    }
+
+    // ---------- WhatsApp ----------
+    function waPremio(cuponId) {
+      const c = cupones.find(x => x.id === cuponId);
+      const cli = c && c.clientes;
+      if (!c || !cli || !cli.telefono) return;
+      const ref = referidos.find(x => x.cupon_id === c.id);
+      const msg = armarWhatsApp('wa_premio_referido', {
+        nombre: primerNombre(cli.nombre), referido: (ref && ref.referido && primerNombre(ref.referido.nombre)) || 'tu amigo',
+        descuento: `${fmtPorcentaje(c.pct)}%`, tope_texto: topeClubTexto(c.tope), cupon: c.codigo,
+        vence: c.vence ? fmtFecha(c.vence) : 'sin vencimiento', codigo: cli.codigo_referido || '',
+        link_reserva: `${window.location.origin}/reservar.html?codigo=${encodeURIComponent(c.codigo)}`,
+      }, config);
+      abrirEnlace(linkWhatsApp(cli.telefono, msg));
+    }
+    function waCodigo(clienteId) {
+      const c = clientesClub.find(x => x.id === clienteId);
+      if (!c || !c.telefono || !c.codigo_referido) return;
+      const msg = armarWhatsApp('wa_club_codigo', { nombre: primerNombre(c.nombre), ...valoresClub(c.codigo_referido, config) }, config);
+      abrirEnlace(linkWhatsApp(c.telefono, msg));
+    }
+
+    document.addEventListener('click', async (e) => {
+      const b = e.target.closest('.wa-premio, .wa-codigo, .ver-codigo, .anular-cupon');
+      if (!b) return;
+      if (b.classList.contains('ver-codigo')) {
+        e.preventDefault();
+        await verificar(b.dataset.codigo);
+        document.getElementById('verificar-card').scrollIntoView({ behavior: 'smooth' });
+      } else if (b.classList.contains('wa-premio')) waPremio(b.dataset.cupon);
+      else if (b.classList.contains('wa-codigo')) waCodigo(b.dataset.id);
+      else if (b.classList.contains('anular-cupon')) {
+        const c = cupones.find(x => x.id === b.dataset.cupon);
+        if (!c || !confirm(`¿Anular el cupón ${c.codigo}? Ya no se podrá usar.`)) return;
+        const { error } = await supabaseClient.from('cupones').update({ estado: 'anulado' }).eq('id', c.id);
+        if (error) { mostrarToast('Error: ' + error.message, 'error'); return; }
+        await cargar();
+        await verificar(c.codigo);
+      }
+    });
+    document.getElementById('v-buscar').addEventListener('click', () => verificar());
+    document.getElementById('v-codigo').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); verificar(); } });
+    document.getElementById('cup-filtro').addEventListener('change', renderCupones);
+    document.getElementById('cli-buscar').addEventListener('input', renderClientes);
+
+    (async () => {
+      const session = await initLayout('referidos');
+      if (!session) return;
+      config = await getTallerConfig();
+      club = clubConfig(config);
+      await cargar();
+      // Desde la campanita: referidos.html?codigo=PREMIO-XXXXX
+      const cod = new URLSearchParams(window.location.search).get('codigo');
+      if (cod) verificar(cod);
+    })();
+  </script>
+</body>
+</html>

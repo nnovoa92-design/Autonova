@@ -1142,7 +1142,8 @@
       const online = (c.origen === 'online' ? ' <span class="badge badge-purple">web</span>' : '')
         + (esReservaNueva(c) ? ETIQUETA_NUEVO : '')
         + (c.modalidad === 'terreno' ? ` <span class="badge badge-orange" title="${escapar([c.direccion, (margenesCita(c).antes || margenesCita(c).despues) ? 'bloquea el traslado ' + margenesCita(c).antes + ' min antes y ' + margenesCita(c).despues + ' min después' : ''].filter(Boolean).join(' · '))}">🚗 a domicilio</span>` : (c.modalidad === 'retiro' ? ' <span class="badge badge-gray">retiro</span>' : ''))
-        + (c.bloquea === false ? ' <span class="badge badge-gray" title="No bloquea las horas: permite otro vehículo al mismo tiempo">paralelo</span>' : '');
+        + (c.bloquea === false ? ' <span class="badge badge-gray" title="No bloquea las horas: permite otro vehículo al mismo tiempo">paralelo</span>' : '')
+        + (c.codigo_descuento ? ` <span class="badge badge-green" title="Código del Club: se aplica solo al crear la OT">🎁 ${escapar(c.codigo_descuento)}</span>` : '');
       return `<div class="cita-card">
         <div class="cita-info">
           ${badgeEstado(c.estado, ESTADOS_CITA)}${online}
@@ -1651,6 +1652,7 @@
           ${(margenesCita(c).antes || margenesCita(c).despues) ? `<div class="ficha-datos"><span>⏱ Se bloquea también el traslado: ${margenesCita(c).antes} min antes y ${margenesCita(c).despues} min después</span></div>` : ''}
           <div class="ficha-datos"><span>💲 Atención a domicilio (catálogo${trabajoDomicilio() ? ': ' + escapar(trabajoDomicilio().nombre) : ''}): ${escapar(textoValorDomicilio(valorDomicilio()))}</span></div>` : ''}
           ${c.notas ? `<div class="ficha-datos"><span>💬 ${escapar(c.notas)}</span></div>` : ''}
+          ${c.codigo_descuento ? `<div class="ficha-datos"><span>🎁 Viene con el código <strong>${escapar(c.codigo_descuento)}</strong> del Club: el descuento se aplica solo al crear la OT.</span></div>` : ''}
         </div>
 
         <div class="form-group" style="margin-top:0.6rem;">
@@ -1978,9 +1980,17 @@
         }
       }
       await supabaseClient.from('citas').update({ estado: 'completado', orden_id: orden.id }).eq('id', citaId);
+      // Código del Club que trajo la reserva: se aplica a la OT (descuento de referido o cupón de premio)
+      let avisoCodigo = '';
+      if (c.codigo_descuento) {
+        const { data: rc, error: ec } = await supabaseClient.rpc('aplicar_codigo_ot', { p_orden: orden.id, p_codigo: c.codigo_descuento });
+        avisoCodigo = !ec && rc && rc.ok
+          ? `\n\n🎁 Se aplicó el código ${rc.codigo}: ${fmtPorcentaje(rc.pct)}% de descuento${topeClubTexto(rc.tope)}.`
+          : `\n\n⚠ El código ${c.codigo_descuento} no se pudo aplicar: ${(rc && rc.error) || (ec && ec.message) || 'error'}`;
+      }
       // Ingreso del vehículo: aviso automático al correo del cliente (se espera antes de cambiar de página)
       const envioCorreo = avisarCorreoOT({ id: orden.id, numero: orden.numero, clientes: { ...(c.clientes || { nombre: c.nombre_contacto }), email: (c.clientes && c.clientes.email) || c.email_contacto }, vehiculos: c.vehiculos }, 'recepcion');
-      alert(`Orden ${fmtNumero('OT', orden.numero)} creada.`);
+      alert(`Orden ${fmtNumero('OT', orden.numero)} creada.${avisoCodigo}`);
       await envioCorreo;
       window.location.href = 'ordenes.html';
     }

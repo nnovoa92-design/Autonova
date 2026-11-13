@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Club Autonova · Recomienda y gana</title>
+  <meta name="description" content="Te regalaron un descuento en Autonova, taller mecánico. Reserva en línea con tu código." />
+  <!-- Vista previa al compartir el link por WhatsApp o redes -->
+  <meta property="og:title" content="🎁 Te regalaron un descuento en Autonova" />
+  <meta property="og:description" content="Taller mecánico · Reserva en línea con tu código y paga menos en tu primera visita." />
+  <meta property="og:image" content="https://autonova.nnovoa92.workers.dev/assets/img/logo.png" />
+  <meta property="og:type" content="website" />
+  <meta name="theme-color" content="#0d0e11" />
+  <link rel="stylesheet" href="assets/css/style.css" />
+  <style>
+    :root { --oro: #d4a84b; --oro-claro: #f0cf7e; --rojo: #e1341e; --fondo: #0d0e11; --panel: #16181d; --borde: #2a2e37; --texto-suave: #a7adb8; }
+    html, body { background: var(--fondo); }
+    body { color: #f4f5f7; min-height: 100vh; margin: 0; }
+    .club { max-width: 560px; margin: 0 auto; padding: 1.25rem 16px 3rem; }
+    .club-logo { display: block; width: min(210px, 56vw); margin: 0 auto 0.25rem;
+      -webkit-mask-image: radial-gradient(ellipse 50% 50% at center, #000 62%, transparent 100%); mask-image: radial-gradient(ellipse 50% 50% at center, #000 62%, transparent 100%); }
+    .eyebrow { text-align: center; font-family: var(--font-display); letter-spacing: 0.22em; font-size: 0.78rem; color: var(--oro); margin: 0 0 0.5rem; text-transform: uppercase; }
+    .club h1 { font-family: var(--font-display); text-transform: uppercase; text-align: center; font-size: clamp(1.7rem, 7vw, 2.4rem); line-height: 1.1; margin: 0 0 0.6rem; color: #fff; }
+    .club h1 .oro { color: var(--oro-claro); }
+    .sub { text-align: center; color: var(--texto-suave); font-size: 1rem; margin: 0 auto 1.25rem; max-width: 30rem; }
+    .sub strong { color: #fff; }
+
+    /* Cupón con borde de ticket */
+    .ticket { position: relative; background: linear-gradient(135deg, #1d2027, #121419); border: 2px dashed var(--oro); border-radius: 14px;
+      padding: 1.1rem 1rem; text-align: center; margin: 0 0 1.25rem; }
+    .ticket::before, .ticket::after { content: ''; position: absolute; top: 50%; width: 22px; height: 22px; background: var(--fondo); border-radius: 50%; transform: translateY(-50%); }
+    .ticket::before { left: -12px; border-right: 2px dashed var(--oro); }
+    .ticket::after { right: -12px; border-left: 2px dashed var(--oro); }
+    .ticket small { display: block; color: var(--texto-suave); letter-spacing: 0.18em; font-size: 0.72rem; text-transform: uppercase; }
+    .ticket .codigo { font-family: var(--font-display); font-size: clamp(2rem, 10vw, 2.8rem); letter-spacing: 0.08em; color: var(--oro-claro); margin: 0.2rem 0 0.35rem; word-break: break-all; }
+    .ticket .pct { display: inline-block; background: var(--rojo); color: #fff; font-weight: 700; border-radius: 999px; padding: 0.2rem 0.75rem; font-size: 0.85rem; }
+
+    .acciones { display: grid; gap: 0.6rem; margin-bottom: 1.5rem; }
+    .btn-club { display: flex; align-items: center; justify-content: center; gap: 0.5rem; text-decoration: none; text-align: center; font-weight: 700;
+      font-size: 1.02rem; padding: 0.9rem 1rem; border-radius: 12px; border: 1px solid transparent; cursor: pointer; font-family: var(--font-body); }
+    .btn-club.principal { background: var(--oro); color: #15181e; }
+    .btn-club.principal:hover { background: var(--oro-claro); }
+    .btn-club.wa { background: #25d366; color: #fff; }
+    .btn-club.wa:hover { background: #1fb457; }
+    .btn-club.borde { background: transparent; color: #fff; border-color: var(--borde); }
+    .btn-club.borde:hover { border-color: var(--oro); background: rgba(212, 168, 75, 0.08); }
+    .fila-botones { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+
+    .panel { background: var(--panel); border: 1px solid var(--borde); border-radius: 14px; padding: 1rem 1.1rem; margin-bottom: 1rem; }
+    .panel h2 { font-family: var(--font-display); text-transform: uppercase; font-size: 1.05rem; letter-spacing: 0.06em; margin: 0 0 0.75rem; color: var(--oro-claro); }
+    .pasos { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; }
+    .pasos li { display: grid; grid-template-columns: 2.1rem 1fr; gap: 0.7rem; align-items: start; }
+    .pasos .n { width: 2.1rem; height: 2.1rem; border-radius: 50%; display: grid; place-items: center; background: rgba(212, 168, 75, 0.14);
+      color: var(--oro-claro); font-weight: 700; font-family: var(--font-display); }
+    .pasos strong { display: block; color: #fff; }
+    .pasos span { color: var(--texto-suave); font-size: 0.92rem; }
+    .ig { display: flex; align-items: center; gap: 0.9rem; }
+    .ig-icono { flex: none; width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center; font-size: 1.4rem;
+      background: radial-gradient(circle at 30% 107%, #fdf497 0%, #fd5949 45%, #d6249f 60%, #285aeb 90%); }
+    .ig p { margin: 0; color: var(--texto-suave); font-size: 0.9rem; }
+    .ig a { color: #fff; font-weight: 700; text-decoration: none; }
+    .letra-chica { color: #6f7682; font-size: 0.75rem; text-align: center; margin-top: 1.25rem; line-height: 1.5; }
+    .aviso-copiado { position: fixed; left: 50%; bottom: 1.25rem; transform: translateX(-50%); background: #fff; color: #15181e; font-weight: 700;
+      padding: 0.55rem 1rem; border-radius: 999px; box-shadow: 0 8px 24px rgba(0,0,0,0.35); font-size: 0.9rem; display: none; z-index: 10; }
+    .cargando { text-align: center; color: var(--texto-suave); padding: 3rem 0; }
+    .error-club { text-align: center; }
+    .error-club p { color: var(--texto-suave); }
+  </style>
+</head>
+<body>
+  <main class="club">
+    <img class="club-logo" src="assets/img/logo.png" alt="Autonova" />
+    <div id="club-contenido"><p class="cargando">Cargando…</p></div>
+  </main>
+  <div class="aviso-copiado" id="aviso-copiado" role="status"></div>
+
+  <script src="assets/vendor/supabase.min.js"></script>
+  <script src="assets/js/supabaseClient.js"></script>
+  <script src="assets/js/layout.js"></script>
+  <script>
+    // Página pública del Club: club.html?c=CODIGO (lo que ve el amigo) · club.html?c=CODIGO&compartir=1 (el cliente comparte su código)
+    const parametros = new URLSearchParams(window.location.search);
+    const codigoUrl = String(parametros.get('c') || '').trim().toUpperCase();
+    const modoCompartir = parametros.get('compartir') === '1';
+    const cont = document.getElementById('club-contenido');
+    const esc = (s) => htmlSeguro(String(s == null ? '' : s));
+
+    function avisar(texto) {
+      const el = document.getElementById('aviso-copiado');
+      el.textContent = texto;
+      el.style.display = 'block';
+      clearTimeout(avisar.t);
+      avisar.t = setTimeout(() => { el.style.display = 'none'; }, 2200);
+    }
+    async function copiar(texto, mensaje) {
+      try { await navigator.clipboard.writeText(texto); }
+      catch (e) {
+        const t = document.createElement('textarea');
+        t.value = texto; document.body.appendChild(t); t.select();
+        try { document.execCommand('copy'); } catch (e2) { /* sin portapapeles */ }
+        t.remove();
+      }
+      avisar(mensaje || 'Copiado ✓');
+    }
+
+    const telWhatsApp = (tel) => {
+      let d = String(tel || '').replace(/\D/g, '');
+      if (d.length === 9 && d.startsWith('9')) d = '56' + d;   // celular chileno sin código de país
+      return d;
+    };
+    const textoTope = (d) => Number(d.tope) > 0 ? ` (máximo ${fmtMoneda(d.tope)})` : '';
+    const linkAmigo = (codigo) => `${window.location.origin}/club.html?c=${encodeURIComponent(codigo)}`;
+    const linkReserva = (codigo) => `${window.location.origin}/reservar.html?codigo=${encodeURIComponent(codigo)}`;
+
+    // Mensaje que el cliente manda a sus amigos (editable en Configuración → Mensajes al cliente)
+    function mensajeCompartir(d) {
+      const tpl = (d.taller && d.taller.mensaje_compartir) || PLANTILLAS_WHATSAPP.wa_compartir_codigo.texto;
+      const valores = { taller: (d.taller && d.taller.nombre) || 'Autonova', codigo: d.codigo, descuento: `${fmtPorcentaje(d.pct)}%`,
+                        tope_texto: textoTope(d), link_club: linkAmigo(d.codigo) };
+      return String(tpl).replace(/\{(\w+)\}/g, (m, k) => (valores[k] != null ? String(valores[k]) : m)).trim();
+    }
+
+    function bloqueInstagram(d) {
+      const url = instagramUrl({ instagram: d.taller && d.taller.instagram });
+      if (!url) return '';
+      const usuario = '@' + url.replace(/^https:\/\/instagram\.com\//, '');
+      return `
+        <div class="panel ig">
+          <div class="ig-icono" aria-hidden="true">📸</div>
+          <div>
+            <a href="${esc(url)}" target="_blank" rel="noopener">Síguenos en Instagram ${esc(usuario)}</a>
+            <p>Trabajos reales, consejos para tu auto y promociones antes que nadie.</p>
+          </div>
+        </div>`;
+    }
+
+    function vistaAmigo(d) {
+      const taller = (d.taller && d.taller.nombre) || 'Autonova';
+      const tel = telWhatsApp(d.taller && d.taller.telefono);
+      const textoWa = `Hola ${taller}, vengo recomendado por ${d.nombre} con el código ${d.codigo}. Quiero agendar una hora.`;
+      document.title = `${d.nombre} te regala ${fmtPorcentaje(d.pct)}% · ${taller}`;
+      cont.innerHTML = `
+        <p class="eyebrow">Club ${esc(taller)} · Recomendado</p>
+        <h1>${esc(d.nombre)} te regala <span class="oro">${esc(fmtPorcentaje(d.pct))}% de descuento</span></h1>
+        <p class="sub">en tu primera visita a <strong>${esc(taller)}</strong>${esc(textoTope(d))}. Mecánica de confianza, con diagnóstico claro y fotos de cada trabajo.</p>
+        <div class="ticket">
+          <small>Tu código</small>
+          <div class="codigo">${esc(d.codigo)}</div>
+          <span class="pct">${esc(fmtPorcentaje(d.pct))}% OFF · primera visita</span>
+        </div>
+        <div class="acciones">
+          <a class="btn-club principal" href="${esc(linkReserva(d.codigo))}">📅 Reservar con mi descuento</a>
+          ${tel ? `<a class="btn-club wa" href="https://wa.me/${tel}?text=${encodeURIComponent(textoWa)}" target="_blank" rel="noopener">💬 Prefiero escribir por WhatsApp</a>` : ''}
+        </div>
+        <div class="panel">
+          <h2>Así de simple</h2>
+          <ol class="pasos">
+            <li><div class="n">1</div><div><strong>Reserva en línea</strong><span>Elige día y hora. Tu código ya va puesto.</span></div></li>
+            <li><div class="n">2</div><div><strong>Trae tu vehículo</strong><span>El descuento queda aplicado en tu orden de trabajo.</span></div></li>
+            <li><div class="n">3</div><div><strong>Paga menos y únete al Club</strong><span>Recibes tu propio código: cuando tus amigos vengan, ganas cupones de descuento.</span></div></li>
+          </ol>
+        </div>
+        ${bloqueInstagram(d)}
+        <p class="letra-chica">Válido para clientes nuevos en su primera orden de trabajo. ${esc(fmtPorcentaje(d.pct))}% sobre el total del trabajo${esc(textoTope(d))}. No acumulable con otras promociones. Sujeto a disponibilidad de agenda.</p>`;
+    }
+
+    function vistaCompartir(d) {
+      const taller = (d.taller && d.taller.nombre) || 'Autonova';
+      const mensaje = mensajeCompartir(d);
+      document.title = `Tu código ${d.codigo} · Club ${taller}`;
+      cont.innerHTML = `
+        <p class="eyebrow">Club ${esc(taller)} · Recomienda y gana</p>
+        <h1>Comparte y <span class="oro">gana cupones</span></h1>
+        <p class="sub">Tus amigos tienen <strong>${esc(fmtPorcentaje(d.pct))}% de descuento</strong> en su primera visita${esc(textoTope(d))}. Y por <strong>cada amigo</strong> que haga su servicio, a ti te llega un <strong>cupón de ${esc(fmtPorcentaje(d.pct))}%</strong> para tu próxima visita.</p>
+        <div class="ticket">
+          <small>Tu código personal</small>
+          <div class="codigo">${esc(d.codigo)}</div>
+          <span class="pct">Sin límite de amigos</span>
+        </div>
+        <div class="acciones">
+          <a class="btn-club wa" href="https://wa.me/?text=${encodeURIComponent(mensaje)}" target="_blank" rel="noopener">💬 Compartir por WhatsApp</a>
+          ${navigator.share ? '<button type="button" class="btn-club principal" id="btn-compartir">📤 Compartir en Instagram u otra app</button>' : ''}
+          <div class="fila-botones">
+            <button type="button" class="btn-club borde" id="btn-copiar-msg">📋 Copiar mensaje</button>
+            <button type="button" class="btn-club borde" id="btn-copiar-link">🔗 Copiar link</button>
+          </div>
+        </div>
+        <div class="panel">
+          <h2>Cómo ganas</h2>
+          <ol class="pasos">
+            <li><div class="n">1</div><div><strong>Comparte tu código</strong><span>Por WhatsApp, en tus historias o de boca en boca: ${esc(d.codigo)}.</span></div></li>
+            <li><div class="n">2</div><div><strong>Tu amigo viene con ${esc(fmtPorcentaje(d.pct))}% menos</strong><span>Reserva con tu link o dice tu código al llegar.</span></div></li>
+            <li><div class="n">3</div><div><strong>Te llega tu cupón por correo</strong><span>Cuando tu amigo pague su servicio, recibes un cupón personal de ${esc(fmtPorcentaje(d.pct))}%.</span></div></li>
+          </ol>
+        </div>
+        ${bloqueInstagram(d)}
+        <p class="letra-chica">El descuento del amigo es para clientes nuevos, en su primera orden de trabajo. Los cupones son personales, de un solo uso y tienen fecha de vencimiento. ${esc(fmtPorcentaje(d.pct))}% sobre el total del trabajo${esc(textoTope(d))}; no acumulable con otras promociones.</p>`;
+      document.getElementById('btn-copiar-msg').addEventListener('click', () => copiar(mensaje, 'Mensaje copiado ✓ Pégalo donde quieras'));
+      document.getElementById('btn-copiar-link').addEventListener('click', () => copiar(linkAmigo(d.codigo), 'Link copiado ✓'));
+      const btnShare = document.getElementById('btn-compartir');
+      if (btnShare) btnShare.addEventListener('click', async () => {
+        try { await navigator.share({ title: `Club ${taller}`, text: mensaje }); } catch (e) { /* el cliente cerró el menú */ }
+      });
+    }
+
+    function vistaPremio(d) {
+      const taller = (d.taller && d.taller.nombre) || 'Autonova';
+      cont.innerHTML = `
+        <p class="eyebrow">Club ${esc(taller)} · Premio</p>
+        <h1>Tu cupón de <span class="oro">${esc(fmtPorcentaje(d.pct))}%</span></h1>
+        <p class="sub">Es personal y se usa una sola vez${d.vence ? `, hasta el <strong>${esc(fmtFecha(d.vence))}</strong>` : ''}${esc(textoTope(d))}.</p>
+        <div class="ticket"><small>Cupón</small><div class="codigo">${esc(d.codigo)}</div><span class="pct">${esc(fmtPorcentaje(d.pct))}% OFF</span></div>
+        <div class="acciones"><a class="btn-club principal" href="${esc(linkReserva(d.codigo))}">📅 Reservar y usar mi cupón</a></div>
+        ${bloqueInstagram(d)}`;
+    }
+
+    function vistaError(texto, d) {
+      const taller = (d && d.taller && d.taller.nombre) || 'Autonova';
+      const tel = telWhatsApp(d && d.taller && d.taller.telefono);
+      cont.innerHTML = `
+        <div class="error-club">
+          <p class="eyebrow">Club ${esc(taller)}</p>
+          <h1>Código no disponible</h1>
+          <p>${esc(texto)}</p>
+          <div class="acciones" style="margin-top:1.25rem;">
+            <a class="btn-club principal" href="reservar.html">📅 Reservar una hora</a>
+            ${tel ? `<a class="btn-club wa" href="https://wa.me/${tel}" target="_blank" rel="noopener">💬 Escribir por WhatsApp</a>` : ''}
+          </div>
+        </div>
+        ${d ? bloqueInstagram(d) : ''}`;
+    }
+
+    (async () => {
+      if (!codigoUrl) { vistaError('Falta el código en el link. Pídele a quien te lo envió que lo comparta de nuevo.'); return; }
+      const { data, error } = await supabaseClient.rpc('club_info', { p_codigo: codigoUrl });
+      if (error || !data) { vistaError('No pudimos revisar el código en este momento. Intenta de nuevo en un rato.'); return; }
+      if (!data.ok) { vistaError(data.error || 'Ese código no es válido.', data); return; }
+      if (data.tipo === 'premio') vistaPremio(data);
+      else if (modoCompartir) vistaCompartir(data);
+      else vistaAmigo(data);
+    })();
+  </script>
+</body>
+</html>
