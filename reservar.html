@@ -100,6 +100,13 @@
       <!-- Paso 3: datos -->
       <div class="paso" id="p-datos" hidden>
         <h3>3. Tus datos</h3>
+        <!-- Club: código de un amigo o cupón de premio. Se valida al instante con los datos de la persona (v69) -->
+        <div class="codigo-reserva" id="g-codigo">
+          <label for="r-codigo">🎁 ¿Tienes un código de descuento?</label>
+          <input type="text" id="r-codigo" placeholder="Ej: JUAN-4K7 o PREMIO-7QX2M" maxlength="20" autocomplete="off" style="text-transform:uppercase;" />
+          <p class="reconocer-estado" id="r-codigo-estado" style="margin:0.3rem 0 0;">Si alguien te recomendó, escribe su código aquí. Es opcional.</p>
+          <div class="bases-codigo" id="r-codigo-bases" hidden></div>
+        </div>
         <div class="form-group" id="g-rut">
           <label for="r-rut">RUT *</label>
           <input type="text" id="r-rut" placeholder="12.345.678-9" maxlength="12" autocomplete="off" />
@@ -171,11 +178,6 @@
           <input type="text" id="r-trampa" name="trampa_q7x" tabindex="-1" autocomplete="off" />
         </div>
         <div class="form-group" id="g-notas" hidden><label for="r-notas">Comentario (opcional)</label><input type="text" id="r-notas" /></div>
-        <div class="form-group" id="g-codigo" hidden>
-          <label for="r-codigo">🎁 Código de descuento (opcional)</label>
-          <input type="text" id="r-codigo" placeholder="Ej: JUAN-4K7" maxlength="20" autocomplete="off" style="text-transform:uppercase;" />
-          <p class="reconocer-estado" id="r-codigo-estado" style="margin:0.3rem 0 0;"></p>
-        </div>
         <button type="button" id="reservar-btn" hidden>Confirmar reserva</button>
         <p class="error-message" id="error"></p>
       </div>
@@ -344,8 +346,9 @@
 
     // ---------- Código del Club (amigo que recomendó o cupón de premio), sql/v67 ----------
     let clubDisponible = true;     // pasa a false si el servidor aún no tiene el Club
-    let codigoReserva = null;      // código validado (como está registrado)
-    let codigoRevisado = '';       // texto que se validó por última vez
+    let codigoReserva = null;      // código válido Y que le aplica a esta persona (como está registrado)
+    let codigoRevisado = '';       // código + datos de la persona que se validaron por última vez
+    let codigoNoAplica = false;    // el código existe pero no corresponde (ya es cliente, es suyo, etc.)
     const setEstadoCodigo = (texto, clase) => {
       const el = document.getElementById('r-codigo-estado');
       el.textContent = texto;
@@ -354,30 +357,74 @@
     function textoCodigo(d) {
       const tope = Number(d.tope) > 0 ? ` (máximo ${fmtMoneda(d.tope)})` : '';
       return d.tipo === 'premio'
-        ? `✓ Cupón de premio: ${fmtPorcentaje(d.pct)}% de descuento${tope}. Se aplica al ingresar tu vehículo.`
+        ? `✓ Cupón de premio: ${fmtPorcentaje(d.pct)}% de descuento${tope}. Se aplica al dejar tu vehículo.`
         : `✓ Código de ${d.nombre}: tienes ${fmtPorcentaje(d.pct)}% de descuento en tu primera visita${tope}.`;
+    }
+    // Datos que ya escribió la persona: con ellos el servidor revisa si el código le corresponde
+    function identidadReserva() {
+      const rutOk = estadoRut === 'reconocido' || estadoRut === 'nuevo';
+      let patente = '';
+      if (vehiculoElegido && vehiculoElegido !== '__nuevo__' && reconocido) {
+        const v = (reconocido.vehiculos || []).find(x => x.id === vehiculoElegido);
+        patente = v ? v.patente : '';
+      }
+      if (!patente) patente = normalizarPatente(document.getElementById('r-patente').value || '');
+      return {
+        rut: rutOk ? formatearRut(document.getElementById('r-rut').value) : '',
+        telefono: document.getElementById('r-tel').value.trim(),
+        patente: patenteValida(patente) ? patente : '',
+      };
+    }
+    // Bases del código, ahí mismo (misma redacción que la página del Club y los correos)
+    function mostrarBasesCodigo(d) {
+      const cont = document.getElementById('r-codigo-bases');
+      if (!d) { cont.hidden = true; cont.innerHTML = ''; return; }
+      const c = condicionesClub({ pct: d.pct, tope: d.tope, premio_dias: d.premio_dias }, (d.taller && d.taller.nombre) || 'el taller');
+      const lista = d.tipo === 'premio' ? c.cliente.slice(1, 4) : c.amigo;
+      cont.innerHTML = `<strong>${d.tipo === 'premio' ? 'Condiciones de tu cupón' : 'Condiciones de tu descuento'}</strong>
+        <ul>${lista.map(t => `<li>${htmlSeguro(t)}</li>`).join('')}</ul>
+        <a href="club.html?c=${encodeURIComponent(d.codigo)}#condiciones" target="_blank" rel="noopener">Ver condiciones completas</a>`;
+      cont.hidden = false;
     }
     async function validarCodigoReserva() {
       const texto = document.getElementById('r-codigo').value.trim().toUpperCase();
-      if (texto === codigoRevisado) return;
-      codigoRevisado = texto;
+      const id = identidadReserva();
+      const clave = [texto, id.rut, id.telefono, id.patente].join('|');
+      if (clave === codigoRevisado) return;
+      codigoRevisado = clave;
       codigoReserva = null;
-      if (!texto) { setEstadoCodigo(''); return; }
+      codigoNoAplica = false;
+      if (!texto) { setEstadoCodigo('Si alguien te recomendó, escribe su código aquí. Es opcional.'); mostrarBasesCodigo(null); document.getElementById('banner-codigo').hidden = true; return; }
       setEstadoCodigo('Revisando el código…');
-      const { data, error } = await supabaseClient.rpc('club_info', { p_codigo: texto });
-      if (texto !== codigoRevisado) return;   // se siguió escribiendo
+      let { data, error } = await supabaseClient.rpc('club_validar_reserva', { p_codigo: texto, p_rut: id.rut || null, p_telefono: id.telefono || null, p_patente: id.patente || null });
+      if (error && error.code === 'PGRST202') ({ data, error } = await supabaseClient.rpc('club_info', { p_codigo: texto }));   // aún sin v69
+      if (clave !== codigoRevisado) return;   // se siguió escribiendo
       if (error) {
         if (error.code === 'PGRST202') { clubDisponible = false; document.getElementById('g-codigo').hidden = true; }
         setEstadoCodigo('');
         return;
       }
-      if (data && data.ok) {
+      if (data && data.ok && data.aplica === false) {
+        codigoNoAplica = true;
+        setEstadoCodigo(`✗ ${data.mensaje || 'Este código no aplica para ti.'}`, 'error');
+        mostrarBasesCodigo(data);
+        document.getElementById('banner-codigo').hidden = true;
+      } else if (data && data.ok) {
         codigoReserva = data.codigo;
-        setEstadoCodigo(textoCodigo(data), 'ok');
+        setEstadoCodigo(textoCodigo(data) + (data.aplica == null && data.tipo !== 'premio' ? ' Lo confirmamos con tus datos: es solo para clientes nuevos.' : ''), 'ok');
+        mostrarBasesCodigo(data);
         mostrarBannerCodigo(data);
       } else {
-        setEstadoCodigo((data && data.error) || 'Código no válido.', 'error');
+        setEstadoCodigo(`✗ ${(data && data.error) || 'Código no válido.'}`, 'error');
+        mostrarBasesCodigo(null);
+        document.getElementById('banner-codigo').hidden = true;
       }
+    }
+    // Cuando cambian el RUT, el teléfono o el vehículo, se vuelve a revisar (sin esperar a «Confirmar»)
+    function revalidarCodigo() {
+      if (!document.getElementById('r-codigo').value.trim()) return;
+      clearTimeout(revalidarCodigo.t);
+      revalidarCodigo.t = setTimeout(validarCodigoReserva, 600);
     }
     function mostrarBannerCodigo(d) {
       const b = document.getElementById('banner-codigo');
@@ -414,11 +461,12 @@
       }
       mostrar('g-vehiculo', nuevo || clasico || (reco && vehiculoElegido === '__nuevo__'));
       mostrar('g-notas', reco || nuevo || clasico);
-      mostrar('g-codigo', (reco || nuevo || clasico) && clubDisponible);
+      mostrar('g-codigo', clubDisponible);
       mostrar('g-correo', reco || nuevo || clasico);
       mostrar('reservar-btn', reco || nuevo || clasico);
       document.getElementById('g-rut').hidden = clasico;
       if (reco) renderVehiculosReconocido();
+      revalidarCodigo();   // con el RUT o el vehículo ya elegidos, el código se vuelve a revisar
     }
 
     function renderVehiculosReconocido() {
@@ -616,7 +664,9 @@
       if (clubDisponible && !document.getElementById('g-codigo').hidden) {
         await validarCodigoReserva();
         if (document.getElementById('r-codigo').value.trim() && !codigoReserva) {
-          errorEl.textContent = 'El código de descuento no es válido: corrígelo o bórralo para continuar.';
+          errorEl.textContent = codigoNoAplica
+            ? 'El código de descuento no aplica para ti (mira el aviso bajo el código): bórralo para continuar con tu reserva.'
+            : 'El código de descuento no es válido: corrígelo o bórralo para continuar.';
           document.getElementById('r-codigo').focus();
           return;
         }
@@ -750,6 +800,9 @@
       codigoTimer = setTimeout(validarCodigoReserva, 700);
     });
     campoCodigo.addEventListener('blur', () => { clearTimeout(codigoTimer); validarCodigoReserva(); });
+    // Teléfono, patente o vehículo elegido: con más datos, el código se vuelve a revisar (si es cliente nuevo)
+    ['r-tel', 'r-patente'].forEach(id => document.getElementById(id).addEventListener('input', revalidarCodigo));
+    document.getElementById('r-vehiculos').addEventListener('change', revalidarCodigo);
   </script>
 </body>
 </html>

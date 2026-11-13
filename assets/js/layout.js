@@ -599,6 +599,8 @@ function botonCorreo(url) {
 function lineaCorreo(l) {
   let h = escCorreo(l).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" style="color:#b8260c;word-break:break-all;">$1</a>');
   if (/^[▸•-] /.test(l)) h = '<span style="color:#d4a84b;font-weight:bold;">▸</span>&nbsp;' + h.slice(2);
+  // Línea en MAYÚSCULAS = subtítulo destacado (ej. «CLUB AUTONOVA · RECOMIENDA Y GANA»)
+  if (!/[a-záéíóúüñ]/.test(l) && /[A-ZÁÉÍÓÚÑ]{3}/.test(l)) h = '<strong style="font-family:Impact,Arial Black,Arial,sans-serif;font-weight:normal;font-size:20px;letter-spacing:1px;color:#0d0e11;">' + h + '</strong>';
   return h;
 }
 function correoHtml(asunto, texto, cfg) {
