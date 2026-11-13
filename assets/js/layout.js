@@ -753,6 +753,7 @@ const EVENTOS_CORREO = {
   cobranza_ot:        'Cobranza de OT entregadas con saldo (días 3, 5 y 15, después de confirmarla en Inicio)',
   premio_referido:    'Club: cupón de premio al cliente que recomendó (cuando su referido paga la OT)',
   encuesta:           'Encuesta de satisfacción a los 7 días de entregado (la envía Supabase sola, desde las 10:00)',
+  te_extranamos:      'Club: «Te extrañamos», cupón de regreso a clientes que no vienen hace meses (si está encendido en Club Autonova)',
 };
 // Los recordatorios y la cobranza los envía Supabase solo, cada día desde las 10:00 (sql/v64), aunque la app esté cerrada.
 
@@ -898,8 +899,15 @@ const PLANTILLAS_CORREO = {
   premio_referido: {
     titulo: 'Club: premio por referido (cupón; lo envía Supabase solo)',
     asunto: '🎁 Ganaste un cupón de {descuento} en {taller}',
-    texto: 'Hola {nombre},\n\n¡Gracias por recomendarnos! {referido} ya hizo su servicio con nosotros gracias a ti, así que ganaste un cupón de {descuento} de descuento{tope_texto} para tu próxima visita.\n\n🎟 Tu cupón: {cupon}\n📅 Válido hasta el {vence}.\n\nCómo usarlo: escríbelo al reservar en línea o dilo al dejar tu vehículo (después ya no se puede aplicar).\nReserva aquí: {link_reserva}\n\nCondiciones: es personal e intransferible, se usa una sola vez y va un cupón por orden de trabajo. El descuento es sobre el valor del trabajo sin IVA{tope_texto}, no se acumula con otras promociones, no aplica a bodegaje y no es canjeable por dinero.\n\nSigue compartiendo tu código {codigo}: por cada amigo que venga ganas un cupón nuevo.\n{link_compartir}\n\n{firma}',
-    variables: ['nombre', 'referido', 'descuento', 'tope_texto', 'cupon', 'vence', 'link_reserva', 'codigo', 'link_compartir', 'taller', 'firma'],
+    texto: 'Hola {nombre},\n\n{bloque_embajador}¡Gracias por recomendarnos! {referido} ya hizo su servicio con nosotros gracias a ti, así que ganaste un cupón de {descuento} de descuento{tope_texto} para tu próxima visita.\n\n🎟 Tu cupón: {cupon}\n📅 Válido hasta el {vence}.\n\nCómo usarlo: escríbelo al reservar en línea o dilo al dejar tu vehículo (después ya no se puede aplicar).\nReserva aquí: {link_reserva}\n\nCondiciones: es personal e intransferible, se usa una sola vez y va un cupón por orden de trabajo. El descuento es sobre el valor del trabajo sin IVA{tope_texto}, no se acumula con otras promociones, no aplica a bodegaje y no es canjeable por dinero.\n\nSigue compartiendo tu código {codigo}: por cada amigo que venga ganas un cupón nuevo.\n{link_compartir}\n\n{firma}',
+    variables: ['nombre', 'referido', 'descuento', 'tope_texto', 'cupon', 'vence', 'link_reserva', 'codigo', 'link_compartir', 'bloque_embajador', 'amigos', 'taller', 'firma'],
+  },
+  // Lo envía Supabase solo (sql/v71, te_extranamos): si se cambia el texto por defecto, cambiarlo también allá
+  te_extranamos: {
+    titulo: 'Club: «Te extrañamos», cupón de regreso (lo envía Supabase solo)',
+    asunto: '💌 {nombre}, te extrañamos: {descuento} de regalo para tu vuelta · {taller}',
+    texto: 'Hola {nombre},\n\nHace un tiempo que no vemos {vehiculo} por el taller y queremos que siga andando como nuevo.\n\nPor eso te regalamos un cupón de {descuento} de descuento{tope_texto} para tu próxima visita:\n\n🎟 Tu cupón: {cupon}\n📅 Válido hasta el {vence}.\n\nReserva tu hora aquí (el cupón ya va puesto):\n{link_reserva}\n\n¿Toca mantención, revisión de frenos o la revisión técnica? Escríbenos y te ayudamos.\n\nCondiciones: es personal, de un solo uso, sobre el valor del trabajo sin IVA{tope_texto}, no se acumula con otras promociones y se usa al reservar o al dejar tu vehículo.\n\n{firma}',
+    variables: ['nombre', 'vehiculo', 'descuento', 'tope_texto', 'cupon', 'vence', 'link_reserva', 'taller', 'firma'],
   },
   // Lo envía Supabase solo (sql/v70, enviar_encuestas): si se cambia el texto por defecto, cambiarlo también allá
   encuesta_7dias: {
@@ -1035,6 +1043,8 @@ const DESCRIPCION_VARIABLES_CORREO = {
   tope_texto: 'el máximo del descuento, ej. « (máximo $30.000)»',
   cupon: 'código del cupón de premio (ej. PREMIO-7QX2M)',
   link_encuesta: 'link de la encuesta de satisfacción (30 segundos)',
+  bloque_embajador: 'párrafo de felicitación cuando el cupón es de Embajador (vacío en los demás)',
+  amigos: 'cuántos amigos ha recomendado el cliente',
   validez_texto: 'frase con los días que le quedan o «hoy es el último día»',
   link_reserva: 'link para reservar hora en línea (queda anotado el N° de cotización)',
   fecha_entrega: 'fecha en que se entregó el vehículo',
@@ -1081,7 +1091,11 @@ function correoEstadoOT(o, estado, cfg) {
 
 // ---------- Club Autonova (referidos) ----------
 // Configuración en taller_config.club (Configuración → Club Autonova). Los mismos valores por defecto que _club_cfg() (sql/v67).
-const CLUB_POR_DEFECTO = { activo: true, pct: 15, tope: 30000, premio_dias: 90, instagram: '_autonova_' };
+const CLUB_POR_DEFECTO = {
+  activo: true, pct: 15, tope: 30000, premio_dias: 90, instagram: '_autonova_',
+  embajador: { cada: 3, pct: 30, tope: 60000 },                                                  // cada N amigos, cupón mayor
+  te_extranamos: { activo: false, meses: 6, pct: 10, tope: 20000, dias: 30, por_dia: 20 },       // cupón de regreso (sql/v71)
+};
 
 // ---------- Encuesta de satisfacción (sql/v70) ----------
 // Configuración en taller_config.encuesta (Configuración → Encuesta y reseñas). Mismos valores que _encuesta_cfg().
@@ -1141,13 +1155,39 @@ function condicionesClub(c, taller) {
     ],
     cliente: [
       `Ganas un cupón de ${pct}${tope ? ` (máximo ${tope})` : ''} por cada amigo que pague completo y retire su vehículo. Sin límite de amigos.`,
+      ...(c.embajador && Number(c.embajador.cada) > 0 && Number(c.embajador.pct) > 0
+        ? [`🏆 Premio Embajador: cada ${Number(c.embajador.cada)} amigos, ese cupón es de ${fmtPorcentaje(c.embajador.pct)}%${Number(c.embajador.tope) > 0 ? ` (máximo ${fmtMoneda(c.embajador.tope)})` : ''}.`]
+        : []),
       `Te lo enviamos por correo (o WhatsApp si no tenemos tu correo) y vence a los ${dias} días de emitido.`,
       'Es personal e intransferible, se usa una sola vez y va un cupón por orden de trabajo. Se da al reservar o al dejar tu vehículo; después ya no se aplica.',
       'No es canjeable por dinero ni se acumula con otros descuentos.',
       'Si el trabajo de tu amigo se anula o no se paga, no se genera cupón.',
     ],
+    // Bases de un cupón personal (premio, Embajador o «te extrañamos»)
+    cupon: [
+      `Vence en la fecha indicada en el cupón (los de premio, a los ${dias} días de emitidos).`,
+      'Es personal e intransferible, se usa una sola vez y va un cupón por orden de trabajo. Se da al reservar o al dejar tu vehículo; después ya no se aplica.',
+      'No es canjeable por dinero ni se acumula con otros descuentos.',
+    ],
     general: `${taller} puede modificar o terminar el programa avisando en esta página; los cupones ya emitidos se respetan hasta su vencimiento.`,
   };
+}
+
+// Bases de una promoción o alianza (código creado en Club Autonova). d: lo que entrega club_info (sql/v71).
+function condicionesPromo(d, taller) {
+  taller = taller || 'el taller';
+  const pct = `${fmtPorcentaje(d.pct)}%`;
+  const tope = Number(d.tope) > 0 ? fmtMoneda(d.tope) : '';
+  const fecha = (f) => fmtFecha(String(f).slice(0, 10));
+  return [
+    `${pct} de descuento sobre el valor del trabajo sin IVA (mano de obra y repuestos)${tope ? `, con un máximo de ${tope} de descuento` : ''}. El IVA se calcula sobre el valor ya descontado.`,
+    d.hasta ? `Válida${d.desde ? ` desde el ${fecha(d.desde)}` : ''} hasta el ${fecha(d.hasta)}.` : (d.desde ? `Válida desde el ${fecha(d.desde)}.` : 'Válida mientras la promoción esté activa.'),
+    ...(d.max_usos ? [`Cupos limitados${d.quedan != null ? `: quedan ${d.quedan} de ${d.max_usos}` : ''}.`] : []),
+    ...(d.solo_nuevos ? [`Es solo para personas que nunca se han atendido en ${taller}.`] : []),
+    ...(d.un_uso ? ['Se usa una vez por persona y por vehículo.'] : []),
+    'El código se da al reservar en línea o al dejar el vehículo. Si se menciona después (por ejemplo, al pagar), ya no se aplica.',
+    'No se acumula con otros descuentos ni promociones y no aplica a cobros de bodegaje.',
+  ];
 }
 
 // Valores del Club para los mensajes (al entregar el vehículo y botones de Club Autonova).

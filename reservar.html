@@ -356,9 +356,10 @@
     };
     function textoCodigo(d) {
       const tope = Number(d.tope) > 0 ? ` (máximo ${fmtMoneda(d.tope)})` : '';
-      return d.tipo === 'premio'
-        ? `✓ Cupón de premio: ${fmtPorcentaje(d.pct)}% de descuento${tope}. Se aplica al dejar tu vehículo.`
-        : `✓ Código de ${d.nombre}: tienes ${fmtPorcentaje(d.pct)}% de descuento en tu primera visita${tope}.`;
+      const nombresCupon = { embajador: 'Cupón Embajador 🏆', te_extranamos: 'Cupón de regreso' };
+      if (d.tipo === 'promo') return `✓ Promoción ${d.nombre}: ${fmtPorcentaje(d.pct)}% de descuento${tope}${d.hasta ? `, válida hasta el ${fmtFecha(String(d.hasta).slice(0, 10))}` : ''}.`;
+      if (d.tipo === 'premio') return `✓ ${nombresCupon[d.cupon_tipo] || 'Cupón de premio'}: ${fmtPorcentaje(d.pct)}% de descuento${tope}. Se aplica al dejar tu vehículo.`;
+      return `✓ Código de ${d.nombre}: tienes ${fmtPorcentaje(d.pct)}% de descuento en tu primera visita${tope}.`;
     }
     // Datos que ya escribió la persona: con ellos el servidor revisa si el código le corresponde
     function identidadReserva() {
@@ -380,8 +381,8 @@
       const cont = document.getElementById('r-codigo-bases');
       if (!d) { cont.hidden = true; cont.innerHTML = ''; return; }
       const c = condicionesClub({ pct: d.pct, tope: d.tope, premio_dias: d.premio_dias }, (d.taller && d.taller.nombre) || 'el taller');
-      const lista = d.tipo === 'premio' ? c.cliente.slice(1, 4) : c.amigo;
-      cont.innerHTML = `<strong>${d.tipo === 'premio' ? 'Condiciones de tu cupón' : 'Condiciones de tu descuento'}</strong>
+      const lista = d.tipo === 'premio' ? c.cupon : (d.tipo === 'promo' ? condicionesPromo(d, (d.taller && d.taller.nombre) || 'el taller') : c.amigo);
+      cont.innerHTML = `<strong>${d.tipo === 'premio' ? 'Condiciones de tu cupón' : (d.tipo === 'promo' ? 'Condiciones de la promoción' : 'Condiciones de tu descuento')}</strong>
         <ul>${lista.map(t => `<li>${htmlSeguro(t)}</li>`).join('')}</ul>
         <a href="club.html?c=${encodeURIComponent(d.codigo)}#condiciones" target="_blank" rel="noopener">Ver condiciones completas</a>`;
       cont.hidden = false;
@@ -411,7 +412,9 @@
         document.getElementById('banner-codigo').hidden = true;
       } else if (data && data.ok) {
         codigoReserva = data.codigo;
-        setEstadoCodigo(textoCodigo(data) + (data.aplica == null && data.tipo !== 'premio' ? ' Lo confirmamos con tus datos: es solo para clientes nuevos.' : ''), 'ok');
+        const pendienteDatos = data.aplica == null && data.tipo !== 'premio'
+          ? (data.tipo === 'promo' && !data.solo_nuevos ? ' Lo confirmamos con tus datos: es una vez por persona.' : ' Lo confirmamos con tus datos: es solo para clientes nuevos.') : '';
+        setEstadoCodigo(textoCodigo(data) + pendienteDatos, 'ok');
         mostrarBasesCodigo(data);
         mostrarBannerCodigo(data);
       } else {
@@ -429,7 +432,9 @@
     function mostrarBannerCodigo(d) {
       const b = document.getElementById('banner-codigo');
       if (!b) return;
-      b.innerHTML = d.tipo === 'premio'
+      b.innerHTML = d.tipo === 'promo'
+        ? `🎁 <strong>Promoción ${htmlSeguro(d.nombre)}:</strong> ${fmtPorcentaje(d.pct)}% de descuento${Number(d.tope) > 0 ? ` (máximo ${fmtMoneda(d.tope)})` : ''}.`
+        : d.tipo === 'premio'
         ? `🎁 <strong>Tu cupón ${htmlSeguro(d.codigo)}</strong> quedará aplicado a esta reserva.`
         : `🎁 <strong>${htmlSeguro(d.nombre)} te recomendó:</strong> tienes ${fmtPorcentaje(d.pct)}% de descuento en tu primera visita${Number(d.tope) > 0 ? ` (máximo ${fmtMoneda(d.tope)})` : ''}.`;
       b.hidden = false;

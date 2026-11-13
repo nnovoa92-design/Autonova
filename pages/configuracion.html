@@ -287,6 +287,32 @@
             </div>
           </div>
           <p style="font-size:0.85rem; margin:0 0 0.75rem;" id="club-ejemplo"></p>
+
+          <h3 style="margin:1rem 0 0.25rem;">🏆 Premio Embajador</h3>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.4rem;">Cada cierta cantidad de amigos que traiga un cliente, su cupón de premio es mayor. 0 = sin premio Embajador.</p>
+          <div class="form-row">
+            <div class="form-group" style="max-width:170px;"><label for="emb-cada">Cada cuántos amigos</label><input type="number" id="emb-cada" min="0" max="20" step="1" value="3" /></div>
+            <div class="form-group" style="max-width:160px;"><label for="emb-pct">Cupón Embajador (%)</label><input type="number" id="emb-pct" min="1" max="70" step="1" value="30" /></div>
+            <div class="form-group" style="max-width:200px;"><label for="emb-tope">Tope (neto)</label><input type="number" id="emb-tope" min="0" step="1000" data-formato="precio" value="60000" /></div>
+          </div>
+
+          <h3 style="margin:1rem 0 0.25rem;">💌 Te extrañamos</h3>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.4rem;">
+            A los clientes que no vienen hace un tiempo les llega un correo con un cupón personal de regreso (sale entre las 11:00 y las 18:00).
+            Sale en tandas diarias para no pasar el límite de Gmail (unos 100 correos al día en total). A cada cliente se le envía como máximo
+            una vez en ese período y nunca si ya tiene una hora agendada.
+          </p>
+          <label style="display:flex; gap:0.5rem; align-items:center; margin-bottom:0.5rem;">
+            <input type="checkbox" id="te-activo" style="width:auto;" /> Encender «Te extrañamos»
+          </label>
+          <div class="form-row">
+            <div class="form-group" style="max-width:190px;"><label for="te-meses">Meses sin venir</label><input type="number" id="te-meses" min="2" max="36" step="1" value="6" /></div>
+            <div class="form-group" style="max-width:160px;"><label for="te-pct">Cupón (%)</label><input type="number" id="te-pct" min="1" max="50" step="1" value="10" /></div>
+            <div class="form-group" style="max-width:190px;"><label for="te-tope">Tope (neto)</label><input type="number" id="te-tope" min="0" step="1000" data-formato="precio" value="20000" /></div>
+            <div class="form-group" style="max-width:170px;"><label for="te-dias">Válido por (días)</label><input type="number" id="te-dias" min="7" max="120" step="1" value="30" /></div>
+            <div class="form-group" style="max-width:170px;"><label for="te-por-dia">Correos por día</label><input type="number" id="te-por-dia" min="1" max="60" step="1" value="20" /></div>
+          </div>
+          <p style="font-size:0.85rem; margin:0 0 0.75rem;" id="te-previa"></p>
           <button type="button" id="guardar-club-btn">Guardar</button>
           <a class="btn btn-secondary" href="referidos.html" style="margin-left:0.4rem;">Ir a Club Autonova →</a>
           <p class="error-message" id="club-error"></p>
@@ -956,7 +982,14 @@
       const club = { ...valoresClub('JUAN-4K7', { nombre: document.getElementById('nombre').value || 'Tu taller', club: leerClubPantalla() }),
                      vence: sumarDiasYmd(hoyChile(), Number(document.getElementById('club-dias').value) || 90).split('-').reverse().join('-') };
       if (clave === 'premio_referido' || clave === 'wa_premio_referido') {
-        return { ...EJEMPLO_CORREO, ...club, nombre: 'Juan', link_reserva: `${window.location.origin}/reservar.html?codigo=PREMIO-7QX2M` };
+        return { ...EJEMPLO_CORREO, ...club, nombre: 'Juan', bloque_embajador: '', amigos: 1, link_reserva: `${window.location.origin}/reservar.html?codigo=PREMIO-7QX2M` };
+      }
+      if (clave === 'te_extranamos') {
+        const te = leerClubPantalla().te_extranamos;
+        return { ...EJEMPLO_CORREO, ...club, nombre: 'Juan', vehiculo: 'tu vehículo ABCD12 (Kia Rio)', cupon: 'VUELVE-7QX2M',
+                 descuento: `${te.pct}%`, tope_texto: topeClubTexto(te.tope),
+                 vence: sumarDiasYmd(hoyChile(), te.dias).split('-').reverse().join('-'),
+                 link_reserva: `${window.location.origin}/reservar.html?codigo=VUELVE-7QX2M` };
       }
       if (clave === 'wa_club_codigo') return { ...EJEMPLO_CORREO, ...club, nombre: 'Juan', vence: EJEMPLO_CORREO.vence };
       if (clave === 'inspeccion' || clave === 'wa_inspeccion') return { ...EJEMPLO_CORREO, vehiculo: 'el vehículo ABCD12 (Toyota Corolla)', resumen: '20 bien, 3 con atención, 0 malos' };
@@ -1377,7 +1410,42 @@
         tope: Math.max(0, Math.round(Number(document.getElementById('club-tope').value) || 0)),
         premio_dias: Math.round(Number(document.getElementById('club-dias').value)),
         instagram: document.getElementById('club-instagram').value.trim().replace(/^@/, ''),
+        embajador: {
+          cada: Math.max(0, Math.round(Number(document.getElementById('emb-cada').value) || 0)),
+          pct: Math.round(Number(document.getElementById('emb-pct').value)),
+          tope: Math.max(0, Math.round(Number(document.getElementById('emb-tope').value) || 0)),
+        },
+        te_extranamos: {
+          activo: document.getElementById('te-activo').checked,
+          meses: Math.round(Number(document.getElementById('te-meses').value)),
+          pct: Math.round(Number(document.getElementById('te-pct').value)),
+          tope: Math.max(0, Math.round(Number(document.getElementById('te-tope').value) || 0)),
+          dias: Math.round(Number(document.getElementById('te-dias').value)),
+          por_dia: Math.round(Number(document.getElementById('te-por-dia').value)),
+        },
       };
+    }
+    // Cuántos clientes recibirían hoy «Te extrañamos» (con correo, sin venir hace X meses, sin hora agendada)
+    async function previaTeExtranamos() {
+      const el = document.getElementById('te-previa');
+      const meses = Math.round(Number(document.getElementById('te-meses').value)) || 6;
+      const limite = new Date(); limite.setMonth(limite.getMonth() - meses);
+      const [o, cl, ci] = await Promise.all([
+        supabaseClient.from('ordenes').select('cliente_id, fecha_entrega, creado_en').neq('estado', 'cancelado').limit(5000),
+        supabaseClient.from('clientes').select('id, email').eq('activo', true).limit(5000),
+        supabaseClient.from('citas').select('cliente_id').in('estado', ['pendiente', 'confirmado']).gt('fecha_hora', new Date().toISOString()),
+      ]);
+      if (o.error || cl.error) { el.textContent = ''; return; }
+      const ultima = {};
+      (o.data || []).forEach(x => { const f = x.fecha_entrega || x.creado_en; if (x.cliente_id && (!ultima[x.cliente_id] || f > ultima[x.cliente_id])) ultima[x.cliente_id] = f; });
+      const conCita = new Set((ci.data || []).map(x => x.cliente_id));
+      const dormidos = (cl.data || []).filter(c => ultima[c.id] && new Date(ultima[c.id]) < limite && !conCita.has(c.id));
+      const conCorreo = dormidos.filter(c => correoValido(c.email)).length;
+      const porDia = Math.round(Number(document.getElementById('te-por-dia').value)) || 20;
+      el.innerHTML = dormidos.length
+        ? `Hoy hay <strong>${dormidos.length}</strong> cliente${dormidos.length === 1 ? '' : 's'} que no viene${dormidos.length === 1 ? '' : 'n'} hace más de ${meses} meses; <strong>${conCorreo}</strong> con correo` +
+          (conCorreo ? (Math.ceil(conCorreo / porDia) === 1 ? ` (a ${porDia} por día, salen todos el primer día).` : ` (a ${porDia} por día, se completan en unos ${Math.ceil(conCorreo / porDia)} días).`) : '. A los que no tienen correo puedes escribirles por WhatsApp.')
+        : `No hay clientes que lleven más de ${meses} meses sin venir.`;
     }
     function mostrarEjemploClub() {
       const c = leerClubPantalla();
@@ -1393,8 +1461,22 @@
       document.getElementById('club-tope').value = c.tope;
       document.getElementById('club-dias').value = c.premio_dias;
       document.getElementById('club-instagram').value = c.instagram || '';
+      const emb = { ...CLUB_POR_DEFECTO.embajador, ...(c.embajador || {}) };
+      document.getElementById('emb-cada').value = emb.cada;
+      document.getElementById('emb-pct').value = emb.pct;
+      document.getElementById('emb-tope').value = emb.tope;
+      const te = { ...CLUB_POR_DEFECTO.te_extranamos, ...(c.te_extranamos || {}) };
+      document.getElementById('te-activo').checked = !!te.activo;
+      document.getElementById('te-meses').value = te.meses;
+      document.getElementById('te-pct').value = te.pct;
+      document.getElementById('te-tope').value = te.tope;
+      document.getElementById('te-dias').value = te.dias;
+      document.getElementById('te-por-dia').value = te.por_dia;
       mostrarEjemploClub();
+      previaTeExtranamos();
     }
+    document.getElementById('te-meses').addEventListener('change', previaTeExtranamos);
+    document.getElementById('te-por-dia').addEventListener('change', previaTeExtranamos);
     ['club-activo', 'club-pct', 'club-tope', 'club-dias'].forEach(id => document.getElementById(id).addEventListener('input', mostrarEjemploClub));
     document.getElementById('club-activo').addEventListener('change', mostrarEjemploClub);
     document.getElementById('guardar-club-btn').addEventListener('click', async () => {
@@ -1403,6 +1485,12 @@
       const c = leerClubPantalla();
       if (!(c.pct >= 1 && c.pct <= 50)) { errorEl.textContent = 'El descuento debe estar entre 1% y 50%.'; return; }
       if (!(c.premio_dias >= 7 && c.premio_dias <= 365)) { errorEl.textContent = 'El cupón debe durar entre 7 y 365 días.'; return; }
+      if (c.embajador.cada > 0 && !(c.embajador.pct >= 1 && c.embajador.pct <= 70)) { errorEl.textContent = 'El cupón Embajador debe estar entre 1% y 70%.'; return; }
+      const te = c.te_extranamos;
+      if (!(te.meses >= 2 && te.meses <= 36)) { errorEl.textContent = '«Te extrañamos»: los meses deben estar entre 2 y 36.'; return; }
+      if (!(te.pct >= 1 && te.pct <= 50)) { errorEl.textContent = '«Te extrañamos»: el cupón debe estar entre 1% y 50%.'; return; }
+      if (!(te.dias >= 7 && te.dias <= 120)) { errorEl.textContent = '«Te extrañamos»: el cupón debe durar entre 7 y 120 días.'; return; }
+      if (!(te.por_dia >= 1 && te.por_dia <= 60)) { errorEl.textContent = '«Te extrañamos»: los correos por día deben estar entre 1 y 60 (Gmail permite unos 100 al día en total).'; return; }
       const { error } = await supabaseClient.from('taller_config').update({ club: c }).eq('id', 1);
       if (error) {
         errorEl.textContent = /club/.test(error.message || '')
@@ -1413,6 +1501,10 @@
       okEl.textContent = c.activo
         ? `Guardado: ${c.pct}% para el amigo y cupón de ${c.pct}% para quien recomienda${c.tope > 0 ? `, con tope de ${fmtMoneda(c.tope)}` : ''}.`
         : 'Guardado: el programa quedó apagado.';
+      okEl.textContent += c.te_extranamos.activo
+        ? ` «Te extrañamos» ENCENDIDO: ${c.te_extranamos.por_dia} correos por día como máximo, entre las 11:00 y las 18:00.`
+        : ' «Te extrañamos» apagado.';
+      previaTeExtranamos();
     });
 
     // ---------- Encuesta de satisfacción y reseñas en Google (sql/v70) ----------

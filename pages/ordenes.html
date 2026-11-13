@@ -140,7 +140,7 @@
             <div class="form-group codigo-ot" id="codigo-ot-grupo" style="max-width:340px;">
               <label for="codigo-ot">🎁 Código de descuento (Club)</label>
               <div id="codigo-ot-form" class="codigo-ot-form">
-                <input type="text" id="codigo-ot" placeholder="Ej: JUAN-4K7 o PREMIO-7QX2M" autocomplete="off" data-autolista="no" style="text-transform:uppercase;" />
+                <input type="text" id="codigo-ot" placeholder="Ej: JUAN-4K7, PREMIO-7QX2M o INSTA10" autocomplete="off" data-autolista="no" style="text-transform:uppercase;" />
                 <button type="button" id="codigo-ot-aplicar" class="btn-secondary">Aplicar</button>
               </div>
               <div id="codigo-ot-aplicado" class="codigo-ot-aplicado" hidden></div>
@@ -1231,7 +1231,7 @@
     // Línea del descuento: con código del Club se nombra el código (el cliente ve de dónde sale)
     function etiquetaDescuentoOT(o, t) {
       if (o && o.codigo_descuento) {
-        const tipo = o.codigo_tipo === 'premio' ? 'Cupón' : 'Código';
+        const tipo = o.codigo_tipo === 'premio' ? 'Cupón' : (o.codigo_tipo === 'promo' ? 'Promoción' : 'Código');
         return `Descuento ${tipo} ${o.codigo_descuento} (${fmtPorcentaje(o.codigo_pct)}%${Number(o.codigo_tope) > 0 && t.descuento >= Number(o.codigo_tope) - 0.5 ? `, máx. ${fmtMoneda(o.codigo_tope)}` : ''})`;
       }
       return etiquetaDescuento(t.descuentoSobre, t.descuentoPct, t.baseDescuento);
@@ -1374,7 +1374,14 @@
       if (!tieneCodigo) { aplicado.innerHTML = ''; return; }
       msg.textContent = '';
       const condicion = `${fmtPorcentaje(o.codigo_pct)}% de todo el trabajo${topeClubTexto(o.codigo_tope)}`;
-      let detalle = o.codigo_tipo === 'premio' ? 'Cupón de premio (personal)' : 'Referido';
+      let detalle = o.codigo_tipo === 'premio' ? 'Cupón personal' : (o.codigo_tipo === 'promo' ? 'Promoción' : 'Referido');
+      if (o.codigo_tipo === 'promo') {
+        if (!(o.codigo_descuento in nombreCodigoCache)) {
+          const { data } = await supabaseClient.from('promociones').select('nombre').ilike('codigo', o.codigo_descuento).maybeSingle();
+          nombreCodigoCache[o.codigo_descuento] = data ? data.nombre : '';
+        }
+        if (nombreCodigoCache[o.codigo_descuento]) detalle = `Promoción ${nombreCodigoCache[o.codigo_descuento]}`;
+      }
       if (o.codigo_tipo === 'referido') {
         if (!(o.codigo_descuento in nombreCodigoCache)) {
           const { data } = await supabaseClient.from('clientes').select('nombre').eq('codigo_referido', o.codigo_descuento).maybeSingle();
@@ -1411,7 +1418,9 @@
       }
       if (!data || !data.ok) { msg.textContent = (data && data.error) || 'No se pudo aplicar el código.'; return; }
       input.value = '';
-      mostrarToast(data.tipo === 'premio'
+      mostrarToast(data.tipo === 'promo'
+        ? `🎁 Promoción ${data.nombre} (${data.codigo}) aplicada: ${fmtPorcentaje(data.pct)}%${topeClubTexto(data.tope)}.`
+        : data.tipo === 'premio'
         ? `🎁 Cupón ${data.codigo} aplicado: ${fmtPorcentaje(data.pct)}%${topeClubTexto(data.tope)}.`
         : `🎁 Código de ${data.referente} aplicado: ${fmtPorcentaje(data.pct)}%${topeClubTexto(data.tope)}. Cuando esta OT quede pagada y entregada, ${String(data.referente || '').split(' ')[0]} recibe su cupón.`, 'ok', 10000);
       await abrirDetalle(ordenActual.id);

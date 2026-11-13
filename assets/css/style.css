@@ -1183,3 +1183,7 @@ input.cell-precio { min-width: 6.8rem; }
 .barra-mejora .barra div { height: 100%; background: #d4a84b; border-radius: 999px; }
 .barra-mejora strong { text-align: right; }
 @media (max-width: 560px) { .barra-mejora { grid-template-columns: 1fr 2rem; } .barra-mejora .barra { grid-column: 1 / -1; grid-row: 2; } }
+/* Club: formulario de promociones */
+.promo-form { border: 1px solid var(--color-border); border-radius: var(--radius); padding: 0.85rem; margin: 0.5rem 0 0.75rem; background: #fafbfc; }
+.promo-check { display: flex; gap: 0.5rem; align-items: center; font-size: 0.9rem; margin: 0.25rem 0; }
+.promo-check input { width: auto; }

@@ -153,7 +153,7 @@
     }
 
     // ---------- Condiciones claras (misma redacción que los mensajes: condicionesClub en layout.js) ----------
-    const condicionesDe = (d) => condicionesClub({ pct: d.pct, tope: d.tope, premio_dias: d.premio_dias }, (d.taller && d.taller.nombre) || 'Autonova');
+    const condicionesDe = (d) => condicionesClub({ pct: d.pct, tope: d.tope, premio_dias: d.premio_dias, embajador: d.embajador }, (d.taller && d.taller.nombre) || 'Autonova');
     function chips(lista) {
       return `<div class="chips-club">${lista.map(([icono, texto]) => `<span class="chip-club"><span aria-hidden="true">${icono}</span>${esc(texto)}</span>`).join('')}</div>
         <a class="ver-condiciones" href="#condiciones">Ver condiciones completas ↓</a>`;
@@ -169,8 +169,9 @@
         </div>`).join('');
       const secciones = {
         amigo: `<h3>Tu descuento</h3>${lista(c.amigo)}`,
+        promo: `<h3>Condiciones de la promoción</h3>${lista(condicionesPromo(d, (d.taller && d.taller.nombre) || 'Autonova'))}`,
         compartir: `<h3>Para tu amigo</h3>${lista(c.amigo)}<h3>Para ti (quien recomienda)</h3>${lista(c.cliente)}`,
-        premio: `<h3>Tu cupón</h3>${lista(c.cliente.slice(1, 4))}`,
+        premio: `<h3>Tu cupón</h3>${lista(c.cupon)}`,
       };
       return `
         <section class="panel condiciones" id="condiciones">
@@ -254,6 +255,36 @@
       });
     }
 
+    // Promoción o alianza (club.html?c=INSTA10): página para enlazar desde Instagram, volantes o empresas aliadas
+    function vistaPromo(d) {
+      const taller = (d.taller && d.taller.nombre) || 'Autonova';
+      const tel = telWhatsApp(d.taller && d.taller.telefono);
+      const textoWa = `Hola ${taller}, quiero agendar con la promoción ${d.codigo} (${d.nombre}).`;
+      const fecha = (f) => fmtFecha(String(f).slice(0, 10));
+      document.title = `${d.nombre} · ${fmtPorcentaje(d.pct)}% · ${taller}`;
+      cont.innerHTML = `
+        <p class="eyebrow">${esc(taller)} · Promoción</p>
+        <h1>${esc(d.nombre)}: <span class="oro">${esc(fmtPorcentaje(d.pct))}% de descuento</span></h1>
+        <p class="sub">en tu servicio en <strong>${esc(taller)}</strong>${esc(textoTope(d))}. Mecánica honesta, explicada para que entiendas qué se le hace a tu auto.</p>
+        <div class="ticket">
+          <small>Código de la promoción</small>
+          <div class="codigo">${esc(d.codigo)}</div>
+          <span class="pct">${esc(fmtPorcentaje(d.pct))}% OFF${d.hasta ? ` · hasta el ${esc(fecha(d.hasta))}` : ''}</span>
+        </div>
+        ${chips([
+          ...(d.solo_nuevos ? [['✅', 'Solo clientes nuevos']] : []),
+          ...(d.max_usos && d.quedan != null ? [['🔥', `Quedan ${d.quedan} cupos`]] : []),
+          ['🗣', 'Dilo al reservar o al dejar tu auto'],
+        ])}
+        <div class="acciones">
+          <a class="btn-club principal" href="${esc(linkReserva(d.codigo))}">📅 Reservar con la promoción</a>
+          ${tel ? `<a class="btn-club wa" href="https://wa.me/${tel}?text=${encodeURIComponent(textoWa)}" target="_blank" rel="noopener">💬 Prefiero escribir por WhatsApp</a>` : ''}
+        </div>
+        ${bloqueCondiciones(d, 'promo')}
+        ${bloqueInstagram(d)}
+        <p class="letra-chica">Reserva sujeta a disponibilidad de agenda.</p>`;
+    }
+
     function vistaPremio(d) {
       const taller = (d.taller && d.taller.nombre) || 'Autonova';
       cont.innerHTML = `
@@ -289,6 +320,7 @@
       if (error || !data) { vistaError('No pudimos revisar el código en este momento. Intenta de nuevo en un rato.'); return; }
       if (!data.ok) { vistaError(data.error || 'Ese código no es válido.', data); return; }
       if (data.tipo === 'premio') vistaPremio(data);
+      else if (data.tipo === 'promo') vistaPromo(data);
       else if (modoCompartir) vistaCompartir(data);
       else vistaAmigo(data);
     })();
