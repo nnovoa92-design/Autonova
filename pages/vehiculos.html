@@ -190,7 +190,8 @@
           tipo: 'cita', fecha: c.fecha_hora, futura,
           titulo: `Cita ${fmtHora(c.fecha_hora)}${c.origen === 'online' ? ' · reserva web' : ''}`,
           estado: badge(e.label, e.badge),
-          detalle: [c.trabajos ? c.trabajos.nombre : (c.descripcion || ''), c.notas, c.modalidad === 'terreno' ? 'A domicilio' : ''].filter(Boolean).join(' · '),
+          detalle: [c.trabajos ? c.trabajos.nombre : (c.descripcion || ''), c.notas, c.modalidad === 'terreno' ? 'A domicilio (en terreno)' : (c.modalidad === 'retiro' ? 'Retiro y entrega' : ''),
+            ...(Array.isArray(c.reagendamientos) ? c.reagendamientos.map(r => `🔁 Reagendada desde el ${fmtFecha(r.desde)} ${fmtHora(r.desde)} (${r.motivo_texto || 'sin motivo'})`) : [])].filter(Boolean).join(' · '),
           persona: quien(c) || (!c.cliente_id && c.nombre_contacto ? c.nombre_contacto : ''),
           link: `agenda.html?fecha=${ymdChile(c.fecha_hora)}`,
         });

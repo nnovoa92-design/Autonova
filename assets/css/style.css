@@ -1197,3 +1197,19 @@ input.cell-precio { min-width: 6.8rem; }
 /* Agenda: el listado «Bloqueos vigentes y próximos» ya no se muestra (se administran en Configuración → Bloqueos de agenda).
    Solo se oculta: el código de bloqueos sigue igual y los días bloqueados se ven en el calendario. */
 #bloqueos-card { display: none !important; }
+/* Agenda: reagendar cita */
+.reag-actual { background: #f6f7f9; border: 1px solid var(--color-border); border-radius: var(--radius); padding: 0.55rem 0.75rem; font-size: 0.9rem; display: grid; gap: 0.15rem; }
+.reag-nota { color: var(--color-text-muted); font-size: 0.8rem; margin: 0.4rem 0 0.6rem; }
+.reag-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 0.35rem; }
+.reag-slot { padding: 0.45rem 0.2rem; font-size: 0.85rem; background: #fff; color: var(--color-text); border: 1px solid var(--color-border); border-radius: var(--radius); }
+.reag-slot:hover { border-color: var(--color-primary); background: #fff4f2; color: var(--color-text); }
+.reag-slot.sel { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+.reag-slot.ocupado { background: #eef0f3; color: #a0a6b0; border-color: #eef0f3; cursor: not-allowed; text-decoration: line-through; }
+.reag-leyenda, .reag-vacio { color: var(--color-text-muted); font-size: 0.78rem; margin: 0.35rem 0 0.25rem; }
+.reag-aviso { font-size: 0.86rem; margin: 0.5rem 0; min-height: 1em; }
+.reag-aviso.ok { color: #1b6e3c; }
+.reag-aviso.alerta { color: #a93b33; }
+.reag-op { display: flex; gap: 0.45rem; align-items: center; font-size: 0.9rem; margin: 0.2rem 0; color: var(--color-text); }
+.reag-op input { width: auto; }
+.reag-slot.actual { background: #fff; color: var(--color-primary); border: 1px dashed var(--color-primary); text-decoration: none; cursor: default; }
+.reag-slot small { display: block; font-size: 0.65rem; }

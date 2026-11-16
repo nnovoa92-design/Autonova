@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Agenda · Autonova</title>
-  <link rel="stylesheet" href="../assets/css/style.css?v=20261113" />
+  <link rel="stylesheet" href="../assets/css/style.css?v=20261115" />
   <style>
     .horario-grid { display: flex; flex-direction: column; }
     .horario-slot { display: flex; border-bottom: 1px solid var(--color-border); min-height: 56px; }
@@ -269,6 +269,11 @@
   </div>
 
   <!-- Modal para confirmar una reserva: duración del trabajo y choques -->
+  <!-- Reagendar una cita (sql/v73) -->
+  <div class="modal-backdrop" id="reagendar-backdrop">
+    <div class="modal" id="reagendar-modal" style="max-width:600px;"></div>
+  </div>
+
   <div class="modal-backdrop" id="confirmar-backdrop">
     <div class="modal" id="confirmar-modal" style="max-width:560px;"></div>
   </div>
@@ -1126,6 +1131,7 @@
           btns += `<button type="button" class="btn-secondary btn-mini act" data-id="${c.id}" data-e="completado">Completar</button>`;
           btns += `<button type="button" class="btn-secondary btn-mini crear-ot" data-id="${c.id}">Crear OT</button>`;
         }
+        btns += `<button type="button" class="btn-secondary btn-mini reagendar" data-id="${c.id}">📅 Reagendar</button>`;
         btns += `<button type="button" class="btn-danger btn-mini act" data-id="${c.id}" data-e="cancelado">Cancelar</button>`;
       }
       btns += `<button type="button" class="btn-secondary btn-mini avisar-wa" data-id="${c.id}">Avisar por WhatsApp</button>`;
@@ -1145,7 +1151,9 @@
         + (c.bloquea === false ? ' <span class="badge badge-gray" title="No bloquea las horas: permite otro vehículo al mismo tiempo">paralelo</span>' : '')
         + (c.codigo_descuento ? (c.codigo_nota
             ? ` <span class="badge badge-red" title="${escapar(c.codigo_nota)}">🎁 ${escapar(c.codigo_descuento)} ✗ no aplica</span>`
-            : ` <span class="badge badge-green" title="Código del Club: se aplica solo al crear la OT">🎁 ${escapar(c.codigo_descuento)}</span>`) : "");
+            : ` <span class="badge badge-green" title="Código del Club: se aplica solo al crear la OT">🎁 ${escapar(c.codigo_descuento)}</span>`) : "")
+        + (Array.isArray(c.reagendamientos) && c.reagendamientos.length
+            ? ` <span class="badge badge-blue" title="${escapar(c.reagendamientos.map(r => `Antes: ${fmtFecha(r.desde)} ${fmtHora(r.desde)} · ${r.motivo_texto || ""} (hora anterior ${r.hora_anterior || ""})`).join(" | "))}">🔁 reagendada${c.reagendamientos.length > 1 ? ` ×${c.reagendamientos.length}` : ""}</span>` : "");
       return `<div class="cita-card">
         <div class="cita-info">
           ${badgeEstado(c.estado, ESTADOS_CITA)}${online}
@@ -1924,10 +1932,19 @@
     }
 
     function wireAcciones(cont) {
+      cont.querySelectorAll('.reagendar').forEach(b => b.addEventListener('click', () => {
+        const c = [...citasDia, ...onlinePendientes].find(x => x.id === b.dataset.id);
+        if (c) abrirReagendar(c);
+      }));
       cont.querySelectorAll('.act').forEach(b => b.addEventListener('click', async () => {
         // Confirmar una reserva: primero se define cuánto dura el trabajo (y se revisan choques)
         if (b.dataset.e === 'confirmado') { abrirConfirmacionCita(b.dataset.id); return; }
         const c = [...citasDia, ...onlinePendientes].find(x => x.id === b.dataset.id);
+        // Antes de cancelar: ¿reagendar en vez de cancelar? (así no se pierde la reserva)
+        if (b.dataset.e === 'cancelado' && c && (c.estado === 'pendiente' || c.estado === 'confirmado') && !b.dataset.confirmado) {
+          preguntarReagendarAntesDeCancelar(c, b);
+          return;
+        }
         await supabaseClient.from('citas').update({ estado: b.dataset.e }).eq('id', b.dataset.id);
         // Al confirmar, se abre WhatsApp automáticamente con el mensaje de confirmación listo para enviar.
         if (b.dataset.e === 'confirmado' && c && telefonoCita(c)) {
@@ -1954,6 +1971,242 @@
         if (error) { alert('Error: ' + error.message); return; }
         await cargar();
       }));
+    }
+
+    // ---------- Reagendar una cita (sql/v73) ----------
+    // Solo cambian el día y la hora: el resto de lo que dejó el cliente se mantiene. La hora que se libera puede quedar
+    // disponible o bloqueada sin cliente (con el mismo bloqueo de la agenda, crearBloqueoAgenda). Al terminar: correo
+    // automático y WhatsApp con la nueva hora y el motivo, en texto amable para el cliente.
+    const MOTIVOS_REAGENDAR = {
+      cliente:            { label: 'Solicitud del cliente', cliente: 'según lo que nos solicitó' },
+      imprevisto_cliente: { label: 'Imprevisto del cliente', cliente: 'por el imprevisto que nos comentó' },
+      taller:             { label: 'Solicitud del taller', cliente: 'por un ajuste de agenda del taller (disculpe las molestias)' },
+      imprevisto_taller:  { label: 'Imprevisto del taller', cliente: 'por un imprevisto del taller (disculpe las molestias)' },
+      repuestos:          { label: 'Repuestos no disponibles', cliente: 'porque los repuestos para su vehículo aún no están disponibles (disculpe las molestias)' },
+      otro:               { label: 'Otro (escribir)', cliente: '' },
+    };
+    let reagendando = null;   // { c, fecha, citasDelDia }
+    const fechaLargaCita = (iso) => new Date(iso).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' });
+    const hhmmDeFecha = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    const duracionCita = (c) => Number(c.duracion_min) || slotMinTaller();
+    const modalReagendar = () => document.getElementById('reagendar-modal');
+    function cerrarReagendar() { document.getElementById('reagendar-backdrop').classList.remove('abierto'); reagendando = null; }
+    document.getElementById('reagendar-backdrop').addEventListener('click', (e) => { if (e.target.id === 'reagendar-backdrop') cerrarReagendar(); });
+
+    // Al pulsar «Cancelar»: primero se ofrece reagendar
+    function preguntarReagendarAntesDeCancelar(c, botonCancelar) {
+      modalReagendar().innerHTML = `
+        <h3>¿Reagendar en vez de cancelar?</h3>
+        <p style="margin-top:0;">Si <strong>${escapar(nombreCliente(c))}</strong> no puede venir el ${escapar(fechaLargaCita(c.fecha_hora))} a las ${fmtHora(c.fecha_hora)},
+          puedes moverla a otro día sin perder la reserva ni sus datos.</p>
+        <div class="modal-acciones">
+          <button type="button" id="pc-reagendar">📅 Reagendar</button>
+          <button type="button" class="btn-danger" id="pc-cancelar">Cancelar la cita igual</button>
+          <button type="button" class="btn-secondary" id="pc-volver">Volver</button>
+        </div>`;
+      document.getElementById('reagendar-backdrop').classList.add('abierto');
+      document.getElementById('pc-volver').addEventListener('click', cerrarReagendar);
+      document.getElementById('pc-reagendar').addEventListener('click', () => abrirReagendar(c));
+      document.getElementById('pc-cancelar').addEventListener('click', () => {
+        cerrarReagendar();
+        botonCancelar.dataset.confirmado = '1';   // ya se preguntó: ahora cancela como siempre
+        botonCancelar.click();
+      });
+    }
+
+    function abrirReagendar(c) {
+      reagendando = { c, fecha: ymdChile(c.fecha_hora), citasDelDia: [] };
+      const correo = correoCita(c), tel = telefonoCita(c);
+      const puedeCorreo = correoValido(correo) && envioCorreoListo();
+      const textoCorreo = puedeCorreo ? ` (${escapar(correo)})` : (correoValido(correo) ? ' (el envío automático no está configurado)' : ' (no tiene correo)');
+      modalReagendar().innerHTML = `
+        <h3>📅 Reagendar cita</h3>
+        <div class="reag-actual">
+          <div><strong>${escapar(nombreCliente(c))}</strong>${vehiculoTextoCita(c) ? ' · ' + escapar(vehiculoTextoCita(c)) : ''}</div>
+          <div>${escapar(servicioCita(c) || 'Servicio por definir')} · ${escapar(fmtDuracion(duracionCita(c) / 60))}</div>
+          <div>Hora actual: <strong>${escapar(fechaLargaCita(c.fecha_hora))} a las ${fmtHora(c.fecha_hora)}</strong></div>
+        </div>
+        <p class="reag-nota">Solo cambian el día y la hora: el servicio, el vehículo, la dirección, las notas y el código se mantienen.</p>
+        <div class="form-row">
+          <div class="form-group" style="max-width:200px;"><label for="rg-fecha">Nuevo día *</label><input type="date" id="rg-fecha" value="${reagendando.fecha}" min="${ymdChile()}" /></div>
+          <div class="form-group" style="max-width:150px;"><label for="rg-hora">Hora *</label><input type="time" id="rg-hora" step="300" /></div>
+        </div>
+        <div id="rg-slots" class="reag-slots"></div>
+        <p id="rg-aviso" class="reag-aviso"></p>
+        <div class="form-group"><label for="rg-motivo">Motivo del cambio *</label>
+          <select id="rg-motivo"><option value="">Elige el motivo…</option>${Object.entries(MOTIVOS_REAGENDAR).map(([k, m]) => `<option value="${k}">${m.label}</option>`).join('')}</select>
+          <small id="rg-motivo-cliente" class="reag-nota" style="display:block;"></small></div>
+        <div class="form-group" id="rg-otro-g" hidden><label for="rg-otro">Motivo que verá el cliente *</label><input type="text" id="rg-otro" maxlength="150" data-autolista="no" placeholder="Ej: cambio de turno del mecánico" /></div>
+        <div class="form-group"><label>La hora que se libera (${fmtHora(c.fecha_hora)} del ${fmtFecha(c.fecha_hora)})</label>
+          <label class="reag-op"><input type="radio" name="rg-libre" value="libre" checked /> Dejarla disponible para otras reservas</label>
+          <label class="reag-op"><input type="radio" name="rg-libre" value="bloquear" /> Dejarla bloqueada sin cliente</label></div>
+        <div class="form-group"><label>Avisar al cliente</label>
+          <label class="reag-op"><input type="checkbox" id="rg-correo" ${puedeCorreo ? 'checked' : 'disabled'} /> Correo automático con la nueva hora${textoCorreo}</label>
+          <label class="reag-op"><input type="checkbox" id="rg-wa" ${tel ? 'checked' : 'disabled'} /> Abrir WhatsApp con el aviso${tel ? '' : ' (no tiene teléfono)'}</label></div>
+        <p class="error-message" id="rg-error"></p>
+        <div class="modal-acciones">
+          <button type="button" id="rg-guardar">📅 Reagendar</button>
+          <button type="button" class="btn-secondary" id="rg-volver">Volver</button>
+        </div>`;
+      document.getElementById('reagendar-backdrop').classList.add('abierto');
+      document.getElementById('rg-volver').addEventListener('click', cerrarReagendar);
+      document.getElementById('rg-fecha').addEventListener('change', () => { document.getElementById('rg-hora').value = ''; cargarSlotsReagendar(); revisarHoraReagendar(); });
+      document.getElementById('rg-hora').addEventListener('input', revisarHoraReagendar);
+      document.getElementById('rg-slots').addEventListener('click', (e) => {
+        const s = e.target.closest('.reag-slot');
+        if (!s || s.classList.contains('ocupado')) return;
+        document.getElementById('rg-hora').value = s.dataset.h;
+        revisarHoraReagendar();
+      });
+      document.getElementById('rg-motivo').addEventListener('change', (e) => {
+        const m = MOTIVOS_REAGENDAR[e.target.value];
+        document.getElementById('rg-otro-g').hidden = e.target.value !== 'otro';
+        document.getElementById('rg-motivo-cliente').textContent = m && m.cliente ? `El cliente leerá: «Su cita fue reagendada ${m.cliente}».` : '';
+      });
+      document.getElementById('rg-guardar').addEventListener('click', guardarReagendar);
+      cargarSlotsReagendar();
+    }
+
+    // Horas del día elegido: libres para reagendar (gris = ocupada, pausa, bloqueo o ya pasó)
+    async function cargarSlotsReagendar() {
+      const r = reagendando;
+      if (!r) return;
+      const fecha = document.getElementById('rg-fecha').value;
+      r.fecha = fecha;
+      const cont = document.getElementById('rg-slots');
+      if (!fecha) { cont.innerHTML = ''; return; }
+      const slots = getSlotsDelDia(fecha);
+      if (!slots) { cont.innerHTML = `<p class="reag-vacio">${NOMBRE_DIA[new Date(fecha + 'T12:00:00').getDay()]} está cerrado. Igual puedes escribir una hora arriba.</p>`; r.citasDelDia = []; return; }
+      cont.innerHTML = '<p class="reag-vacio">Buscando horas libres…</p>';
+      const lim = limitesDiaChile(fecha);
+      const { data } = await supabaseClient.from('citas').select('*, clientes(nombre), vehiculos(patente), trabajos(nombre)')
+        .gte('fecha_hora', lim.desde).lte('fecha_hora', lim.hasta).neq('estado', 'cancelado');
+      if (!reagendando || reagendando.fecha !== fecha) return;   // se cambió de día mientras se buscaba
+      r.citasDelDia = (data || []).filter(o => o.id !== r.c.id && o.bloquea !== false);
+      const dur = duracionCita(r.c), m = margenesCita(r.c), ahora = Date.now();
+      const completo = bloqueosDelDia(fecha).find(b => !b.hora_desde);
+      const hora = document.getElementById('rg-hora').value;
+      cont.innerHTML = (completo ? `<p class="reag-vacio">🔒 Día bloqueado${completo.motivo ? ': ' + escapar(completo.motivo) : ''}.</p>` : '') +
+        `<div class="reag-grid">${slots.map(s => {
+          const ini = new Date(`${fecha}T${s}:00`).getTime();
+          const ocupado = r.citasDelDia.some(o => citaChocaCon(ini - m.antes * 60000, ini + (dur + m.despues) * 60000, o));
+          const mot = motivoSlot(fecha, s);
+          const pasado = ini < ahora;
+          const libre = !ocupado && !mot && !pasado && !completo;
+          const actual = ini === new Date(r.c.fecha_hora).getTime();
+          const titulo = actual ? 'Hora actual de la cita' : pasado ? 'Ya pasó' : ocupado ? 'Ocupado' : mot ? (mot.tipo === 'pausa' ? 'Pausa' : 'Bloqueado') : 'Libre';
+          return `<button type="button" class="reag-slot${actual ? ' actual ocupado' : (libre ? '' : ' ocupado')}${s === hora ? ' sel' : ''}" data-h="${s}" title="${titulo}">${s}${actual ? '<small>actual</small>' : ''}</button>`;
+        }).join('')}</div>
+        <p class="reag-leyenda">En gris: ocupadas, en pausa, bloqueadas o ya pasadas. Si necesitas otra hora, escríbela arriba.</p>`;
+    }
+
+    function revisarHoraReagendar() {
+      const r = reagendando;
+      if (!r) return;
+      const aviso = document.getElementById('rg-aviso');
+      const fecha = document.getElementById('rg-fecha').value, hora = document.getElementById('rg-hora').value;
+      document.querySelectorAll('#rg-slots .reag-slot').forEach(b => b.classList.toggle('sel', b.dataset.h === hora));
+      if (!fecha || !hora) { aviso.textContent = ''; aviso.className = 'reag-aviso'; return; }
+      const ini = new Date(`${fecha}T${hora}:00`).getTime();
+      const dur = duracionCita(r.c), m = margenesCita(r.c);
+      const avisos = [];
+      const fuera = avisoFueraDeHorario(fecha, hora);
+      if (fuera) avisos.push(fuera);
+      if (ini < Date.now()) avisos.push('Esa hora ya pasó.');
+      if (ini === new Date(r.c.fecha_hora).getTime()) avisos.push('Es la misma hora que ya tiene.');
+      const choques = r.citasDelDia.filter(o => citaChocaCon(ini - m.antes * 60000, ini + (dur + m.despues) * 60000, o));
+      if (choques.length) avisos.push('Se cruza con: ' + choques.map(descChoque).join(' · '));
+      aviso.className = 'reag-aviso ' + (avisos.length ? 'alerta' : 'ok');
+      aviso.innerHTML = avisos.length ? '⚠ ' + avisos.map(escapar).join('<br>⚠ ')
+        : `✓ Nueva hora: ${escapar(fechaLargaCita(new Date(ini).toISOString()))} a las ${hora} (hasta las ${hhmmDeFecha(new Date(ini + dur * 60000))}).`;
+    }
+
+    // Mensaje al cliente (WhatsApp y cuerpo del correo): antes → ahora, motivo amable y lo mismo que la confirmación
+    async function mensajeReagendarCita(c, desdeIso, textoMotivo) {
+      const precio = await buscarPrecioEstimado(c);
+      const tiempo = c.trabajos && c.trabajos.horas_estimadas ? fmtDuracion(c.trabajos.horas_estimadas) : '';
+      return [
+        `Hola, ${nombreCliente(c)}:`,
+        '',
+        `Le saluda el equipo de ${tallerHorarios.nombre || 'el taller'}. Su cita fue reagendada ${textoMotivo}.`,
+        '',
+        `❌ Antes: ${fechaLargaCita(desdeIso)} a las ${fmtHora(desdeIso)}`,
+        `✅ Nueva fecha: ${fechaLargaCita(c.fecha_hora)} a las ${fmtHora(c.fecha_hora)}`,
+        `Servicio: ${servicioCita(c) || 'Servicio agendado'}`,
+        '',
+        'Lo que puede esperar:',
+        lineaPrecioCita(c, precio),
+        lineaTiempo(tiempo) || null,
+        lineaModalidad(c.modalidad, c.direccion),
+        '',
+        'Si la nueva hora no le acomoda, respóndanos este mensaje y la ajustamos. ¡Le esperamos!',
+      ].filter(l => l !== null && l !== undefined).filter((l, i, a) => !(l === '' && a[i - 1] === '')).join('\n').replace(/\n{3,}/g, '\n\n');
+    }
+
+    async function avisarCorreoReagendar(c, cuerpo) {
+      const para = correoCita(c);
+      const fin = new Date(new Date(c.fecha_hora).getTime() + duracionCita(c) * 60000);
+      const bloque = c.estado === 'confirmado' ? `\n\nHorario reservado para su vehículo: de ${fmtHora(c.fecha_hora)} a ${fmtHora(fin.toISOString())}.` : '';
+      const pie = [tallerHorarios.nombre, tallerHorarios.direccion, tallerHorarios.telefono].filter(Boolean).join(' · ');
+      const asunto = `Su hora en ${tallerHorarios.nombre || 'el taller'} fue reagendada: ${fmtFecha(c.fecha_hora)} ${fmtHora(c.fecha_hora)}`;
+      const r = await enviarCorreo({ para, asunto, texto: `${cuerpo}${bloque}${pie ? `\n\n${pie}` : ''}`,
+        ref: { evento: 'cita_reagendada', tabla: 'citas', id: c.id, cliente_id: c.cliente_id, vehiculo_id: c.vehiculo_id } });
+      if (r.estado === 'enviado') mostrarToast(`✉ Correo con la nueva hora enviado a ${para}`, 'ok');
+      else if (r.estado === 'error') mostrarToast(`No se pudo enviar el correo a ${para}: ${r.mensaje}`, 'error', 12000);
+      else if (r.estado === 'incierto') mostrarToast(`No pude confirmar si el correo a ${para} salió (${r.mensaje}). Revisa «Enviados» en tu Gmail.`, 'aviso', 15000);
+      return r;
+    }
+
+    async function guardarReagendar() {
+      const r = reagendando;
+      if (!r) return;
+      const c = r.c;
+      const err = document.getElementById('rg-error');
+      err.textContent = '';
+      const fecha = document.getElementById('rg-fecha').value, hora = document.getElementById('rg-hora').value;
+      const motivo = document.getElementById('rg-motivo').value;
+      const otro = document.getElementById('rg-otro').value.trim();
+      if (!fecha || !hora) { err.textContent = 'Elige el nuevo día y la hora.'; return; }
+      if (!motivo) { err.textContent = 'Elige el motivo del cambio.'; return; }
+      if (motivo === 'otro' && !otro) { err.textContent = 'Escribe el motivo que verá el cliente.'; return; }
+      const nueva = new Date(`${fecha}T${hora}:00`).toISOString();
+      if (new Date(nueva).getTime() === new Date(c.fecha_hora).getTime()) { err.textContent = 'Es la misma hora que ya tiene: elige otra.'; return; }
+      if (document.getElementById('rg-aviso').classList.contains('alerta') && !confirm('Hay avisos sobre la nueva hora (en rojo). ¿Reagendar igual?')) return;
+      const bloquear = document.querySelector('input[name="rg-libre"]:checked').value === 'bloquear';
+      const quiereCorreo = document.getElementById('rg-correo').checked, quiereWa = document.getElementById('rg-wa').checked;
+      const btn = document.getElementById('rg-guardar');
+      btn.disabled = true; btn.textContent = 'Reagendando…';
+
+      // Solo cambian el día y la hora; queda el registro del cambio (v73)
+      const entrada = {
+        desde: c.fecha_hora, hacia: nueva, motivo,
+        motivo_texto: motivo === 'otro' ? otro : MOTIVOS_REAGENDAR[motivo].label,
+        hora_anterior: bloquear ? 'bloqueada' : 'disponible', fecha: new Date().toISOString(),
+      };
+      let { error } = await supabaseClient.from('citas').update({ fecha_hora: nueva, reagendamientos: [...(Array.isArray(c.reagendamientos) ? c.reagendamientos : []), entrada] }).eq('id', c.id);
+      if (faltaColumnaNueva(error)) ({ error } = await supabaseClient.from('citas').update({ fecha_hora: nueva }).eq('id', c.id));   // aún sin v73
+      if (error) { btn.disabled = false; btn.textContent = '📅 Reagendar'; err.textContent = 'Error: ' + error.message; return; }
+
+      // La hora anterior, bloqueada sin cliente (el mismo bloqueo por horas de la agenda)
+      if (bloquear) {
+        const ini = new Date(c.fecha_hora);
+        const fin = new Date(ini.getTime() + duracionCita(c) * 60000);
+        const { error: eb } = await crearBloqueoAgenda({ desde: ymdChile(c.fecha_hora), hasta: ymdChile(c.fecha_hora), horaDesde: hhmmDeFecha(ini),
+          horaHasta: fin.getDate() === ini.getDate() ? hhmmDeFecha(fin) : '23:59', motivo: `Hora liberada (reagendamiento de ${nombreCliente(c)})` });
+        if (eb) mostrarToast('La cita se reagendó, pero no se pudo bloquear la hora anterior: ' + eb.message, 'aviso', 10000);
+        else await recargarBloqueos();
+      }
+
+      // Avisos al cliente: WhatsApp listo para enviar y correo automático
+      const cNueva = { ...c, fecha_hora: nueva };
+      const textoMotivo = motivo === 'otro' ? `por el siguiente motivo: ${otro}` : MOTIVOS_REAGENDAR[motivo].cliente;
+      const mensaje = await mensajeReagendarCita(cNueva, c.fecha_hora, textoMotivo);
+      if (quiereWa) avisarWhatsAppCita(cNueva, mensaje);
+      if (quiereCorreo) await avisarCorreoReagendar(cNueva, mensaje);
+      cerrarReagendar();
+      mostrarToast(`📅 Cita reagendada: ${fmtFecha(nueva)} a las ${hora}. La hora anterior quedó ${bloquear ? 'bloqueada sin cliente' : 'disponible'}.`, 'ok', 9000);
+      document.getElementById('dia-actual').value = fecha;
+      await cargar();
     }
 
     async function crearOTdesdeCita(citaId) {
