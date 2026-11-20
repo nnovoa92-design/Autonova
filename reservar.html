@@ -852,6 +852,22 @@
       document.getElementById('wizard').style.display = 'block';
       renderTrabajos();
       cargarOpcionesDomicilio();   // valores a domicilio (en terreno / con retiro) a la vista, v72
+      // Link para reagendar (cita cancelada por el taller): reservar.html?servicio=<id>&modalidad=terreno|retiro
+      const urlParams = new URLSearchParams(window.location.search);
+      const modLink = urlParams.get('modalidad');
+      if (modLink === 'terreno' || modLink === 'retiro') {
+        domicilioTipo = modLink;
+        const radioDom = document.querySelector('input[name="r-modalidad"][value="domicilio"]');
+        if (radioDom) { radioDom.checked = true; radioDom.dispatchEvent(new Event('change', { bubbles: true })); }
+      }
+      const servLink = INFO.trabajos.find(t => t.id === urlParams.get('servicio'));
+      if (servLink) {
+        document.getElementById('trabajo-buscar').value = etiquetaTrabajo(servLink);
+        const selServ = document.getElementById('r-trabajo');
+        if (![...selServ.options].some(o => o.value === servLink.id)) selServ.add(new Option(etiquetaTrabajo(servLink), servLink.id));
+        selServ.value = servLink.id;
+        selServ.dispatchEvent(new Event('change'));
+      }
       // Link de los recordatorios de cotización: reservar.html?cotizacion=COT-0007 deja anotado por qué viene
       const cot = new URLSearchParams(window.location.search).get('cotizacion');
       if (/^COT-\d{1,7}$/.test(cot || '')) document.getElementById('r-notas').value = `Vengo por la cotización ${cot}`;

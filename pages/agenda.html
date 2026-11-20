@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Agenda · Autonova</title>
-  <link rel="stylesheet" href="../assets/css/style.css?v=20261115" />
+  <link rel="stylesheet" href="../assets/css/style.css?v=20261120" />
   <style>
     .horario-grid { display: flex; flex-direction: column; }
     .horario-slot { display: flex; border-bottom: 1px solid var(--color-border); min-height: 56px; }
@@ -1152,8 +1152,7 @@
         + (c.codigo_descuento ? (c.codigo_nota
             ? ` <span class="badge badge-red" title="${escapar(c.codigo_nota)}">🎁 ${escapar(c.codigo_descuento)} ✗ no aplica</span>`
             : ` <span class="badge badge-green" title="Código del Club: se aplica solo al crear la OT">🎁 ${escapar(c.codigo_descuento)}</span>`) : "")
-        + (Array.isArray(c.reagendamientos) && c.reagendamientos.length
-            ? ` <span class="badge badge-blue" title="${escapar(c.reagendamientos.map(r => `Antes: ${fmtFecha(r.desde)} ${fmtHora(r.desde)} · ${r.motivo_texto || ""} (hora anterior ${r.hora_anterior || ""})`).join(" | "))}">🔁 reagendada${c.reagendamientos.length > 1 ? ` ×${c.reagendamientos.length}` : ""}</span>` : "");
+        + badgesHistorialCita(c);
       return `<div class="cita-card">
         <div class="cita-info">
           ${badgeEstado(c.estado, ESTADOS_CITA)}${online}
@@ -1993,25 +1992,142 @@
     function cerrarReagendar() { document.getElementById('reagendar-backdrop').classList.remove('abierto'); reagendando = null; }
     document.getElementById('reagendar-backdrop').addEventListener('click', (e) => { if (e.target.id === 'reagendar-backdrop') cerrarReagendar(); });
 
-    // Al pulsar «Cancelar»: primero se ofrece reagendar
+    // Marcas del historial de la cita: 🔁 reagendada (cuántas veces) y ✉ cancelada con aviso para que reagende
+    function badgesHistorialCita(c) {
+      const hist = Array.isArray(c.reagendamientos) ? c.reagendamientos : [];
+      const reag = hist.filter(r => r.tipo !== 'cancelacion');
+      const cancel = hist.filter(r => r.tipo === 'cancelacion').slice(-1)[0];
+      let html = '';
+      if (reag.length) html += ` <span class="badge badge-blue" title="${escapar(reag.map(r => `Antes: ${fmtFecha(r.desde)} ${fmtHora(r.desde)} · ${r.motivo_texto || ''} (hora anterior ${r.hora_anterior || ''})`).join(' | '))}">🔁 reagendada${reag.length > 1 ? ` ×${reag.length}` : ''}</span>`;
+      if (cancel && c.estado === 'cancelado') {
+        const aviso = (cancel.aviso || []).length ? `se le pidió reagendar por ${cancel.aviso.join(' y ')}` : 'sin aviso al cliente';
+        html += ` <span class="badge badge-gray" title="${escapar(`Cancelada el ${fmtFecha(cancel.fecha)} · ${cancel.motivo_texto || ''} · ${aviso} · hora ${cancel.hora_anterior || ''}`)}">${(cancel.aviso || []).length ? '✉ se le pidió reagendar' : 'cancelada'}</span>`;
+      }
+      return html;
+    }
+
+    // Al pulsar «Cancelar»: reagendarla yo, cancelar y pedirle al cliente que elija otra hora, o cancelar sin avisar
     function preguntarReagendarAntesDeCancelar(c, botonCancelar) {
       modalReagendar().innerHTML = `
-        <h3>¿Reagendar en vez de cancelar?</h3>
-        <p style="margin-top:0;">Si <strong>${escapar(nombreCliente(c))}</strong> no puede venir el ${escapar(fechaLargaCita(c.fecha_hora))} a las ${fmtHora(c.fecha_hora)},
-          puedes moverla a otro día sin perder la reserva ni sus datos.</p>
-        <div class="modal-acciones">
-          <button type="button" id="pc-reagendar">📅 Reagendar</button>
-          <button type="button" class="btn-danger" id="pc-cancelar">Cancelar la cita igual</button>
-          <button type="button" class="btn-secondary" id="pc-volver">Volver</button>
-        </div>`;
+        <h3>¿Qué hacemos con esta cita?</h3>
+        <p style="margin-top:0;"><strong>${escapar(nombreCliente(c))}</strong> · ${escapar(fechaLargaCita(c.fecha_hora))} a las ${fmtHora(c.fecha_hora)} · ${escapar(servicioCita(c) || 'Servicio por definir')}</p>
+        <div class="cancelar-opciones">
+          <button type="button" class="cancelar-op" id="pc-reagendar"><strong>📅 Reagendarla yo</strong><span>Eliges el nuevo día y hora; al cliente le llega la confirmación.</span></button>
+          <button type="button" class="cancelar-op" id="pc-avisar"><strong>✉ Cancelar y pedirle que reagende</strong><span>Se cancela y le llega por correo y WhatsApp un link para que él elija su nueva hora.</span></button>
+          <button type="button" class="cancelar-op peligro" id="pc-cancelar"><strong>Cancelar sin avisar</strong><span>Solo se cancela (como antes).</span></button>
+        </div>
+        <div class="modal-acciones"><button type="button" class="btn-secondary" id="pc-volver">Volver</button></div>`;
       document.getElementById('reagendar-backdrop').classList.add('abierto');
       document.getElementById('pc-volver').addEventListener('click', cerrarReagendar);
       document.getElementById('pc-reagendar').addEventListener('click', () => abrirReagendar(c));
+      document.getElementById('pc-avisar').addEventListener('click', () => abrirCancelarConAviso(c));
       document.getElementById('pc-cancelar').addEventListener('click', () => {
         cerrarReagendar();
         botonCancelar.dataset.confirmado = '1';   // ya se preguntó: ahora cancela como siempre
         botonCancelar.click();
       });
+    }
+
+    // ---------- Cancelar y pedirle al cliente que reagende ----------
+    // Link a la reserva en línea con el mismo servicio, la misma atención (taller / domicilio) y su código del Club
+    function linkReagendarCliente(c) {
+      const p = new URLSearchParams();
+      if (c.trabajo_id) p.set('servicio', c.trabajo_id);
+      if (c.modalidad === 'terreno' || c.modalidad === 'retiro') p.set('modalidad', c.modalidad);
+      if (c.codigo_descuento && !c.codigo_nota) p.set('codigo', c.codigo_descuento);
+      return `${window.location.origin}/reservar.html${p.toString() ? '?' + p.toString() : ''}`;
+    }
+    function mensajeCancelacionCita(c, textoMotivo) {
+      return [
+        `Hola, ${nombreCliente(c)}:`,
+        '',
+        `Le saluda el equipo de ${tallerHorarios.nombre || 'el taller'}. Su cita del ${fechaLargaCita(c.fecha_hora)} a las ${fmtHora(c.fecha_hora)} quedó cancelada ${textoMotivo}.`,
+        `Servicio: ${servicioCita(c) || 'Servicio agendado'}`,
+        '',
+        'Elija su nueva hora aquí, en menos de 1 minuto (el servicio ya va marcado):',
+        linkReagendarCliente(c),
+        '',
+        'Si prefiere, respóndanos este mensaje y le ayudamos a agendar. ¡Gracias por su comprensión!',
+      ].join('\n');
+    }
+
+    function abrirCancelarConAviso(c) {
+      const correo = correoCita(c), tel = telefonoCita(c);
+      const puedeCorreo = correoValido(correo) && envioCorreoListo();
+      const textoCorreo = puedeCorreo ? ` (${escapar(correo)})` : (correoValido(correo) ? ' (el envío automático no está configurado)' : ' (no tiene correo)');
+      modalReagendar().innerHTML = `
+        <h3>✉ Cancelar y pedirle que reagende</h3>
+        <div class="reag-actual">
+          <div><strong>${escapar(nombreCliente(c))}</strong>${vehiculoTextoCita(c) ? ' · ' + escapar(vehiculoTextoCita(c)) : ''}</div>
+          <div>${escapar(servicioCita(c) || 'Servicio por definir')}</div>
+          <div>Cita que se cancela: <strong>${escapar(fechaLargaCita(c.fecha_hora))} a las ${fmtHora(c.fecha_hora)}</strong></div>
+        </div>
+        <div class="form-group" style="margin-top:0.6rem;"><label for="cx-motivo">Motivo *</label>
+          <select id="cx-motivo"><option value="">Elige el motivo…</option>${Object.entries(MOTIVOS_REAGENDAR).map(([k, m]) => `<option value="${k}">${m.label}</option>`).join('')}</select></div>
+        <div class="form-group" id="cx-otro-g" hidden><label for="cx-otro">Motivo que verá el cliente *</label><input type="text" id="cx-otro" maxlength="150" data-autolista="no" placeholder="Ej: el mecánico no estará disponible ese día" /></div>
+        <div class="form-group"><label>La hora que se libera</label>
+          <label class="reag-op"><input type="radio" name="cx-libre" value="libre" checked /> Dejarla disponible para otras reservas</label>
+          <label class="reag-op"><input type="radio" name="cx-libre" value="bloquear" /> Dejarla bloqueada sin cliente</label></div>
+        <div class="form-group"><label>Avisar al cliente</label>
+          <label class="reag-op"><input type="checkbox" id="cx-correo" ${puedeCorreo ? 'checked' : 'disabled'} /> Correo automático con el link para reagendar${textoCorreo}</label>
+          <label class="reag-op"><input type="checkbox" id="cx-wa" ${tel ? 'checked' : 'disabled'} /> Abrir WhatsApp con el aviso${tel ? '' : ' (no tiene teléfono)'}</label></div>
+        <div class="form-group"><label>Lo que recibirá el cliente</label><pre id="cx-previa" class="cx-previa"></pre></div>
+        <p class="error-message" id="cx-error"></p>
+        <div class="modal-acciones">
+          <button type="button" class="btn-danger" id="cx-guardar">Cancelar cita y avisar</button>
+          <button type="button" class="btn-secondary" id="cx-volver">Volver</button>
+        </div>`;
+      document.getElementById('reagendar-backdrop').classList.add('abierto');
+      const textoMotivoCx = () => {
+        const k = document.getElementById('cx-motivo').value, otro = document.getElementById('cx-otro').value.trim();
+        return k === 'otro' ? (otro ? `por el siguiente motivo: ${otro}` : '…') : (MOTIVOS_REAGENDAR[k] ? MOTIVOS_REAGENDAR[k].cliente : '…');
+      };
+      const previa = () => { document.getElementById('cx-previa').textContent = mensajeCancelacionCita(c, textoMotivoCx()); };
+      document.getElementById('cx-motivo').addEventListener('change', (e) => { document.getElementById('cx-otro-g').hidden = e.target.value !== 'otro'; previa(); });
+      document.getElementById('cx-otro').addEventListener('input', previa);
+      document.getElementById('cx-volver').addEventListener('click', cerrarReagendar);
+      document.getElementById('cx-guardar').addEventListener('click', async () => {
+        const err = document.getElementById('cx-error');
+        err.textContent = '';
+        const motivo = document.getElementById('cx-motivo').value, otro = document.getElementById('cx-otro').value.trim();
+        if (!motivo) { err.textContent = 'Elige el motivo.'; return; }
+        if (motivo === 'otro' && !otro) { err.textContent = 'Escribe el motivo que verá el cliente.'; return; }
+        const bloquear = document.querySelector('input[name="cx-libre"]:checked').value === 'bloquear';
+        const quiereCorreo = document.getElementById('cx-correo').checked, quiereWa = document.getElementById('cx-wa').checked;
+        const btn = document.getElementById('cx-guardar');
+        btn.disabled = true; btn.textContent = 'Cancelando…';
+        // Se cancela y queda registrado por qué y cómo se le avisó (historial de la cita, v73)
+        const entrada = {
+          tipo: 'cancelacion', desde: c.fecha_hora, motivo, motivo_texto: motivo === 'otro' ? otro : MOTIVOS_REAGENDAR[motivo].label,
+          hora_anterior: bloquear ? 'bloqueada' : 'disponible', aviso: [quiereCorreo ? 'correo' : '', quiereWa ? 'whatsapp' : ''].filter(Boolean),
+          fecha: new Date().toISOString(),
+        };
+        let { error } = await supabaseClient.from('citas').update({ estado: 'cancelado', reagendamientos: [...(Array.isArray(c.reagendamientos) ? c.reagendamientos : []), entrada] }).eq('id', c.id);
+        if (faltaColumnaNueva(error)) ({ error } = await supabaseClient.from('citas').update({ estado: 'cancelado' }).eq('id', c.id));   // aún sin v73
+        if (error) { btn.disabled = false; btn.textContent = 'Cancelar cita y avisar'; err.textContent = 'Error: ' + error.message; return; }
+        if (bloquear) {
+          const ini = new Date(c.fecha_hora), fin = new Date(ini.getTime() + duracionCita(c) * 60000);
+          const { error: eb } = await crearBloqueoAgenda({ desde: ymdChile(c.fecha_hora), hasta: ymdChile(c.fecha_hora), horaDesde: hhmmDeFecha(ini),
+            horaHasta: fin.getDate() === ini.getDate() ? hhmmDeFecha(fin) : '23:59', motivo: `Hora liberada (cita cancelada de ${nombreCliente(c)})` });
+          if (eb) mostrarToast('La cita se canceló, pero no se pudo bloquear la hora: ' + eb.message, 'aviso', 10000);
+          else await recargarBloqueos();
+        }
+        const mensaje = mensajeCancelacionCita(c, motivo === 'otro' ? `por el siguiente motivo: ${otro}` : MOTIVOS_REAGENDAR[motivo].cliente);
+        if (quiereWa) avisarWhatsAppCita(c, mensaje);
+        if (quiereCorreo) {
+          const para = correoCita(c);
+          const pie = [tallerHorarios.nombre, tallerHorarios.direccion, tallerHorarios.telefono].filter(Boolean).join(' · ');
+          const r = await enviarCorreo({ para, asunto: `Su hora en ${tallerHorarios.nombre || 'el taller'} del ${fmtFecha(c.fecha_hora)} fue cancelada: elija una nueva`,
+            texto: `${mensaje}${pie ? `\n\n${pie}` : ''}`, ref: { evento: 'cita_cancelada', tabla: 'citas', id: c.id, cliente_id: c.cliente_id, vehiculo_id: c.vehiculo_id } });
+          if (r.estado === 'enviado') mostrarToast(`✉ Correo con el link para reagendar enviado a ${para}`, 'ok');
+          else if (r.estado === 'error') mostrarToast(`No se pudo enviar el correo a ${para}: ${r.mensaje}`, 'error', 12000);
+          else if (r.estado === 'incierto') mostrarToast(`No pude confirmar si el correo a ${para} salió (${r.mensaje}). Revisa «Enviados» en tu Gmail.`, 'aviso', 15000);
+        }
+        cerrarReagendar();
+        mostrarToast(`Cita cancelada y ${quiereCorreo || quiereWa ? 'se le pidió al cliente elegir una nueva hora' : 'sin aviso al cliente'}. La hora quedó ${bloquear ? 'bloqueada sin cliente' : 'disponible'}.`, 'ok', 9000);
+        await cargar();
+      });
+      previa();
     }
 
     function abrirReagendar(c) {
