@@ -566,6 +566,29 @@ function correoValido(valor) {
 //   'incierto' (+ mensaje: no se pudo leer la respuesta, el correo puede haber salido: revisar «Enviados»).
 // ref (opcional): de qué se trata el correo, para el registro y el expediente del vehículo:
 //   { evento, tabla, id, cliente_id, vehiculo_id }
+// ---------- Fotos más livianas (Supabase gratis = 1 GB de archivos) ----------
+// Antes de subir: máximo 1600 px por lado y JPEG al 80%. Una foto de celular de 3-5 MB queda en ~250-400 KB y se ve
+// igual en pantalla y en los PDF. Los PDF, GIF y SVG se suben tal cual; si algo falla, se sube el original.
+async function comprimirImagen(file) {
+  if (!file || !/^image\//i.test(file.type || '') || /gif|svg/i.test(file.type)) return file;
+  try {
+    const url = URL.createObjectURL(file);
+    const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = url; });
+    URL.revokeObjectURL(url);
+    const escala = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+    if (escala === 1 && file.size < 500000) return file;
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.naturalWidth * escala);
+    c.height = Math.round(img.naturalHeight * escala);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.8));
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], String(file.name || 'foto').replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+  } catch (e) {
+    return file;
+  }
+}
+
 async function enviarCorreo({ para, asunto, texto, ref }) {
   const cfg = await getTallerConfig();
   const url = cfg && cfg.correo_script_url, clave = cfg && cfg.correo_script_clave;
@@ -908,6 +931,13 @@ const PLANTILLAS_CORREO = {
     asunto: '💌 {nombre}, te extrañamos: {descuento} de regalo para tu vuelta · {taller}',
     texto: 'Hola {nombre},\n\nHace un tiempo que no vemos {vehiculo} por el taller y queremos que siga andando como nuevo.\n\nPor eso te regalamos un cupón de {descuento} de descuento{tope_texto} para tu próxima visita:\n\n🎟 Tu cupón: {cupon}\n📅 Válido hasta el {vence}.\n\nReserva tu hora aquí (el cupón ya va puesto):\n{link_reserva}\n\n¿Toca mantención, revisión de frenos o la revisión técnica? Escríbenos y te ayudamos.\n\nCondiciones: es personal, de un solo uso, sobre el valor del trabajo sin IVA{tope_texto}, no se acumula con otras promociones y se usa al reservar o al dejar tu vehículo.\n\n{firma}',
     variables: ['nombre', 'vehiculo', 'descuento', 'tope_texto', 'cupon', 'vence', 'link_reserva', 'taller', 'firma'],
+  },
+  // Lo envía Supabase solo (sql/v74, recordatorios_automaticos): si se cambia el texto por defecto, cambiarlo también allá
+  cotizacion_aprobada_recordatorio: {
+    titulo: 'Recordatorio de cotización APROBADA sin hora agendada (días 3, 5 y último día)',
+    asunto: '¿Agendamos su trabajo? Su cotización {cotizacion} está aprobada - {taller}',
+    texto: 'Hola {nombre},\n\n¡Gracias por aprobar la cotización {cotizacion} para {vehiculo} ({total}, {iva})! Aún no tenemos su hora agendada: le quedan {dias_restantes} de validez (hasta el {vence}); después de esa fecha los valores pueden cambiar.\n\nReserve su hora aquí:\n{link_reserva}\n\nVer la cotización:\n{link}\n\n{firma}',
+    variables: ['nombre', 'cotizacion', 'vehiculo', 'total', 'iva', 'dias_restantes', 'vence', 'link', 'link_reserva', 'taller', 'firma'],
   },
   // Lo envía Supabase solo (sql/v70, enviar_encuestas): si se cambia el texto por defecto, cambiarlo también allá
   encuesta_7dias: {

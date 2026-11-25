@@ -432,7 +432,7 @@
       const cont = document.getElementById('cotpend-lista');
       const { data, error } = await supabaseClient.from('cotizaciones')
         .select('*, cotizacion_items(cantidad, precio_unitario, tipo, tipo_otro), clientes(id, nombre, telefono, email), vehiculos(id, patente, marca, modelo)')
-        .eq('estado', 'enviada').order('creado_en', { ascending: false });
+        .in('estado', ['enviada', 'aprobada']).order('creado_en', { ascending: false });
       if (error) { cont.innerHTML = `<p class="error-message">${htmlSeguro(error.message)}</p>`; return; }
       const hoy = hoyChile();
       // Si ya hubo un ingreso (OT de esta cotización, o el mismo vehículo entró después de enviarla), deja de estar pendiente
@@ -447,9 +447,10 @@
       }
       const yaIngreso = c => ingresos.some(o => o.cotizacion_id === c.id
         || (c.vehiculo_id && o.vehiculo_id === c.vehiculo_id && c.enviada_en && new Date(o.creado_en) >= new Date(c.enviada_en)));
-      cotPendientes = (data || []).filter(c => !yaIngreso(c)).map(c => {
+      cotPendientes = (data || []).filter(c => !yaIngreso(c) && !c.no_recordar).map(c => {
         const vence = sumarDiasYmd(String(c.fecha || c.creado_en).slice(0, 10), Number(c.validez_dias) || 15);
-        const enviada = c.enviada_en ? ymdChile(c.enviada_en) : null;
+        // Las aprobadas sin fecha de envío cuentan desde que se crearon (igual que el envío automático, v74)
+        const enviada = c.enviada_en ? ymdChile(c.enviada_en) : (c.estado === 'aprobada' ? ymdChile(c.creado_en) : null);
         return { ...c, vence, enviada, restantes: diasEntre(hoy, vence), total: totalVigenteCotizacion(c, cfgAvisos.iva_pct) };
       }).sort((a, b) => (a.restantes < 0) - (b.restantes < 0) || a.restantes - b.restantes);
       // Qué correos salieron de verdad (la cotización y cada recordatorio)
@@ -492,7 +493,7 @@
         return `
           <div class="aviso-fila${c.restantes < 0 ? ' vencida' : ''}">
             <div class="aviso-cab">
-              <strong>${fmtNumero('COT', c.numero)}</strong> · ${htmlSeguro(cli.nombre || '–')}
+              <strong>${fmtNumero('COT', c.numero)}</strong> · ${htmlSeguro(cli.nombre || '–')}${c.estado === 'aprobada' ? ' <span class="badge badge-green" title="El cliente ya la aprobó: falta que agende y se haga la OT">✅ aprobada · falta agendar</span>' : ''}
               ${c.vehiculos ? `· <span class="badge">${htmlSeguro(c.vehiculos.patente)}</span>` : ''}
               <span class="aviso-fecha">${diasEnviada != null ? `enviada hace ${textoDias(diasEnviada)} · ` : ''}${c.restantes > 0 ? `vence en ${textoDias(c.restantes)}` : (c.restantes === 0 ? '<strong>hoy es su último día</strong>' : '<span class="badge badge-gray">Vencida</span>')}</span>
             </div>
@@ -503,6 +504,7 @@
               <button type="button" class="${sinCorreo ? '' : 'btn-secondary '}cot-wa" data-idx="${idx}">💬 WhatsApp</button>
               ${c.restantes >= 0 && !sinCorreo ? `<button type="button" class="btn-secondary cot-mail" data-idx="${idx}">✉ Enviar recordatorio ahora</button>` : ''}
               <a class="btn btn-secondary" href="cotizaciones.html?id=${c.id}">Abrir</a>
+              <button type="button" class="btn-secondary cot-norecordar" data-idx="${idx}" title="Deja de aparecer aquí y no recibe más correos">🔕 Dejar de recordar</button>
             </div>
           </div>`;
       }).join('');
@@ -624,13 +626,18 @@
         const tel = c.clientes && c.clientes.telefono;
         if (!tel) { alert('El cliente no tiene teléfono registrado.'); return; }
         abrirEnlace(linkWhatsApp(tel, armarWhatsApp('wa_cotizacion_recordatorio', valoresCotizacion(c), cfgAvisos)));
+      } else if (b.classList.contains('cot-norecordar')) {
+        if (!confirm(`¿Dejar de recordar ${fmtNumero('COT', c.numero)}? No le llegarán más correos de recordatorio y sale de esta lista (puedes volver a activarla en Cotizaciones).`)) return;
+        const { error } = await supabaseClient.from('cotizaciones').update({ no_recordar: true }).eq('id', c.id);
+        if (error) { alert(/no_recordar/.test(error.message || '') ? 'Falta ejecutar sql/actualizacion-v74-cotizaciones-aprobadas.sql en Supabase.' : 'Error: ' + error.message); return; }
+        await cargarCotizacionesPendientes();
       } else if (b.classList.contains('cot-mail')) {
         const email = c.clientes && c.clientes.email;
         if (!correoValido(email)) { alert('El cliente no tiene correo registrado.'); return; }
         // El siguiente recordatorio; el de «último día» solo el último día de validez
         const hecho = pasosHechos(c.recordatorios_enviados);
         const paso = c.restantes === 0 ? 3 : Math.min(2, Math.max(hecho + 1, pasoPorDias(c.enviada ? diasEntre(c.enviada, hoyChile()) : 0, false)));
-        const m = armarCorreo('cotizacion_recordatorio_' + paso, valoresCotizacion(c), cfgAvisos);
+        const m = armarCorreo(c.estado === 'aprobada' ? 'cotizacion_aprobada_recordatorio' : 'cotizacion_recordatorio_' + paso, valoresCotizacion(c), cfgAvisos);
         const r = await enviarCorreoOAbrirGmail(email, m.asunto, m.texto, { evento: 'recordatorio_cotizacion', tabla: 'cotizaciones', id: c.id, cliente_id: c.cliente_id, vehiculo_id: c.vehiculo_id });
         if (r.estado === 'enviado' || r.estado === 'incierto') {
           const hechos = Math.max(paso, hecho);

@@ -536,7 +536,7 @@
           for (const file of Array.from(e.target.files)) {
             const nombre = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9_.-]/g, '_')}`;
             const path = `${ordenId}/inspeccion/${idx}_${nombre}`;
-            const { error } = await supabaseClient.storage.from('fotos-ot').upload(path, file);
+            const { error } = await supabaseClient.storage.from('fotos-ot').upload(path, await comprimirImagen(file));
             if (!error) {
               const url = supabaseClient.storage.from('fotos-ot').getPublicUrl(path).data.publicUrl;
               if (!checklistActual[idx].fotos) checklistActual[idx].fotos = [];
@@ -917,7 +917,7 @@
         if (estado) estado.textContent = 'Subiendo...';
         for (const file of archivos) {
           const ruta = `${ordenActual.id}/avance/avance_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9_.-]/g, '_')}`;
-          const { error } = await supabaseClient.storage.from('fotos-ot').upload(ruta, file);
+          const { error } = await supabaseClient.storage.from('fotos-ot').upload(ruta, await comprimirImagen(file));
           if (error) { errorEdicion(`No se pudo subir ${file.name}: ${error.message}`); continue; }
           const url = supabaseClient.storage.from('fotos-ot').getPublicUrl(ruta).data.publicUrl;
           avanceEditando.fotos.push(url);
@@ -975,7 +975,7 @@
         const voucherId = `abono_${Date.now()}.${ext}`;
         const voucherRuta = `${ordenActual.id}/abonos/${voucherId}`;
         const { error: uploadError } = await supabaseClient.storage
-          .from('fotos-ot').upload(voucherRuta, voucherAboroPendiente);
+          .from('fotos-ot').upload(voucherRuta, await comprimirImagen(voucherAboroPendiente));   // los PDF se suben tal cual
         if (uploadError) { errorEl.textContent = 'Error al subir voucher: ' + uploadError.message; return; }
         voucherPath = voucherRuta;
       }
@@ -1643,7 +1643,7 @@
       for (const file of e.target.files) {
         const nombre = `avance_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9_.-]/g, '_')}`;
         const path = `${ordenActual.id}/avance/${nombre}`;
-        const { error } = await supabaseClient.storage.from('fotos-ot').upload(path, file);
+        const { error } = await supabaseClient.storage.from('fotos-ot').upload(path, await comprimirImagen(file));
         if (!error) {
           const url = supabaseClient.storage.from('fotos-ot').getPublicUrl(path).data.publicUrl;
           avanceFotosPendientes.push(url);

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Agenda · Autonova</title>
-  <link rel="stylesheet" href="../assets/css/style.css?v=20261120" />
+  <link rel="stylesheet" href="../assets/css/style.css?v=20261125" />
   <style>
     .horario-grid { display: flex; flex-direction: column; }
     .horario-slot { display: flex; border-bottom: 1px solid var(--color-border); min-height: 56px; }
@@ -964,7 +964,7 @@
 
     // El valor se informa SIN IVA (neto), con "+ IVA" explícito. precio = { monto, origen } | null
     function lineaPrecio(precio) {
-      const aviso = 'Si en la revisión encontramos algo adicional, se lo avisamos antes de hacerlo — nunca le cobramos sin su autorización.';
+      const aviso = 'Es un valor referencial: según el análisis del vehículo puede sufrir modificaciones, y si encontramos algo adicional se lo avisamos antes de hacerlo — nunca le cobramos sin su autorización.';
       if (precio && precio.monto != null) {
         return precio.origen === 'catalogo'
           ? `• Valor de la mano de obra de este servicio: ${precio.desde ? 'desde ' : ''}${fmtMoneda(precio.monto)} + IVA${precio.desde ? ' (según la opción que corresponda al revisar el vehículo)' : ''} (los repuestos o insumos, si corresponden, se cotizan aparte). ${aviso}`
@@ -1052,6 +1052,12 @@
     // Mensaje de confirmación (al crear/confirmar la cita): misma
     // transparencia de precio y tiempo que el recordatorio, pero con la
     // fecha completa en vez de "mañana". Plantilla editable en Configuración.
+    // Horario que se bloqueó en la agenda para el vehículo (lo que el taller fijó al confirmar), también para el cliente
+    function horarioReservadoTexto(c) {
+      if (c.estado !== 'confirmado' || !c.duracion_min) return '';
+      const fin = new Date(new Date(c.fecha_hora).getTime() + Number(c.duracion_min) * 60000);
+      return `\n\n🕒 Horario reservado para su vehículo: de ${fmtHora(c.fecha_hora)} a ${fmtHora(fin.toISOString())} (hora estimada de término: puede variar según lo que encontremos al revisar el vehículo).`;
+    }
     async function mensajeConfirmacionCita(c) {
       const precio = await buscarPrecioEstimado(c);
       const tiempo = c.trabajos && c.trabajos.horas_estimadas ? fmtDuracion(c.trabajos.horas_estimadas) : '';
@@ -1068,7 +1074,7 @@
         precio_linea: lineaPrecioCita(c, precio),
         tiempo_linea: lineaTiempo(tiempo),
         modalidad_linea: lineaModalidad(c.modalidad, c.direccion),
-      }) + ajuste;
+      }) + horarioReservadoTexto(c) + ajuste;
     }
 
     // Correo de confirmación: el mismo texto que el WhatsApp (plantilla de Configuración) más el bloque de horas
@@ -1076,7 +1082,7 @@
     async function correoConfirmacionCita(c) {
       const cuerpo = await mensajeConfirmacionCita(c);
       const fin = new Date(new Date(c.fecha_hora).getTime() + (Number(c.duracion_min) || 60) * 60000);
-      const bloque = c.estado === 'confirmado' ? `\n\nHorario reservado para su vehículo: de ${fmtHora(c.fecha_hora)} a ${fmtHora(fin.toISOString())}.` : '';
+      const bloque = '';   // el horario reservado ya va en el mensaje (horarioReservadoTexto)
       const pie = [tallerHorarios.nombre, tallerHorarios.direccion, tallerHorarios.telefono].filter(Boolean).join(' · ');
       return {
         asunto: `Su hora en ${tallerHorarios.nombre || 'el taller'} está confirmada: ${fmtFecha(c.fecha_hora)} ${fmtHora(c.fecha_hora)}`,
@@ -2262,7 +2268,7 @@
     async function avisarCorreoReagendar(c, cuerpo) {
       const para = correoCita(c);
       const fin = new Date(new Date(c.fecha_hora).getTime() + duracionCita(c) * 60000);
-      const bloque = c.estado === 'confirmado' ? `\n\nHorario reservado para su vehículo: de ${fmtHora(c.fecha_hora)} a ${fmtHora(fin.toISOString())}.` : '';
+      const bloque = horarioReservadoTexto(c);   // mismo aviso de horario reservado que la confirmación
       const pie = [tallerHorarios.nombre, tallerHorarios.direccion, tallerHorarios.telefono].filter(Boolean).join(' · ');
       const asunto = `Su hora en ${tallerHorarios.nombre || 'el taller'} fue reagendada: ${fmtFecha(c.fecha_hora)} ${fmtHora(c.fecha_hora)}`;
       const r = await enviarCorreo({ para, asunto, texto: `${cuerpo}${bloque}${pie ? `\n\n${pie}` : ''}`,

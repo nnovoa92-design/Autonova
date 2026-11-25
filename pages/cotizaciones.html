@@ -472,11 +472,24 @@
             ${c.estado === 'enviada' ? `<button type="button" class="estado-btn" data-id="${c.id}" data-estado="aprobada">Aprobar</button>
               <button type="button" class="btn-danger estado-btn" data-id="${c.id}" data-estado="rechazada">Rechazar</button>` : ''}
             ${puedeConvertir ? `<button type="button" class="convertir-btn" data-id="${c.id}">Convertir a OT</button>` : ''}
+            ${c.estado === 'aprobada' ? `<button type="button" class="btn-danger estado-btn" data-id="${c.id}" data-estado="rechazada" title="El cliente finalmente no hará el trabajo">Rechazar</button>
+              <button type="button" class="btn-secondary recordar-btn" data-id="${c.id}" title="Recordatorios por correo para que agende">${c.no_recordar ? '🔔 Volver a recordar' : '🔕 Dejar de recordar'}</button>
+              <button type="button" class="btn-danger eliminar-btn" data-id="${c.id}">Eliminar</button>` : ''}
             ${c.estado === 'rechazada' ? `<button type="button" class="btn-secondary nueva-copia-btn" data-id="${c.id}" title="Nueva cotización (borrador) con el mismo cliente, vehículo e ítems">♻ Hacer una nueva</button>` : ''}
           </td>
         </tr>`;
       }).join('');
 
+      tbody.querySelectorAll('.recordar-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const c = cotizacionesCache.find(x => x.id === btn.dataset.id);
+          if (!c) return;
+          const { error } = await supabaseClient.from('cotizaciones').update({ no_recordar: !c.no_recordar }).eq('id', c.id);
+          if (error) { alert(/no_recordar/.test(error.message || '') ? 'Falta ejecutar sql/actualizacion-v74-cotizaciones-aprobadas.sql en Supabase.' : 'Error: ' + error.message); return; }
+          mostrarToast(c.no_recordar ? 'Se volverán a enviar recordatorios de esta cotización.' : 'Listo: esta cotización ya no recibe recordatorios.', 'ok');
+          await loadCotizaciones();
+        });
+      });
       tbody.querySelectorAll('.nueva-copia-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           const c = cotizacionesCache.find(x => x.id === btn.dataset.id);

@@ -435,7 +435,7 @@
         errorEl.textContent = '';
         for (const file of Array.from(e.target.files)) {
           const path = `diagnosticos/${diagActual.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9_.-]/g, '_')}`;
-          const { error } = await supabaseClient.storage.from('fotos-ot').upload(path, file);
+          const { error } = await supabaseClient.storage.from('fotos-ot').upload(path, await comprimirImagen(file));
           if (error) { errorEl.textContent = `No se pudo subir la foto: ${error.message}`; continue; }
           pruebasActuales[idx].fotos.push(supabaseClient.storage.from('fotos-ot').getPublicUrl(path).data.publicUrl);
         }
@@ -572,7 +572,7 @@
         const idx = Number(e.target.dataset.idx);
         for (const file of Array.from(e.target.files)) {
           const ruta = `diagnosticos/${diagActual.id}/inspeccion/${idx}_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9_.-]/g, '_')}`;
-          const { error } = await supabaseClient.storage.from('fotos-ot').upload(ruta, file);
+          const { error } = await supabaseClient.storage.from('fotos-ot').upload(ruta, await comprimirImagen(file));
           if (error) { modalError(`No se pudo subir la foto: ${error.message}`); continue; }
           checklistTemp[idx].fotos.push(supabaseClient.storage.from('fotos-ot').getPublicUrl(ruta).data.publicUrl);
         }
