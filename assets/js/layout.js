@@ -34,6 +34,7 @@ const SECCIONES_CONFIG = [
   { id: 'correo', label: 'Correo automático' },
   { id: 'mensajes-correo', label: 'Mensajes al cliente' },
   { id: 'registro-correos', label: 'Correos enviados' },
+  { id: 'espacio-fotos', label: 'Espacio de fotos' },
   { id: 'horario', label: 'Horario de atención' },
   { id: 'bloqueos', label: 'Bloqueos de agenda' },
   { id: 'politicas-servicio', label: 'Políticas de servicio' },
@@ -580,7 +581,10 @@ async function comprimirImagen(file) {
     const c = document.createElement('canvas');
     c.width = Math.round(img.naturalWidth * escala);
     c.height = Math.round(img.naturalHeight * escala);
-    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#ffffff';                 // fondo blanco: un PNG transparente no queda negro al pasar a JPEG
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(img, 0, 0, c.width, c.height);
     const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.8));
     if (!blob || blob.size >= file.size) return file;
     return new File([blob], String(file.name || 'foto').replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });

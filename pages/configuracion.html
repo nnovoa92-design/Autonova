@@ -469,6 +469,24 @@
           <div id="registro-correos-lista"><p style="color:var(--color-text-muted); font-size:0.85rem;">Se carga al abrir esta sección.</p></div>
         </div>
 
+        <div class="card" id="espacio-fotos-card">
+          <h2 data-cfg="espacio-fotos" style="margin-top:0;">Espacio de fotos</h2>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
+            Las fotos de OT, diagnósticos, inspecciones y vouchers se guardan en Supabase (el plan gratis permite 1 GB).
+            Las fotos nuevas ya se suben comprimidas. Aquí puedes comprimir las antiguas: cada foto queda con el
+            <strong>mismo nombre y la misma dirección</strong> (se sigue viendo igual en la OT y en el portal del cliente),
+            pero a un tamaño de pantalla (1600 px) que pesa mucho menos. Los PDF, firmas y fotos ya livianas no se tocan.
+          </p>
+          <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.5rem;">
+            <button type="button" id="fotos-revisar" class="btn-secondary">🔍 Revisar espacio</button>
+            <button type="button" id="fotos-comprimir" class="btn" hidden>🗜️ Comprimir fotos pesadas</button>
+            <button type="button" id="fotos-detener" class="btn-secondary" hidden>Detener</button>
+          </div>
+          <div id="fotos-resumen" style="font-size:0.9rem;"></div>
+          <div id="fotos-barra" hidden style="height:10px; background:#e3e6eb; border-radius:999px; overflow:hidden; margin:0.6rem 0 0.3rem;"><div id="fotos-barra-relleno" style="height:100%; width:0; background:#1b6e3c; transition:width .3s;"></div></div>
+          <p id="fotos-progreso" style="font-size:0.85rem; color:var(--color-text-muted); min-height:1em; margin:0.2rem 0 0;"></p>
+        </div>
+
         <div class="card">
           <h2 data-cfg="horario" style="margin-top:0;">Horario de atención</h2>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
@@ -1800,6 +1818,122 @@ function responder(obj) {
       tallerConfigCache = null;
       estadoEl.style.color = '#1b6e3c';
       estadoEl.textContent = e.target.checked ? 'Listo: te llegará una copia de cada correo.' : 'Listo: ya no se envían copias.';
+    });
+
+    // ---------- Espacio de fotos: comprimir las fotos antiguas del bucket fotos-ot ----------
+    // Cada foto pesada se descarga, se comprime (1600 px, JPEG) y se vuelve a subir con la MISMA ruta,
+    // así las direcciones guardadas en OT, diagnósticos e inspecciones siguen funcionando.
+    const FOTO_PESADA = 500000;   // bytes: bajo esto no vale la pena tocarla
+    let fotosBucket = null, fotosDetener = false, fotosTrabajando = false;
+    const fmtMb = (b) => (b / 1048576).toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' MB';
+    async function listarFotosBucket(prefijo) {
+      const bucket = supabaseClient.storage.from('fotos-ot');
+      const salida = [];
+      for (let offset = 0; ; offset += 1000) {
+        const { data, error } = await bucket.list(prefijo, { limit: 1000, offset, sortBy: { column: 'name', order: 'asc' } });
+        if (error) throw error;
+        for (const it of data || []) {
+          const ruta = prefijo ? `${prefijo}/${it.name}` : it.name;
+          if (it.id == null) salida.push(...await listarFotosBucket(ruta));   // es una carpeta
+          else salida.push({ ruta, size: Number((it.metadata && it.metadata.size) || 0), tipo: String((it.metadata && it.metadata.mimetype) || '') });
+        }
+        if (!data || data.length < 1000) break;
+      }
+      return salida;
+    }
+    function fotoComprimible(f) {
+      if (f.size < FOTO_PESADA || /firma/i.test(f.ruta)) return false;
+      if (/gif|svg|pdf/i.test(f.tipo) || /\.(gif|svg|pdf)$/i.test(f.ruta)) return false;
+      return /^image\//i.test(f.tipo) || /\.(jpe?g|png|webp|heic|heif)$/i.test(f.ruta);
+    }
+    function pintarResumenFotos() {
+      const todas = fotosBucket || [];
+      const total = todas.reduce((s, f) => s + f.size, 0);
+      const pesadas = todas.filter(fotoComprimible);
+      const pesoPesadas = pesadas.reduce((s, f) => s + f.size, 0);
+      const estimado = total - pesoPesadas + pesadas.length * 350000;
+      document.getElementById('fotos-resumen').innerHTML = `
+        <div><strong>${todas.length}</strong> archivos guardados · <strong>${fmtMb(total)}</strong> en total</div>
+        <div><strong>${pesadas.length}</strong> fotos pesadas que se pueden comprimir (${fmtMb(pesoPesadas)})</div>
+        ${pesadas.length ? `<div style="color:#1b6e3c;">Después de comprimir quedaría en unos <strong>${fmtMb(estimado)}</strong> (estimado).</div>` : '<div style="color:#1b6e3c;">✅ No hay fotos pesadas: el espacio ya está optimizado.</div>'}`;
+      document.getElementById('fotos-comprimir').hidden = !pesadas.length || fotosTrabajando;
+    }
+    document.getElementById('fotos-revisar').addEventListener('click', async (e) => {
+      const btn = e.currentTarget, prog = document.getElementById('fotos-progreso');
+      btn.disabled = true; prog.style.color = ''; prog.textContent = 'Revisando las carpetas de fotos...';
+      try {
+        fotosBucket = await listarFotosBucket('');
+        prog.textContent = '';
+        pintarResumenFotos();
+      } catch (err) {
+        prog.style.color = '#c0392b';
+        prog.textContent = 'No se pudo revisar: ' + (err.message || err);
+      } finally { btn.disabled = false; }
+    });
+    document.getElementById('fotos-detener').addEventListener('click', () => {
+      fotosDetener = true;
+      document.getElementById('fotos-progreso').textContent = 'Deteniendo después de la foto en curso...';
+    });
+    document.getElementById('fotos-comprimir').addEventListener('click', async () => {
+      const pesadas = (fotosBucket || []).filter(fotoComprimible).sort((a, b) => b.size - a.size);
+      if (!pesadas.length) return;
+      if (!confirm(`Se van a comprimir ${pesadas.length} fotos (${fmtMb(pesadas.reduce((s, f) => s + f.size, 0))}).\n\n` +
+        'Cada foto queda con el mismo nombre y se sigue viendo en su OT, pero a tamaño de pantalla (1600 px): ' +
+        'la versión original en máxima resolución se reemplaza y no se puede recuperar.\n\n' +
+        'Conviene hacerlo desde el computador con wifi y no cerrar esta página hasta que termine. ¿Comenzar?')) return;
+      const prog = document.getElementById('fotos-progreso'), barra = document.getElementById('fotos-barra'), relleno = document.getElementById('fotos-barra-relleno');
+      const bucket = supabaseClient.storage.from('fotos-ot');
+      fotosTrabajando = true; fotosDetener = false;
+      document.getElementById('fotos-comprimir').hidden = true;
+      document.getElementById('fotos-revisar').disabled = true;
+      document.getElementById('fotos-detener').hidden = false;
+      barra.hidden = false; prog.style.color = '';
+      let hechas = 0, comprimidas = 0, ahorro = 0, sinCambio = 0, errores = 0, sinPermiso = false, siguiente = 0;
+      const avisar = () => {
+        relleno.style.width = Math.round(hechas / pesadas.length * 100) + '%';
+        prog.textContent = `${hechas} de ${pesadas.length} revisadas · ${comprimidas} comprimidas · ahorro ${fmtMb(ahorro)}` +
+          (sinCambio ? ` · ${sinCambio} sin cambio` : '') + (errores ? ` · ${errores} con error` : '');
+      };
+      const trabajar = async () => {
+        while (!fotosDetener && !sinPermiso && siguiente < pesadas.length) {
+          const f = pesadas[siguiente++];
+          try {
+            const { data: blob, error: errBaja } = await bucket.download(f.ruta);
+            if (errBaja || !blob) throw errBaja || new Error('sin datos');
+            const original = new File([blob], f.ruta.split('/').pop(), { type: f.tipo || blob.type || 'image/jpeg' });
+            const comp = await comprimirImagen(original);
+            if (comp === original || comp.size > original.size * 0.9) { sinCambio++; }
+            else {
+              const { error: errSube } = await bucket.upload(f.ruta, comp, { upsert: true, contentType: 'image/jpeg', cacheControl: '3600' });
+              if (errSube) {
+                if (/row-level security|unauthorized|not allowed|403/i.test(errSube.message || '')) sinPermiso = true;
+                throw errSube;
+              }
+              comprimidas++; ahorro += original.size - comp.size;
+              f.size = comp.size; f.tipo = 'image/jpeg';
+            }
+          } catch (err) {
+            errores++;
+            console.error('Comprimir foto', f.ruta, err);
+          }
+          hechas++; avisar();
+        }
+      };
+      avisar();
+      await Promise.all([trabajar(), trabajar(), trabajar()]);   // 3 a la vez
+      fotosTrabajando = false;
+      document.getElementById('fotos-detener').hidden = true;
+      document.getElementById('fotos-revisar').disabled = false;
+      pintarResumenFotos();
+      if (sinPermiso) {
+        prog.style.color = '#c0392b';
+        prog.textContent = 'Supabase no permitió reemplazar las fotos. Corre sql/actualizacion-v76-comprimir-fotos.sql e ingresa con tu usuario administrador.';
+      } else {
+        prog.style.color = '#1b6e3c';
+        prog.textContent = `${fotosDetener ? 'Detenido' : 'Listo'}: ${comprimidas} fotos comprimidas, ahorro de ${fmtMb(ahorro)}` +
+          (sinCambio ? ` · ${sinCambio} ya estaban bien` : '') + (errores ? ` · ${errores} con error (puedes volver a intentarlo)` : '') +
+          '. Supabase actualiza el indicador de uso en unas horas.';
+      }
     });
 
     // ---------- Secciones plegables (cada <h2 data-cfg>) y vista de una sola sección (configuracion.html#id) ----------
