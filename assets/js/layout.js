@@ -674,7 +674,8 @@ function correoHtml(asunto, texto, cfg) {
   <tr><td class="pad" style="padding:30px 36px 6px;">
     <h1 style="margin:0 0 20px;${F}font-weight:normal;font-size:26px;line-height:1.2;letter-spacing:0.5px;text-transform:uppercase;color:#0d0e11;">${escCorreo(titulo)}</h1>
     ${partes.join('\n    ')}
-  </td></tr>${bloqueIg}
+  </td></tr>
+  <tr><td class="pad" style="padding:4px 36px 18px;"><div style="border-top:1px solid #e3e6eb;padding-top:16px;"><img src="${escCorreo(app)}/assets/img/firma-correo.jpg" width="420" alt="Firma ${escCorreo(taller)}" style="display:block;width:420px;max-width:100%;height:auto;border:0;"></div></td></tr>${bloqueIg}
   <tr><td class="pad" align="center" style="padding:22px 36px 30px;">
     <div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#3a3f48;margin:0 0 14px;">¿Necesitas otra hora? Reserva en línea en menos de 1 minuto.</div>
     <a class="latido" href="${escCorreo(app)}/reservar.html" target="_blank" style="display:inline-block;background:#e1341e;color:#ffffff;text-decoration:none;font-family:Arial,Helvetica,sans-serif;font-weight:bold;font-size:17px;padding:15px 34px;border-radius:12px;">📅 Reservar hora</a>
