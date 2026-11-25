@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Agenda · Autonova</title>
-  <link rel="stylesheet" href="../assets/css/style.css?v=20261125" />
+  <link rel="stylesheet" href="../assets/css/style.css?v=20261126" />
   <style>
     .horario-grid { display: flex; flex-direction: column; }
     .horario-slot { display: flex; border-bottom: 1px solid var(--color-border); min-height: 56px; }
@@ -69,6 +69,14 @@
     }
     .agregar-mas-btn { flex-shrink: 0; }
     .sin-horario { padding: 2rem; text-align: center; color: var(--color-text-muted); }
+    /* Criterio de agenda (v78): el vehículo queda en el taller */
+    .queda-box { margin-top: 0.6rem; padding: 0.65rem 0.8rem; border: 1px solid #d2c4f2; background: #f6f2fd; border-radius: 8px; font-size: 0.88rem; color: #3b2a6b; }
+    .queda-box .reag-op { align-items: flex-start; margin-top: 0.45rem; }
+    .queda-box .reag-op input[type=radio] { margin-top: 0.2rem; }
+    .queda-box small { display: block; color: var(--color-text-muted); font-weight: 400; }
+    .queda-dev { display: inline-flex; gap: 0.3rem; flex-wrap: wrap; margin: 0.25rem 0; }
+    .queda-dev input { width: auto; padding: 0.25rem 0.4rem; }
+    .queda-alerta { color: #a93b33; margin-top: 0.35rem; }
     @media (max-width: 600px) {
       .slot-hora { width: 52px; font-size: 0.75rem; }
       .cita-info { font-size: 0.82rem; }
@@ -1055,6 +1063,11 @@
     // Horario que se bloqueó en la agenda para el vehículo (lo que el taller fijó al confirmar), también para el cliente
     function horarioReservadoTexto(c) {
       if (c.estado !== 'confirmado' || !c.duracion_min) return '';
+      // El trabajo pasa del cierre y el vehículo queda en el taller (v78)
+      if (c.queda_taller && c.devolucion_estimada) {
+        return `\n\n🕒 Horario reservado para su vehículo: desde las ${fmtHora(c.fecha_hora)}.`
+          + `\n🌙 Su vehículo quedará en el taller: devolución estimada el ${fechaLargaCita(c.devolucion_estimada)} a las ${fmtHora(c.devolucion_estimada)} (puede variar según los procesos mecánicos que requiera el vehículo).`;
+      }
       const fin = new Date(new Date(c.fecha_hora).getTime() + Number(c.duracion_min) * 60000);
       return `\n\n🕒 Horario reservado para su vehículo: de ${fmtHora(c.fecha_hora)} a ${fmtHora(fin.toISOString())} (hora estimada de término: puede variar según lo que encontremos al revisar el vehículo).`;
     }
@@ -1155,6 +1168,7 @@
         + (esReservaNueva(c) ? ETIQUETA_NUEVO : '')
         + (c.modalidad === 'terreno' ? ` <span class="badge badge-orange" title="${escapar([c.direccion, (margenesCita(c).antes || margenesCita(c).despues) ? 'bloquea el traslado ' + margenesCita(c).antes + ' min antes y ' + margenesCita(c).despues + ' min después' : ''].filter(Boolean).join(' · '))}">🚗 a domicilio</span>` : (c.modalidad === 'retiro' ? ' <span class="badge badge-gray">retiro</span>' : ''))
         + (c.bloquea === false ? ' <span class="badge badge-gray" title="No bloquea las horas: permite otro vehículo al mismo tiempo">paralelo</span>' : '')
+        + (c.queda_taller && c.devolucion_estimada ? ` <span class="badge badge-purple" title="Pasa del cierre: el vehículo queda en el taller y el trabajo sigue el día hábil siguiente">🌙 queda · devolución ${escapar(fmtFecha(c.devolucion_estimada))} ${fmtHora(c.devolucion_estimada)}</span>` : '')
         + (c.codigo_descuento ? (c.codigo_nota
             ? ` <span class="badge badge-red" title="${escapar(c.codigo_nota)}">🎁 ${escapar(c.codigo_descuento)} ✗ no aplica</span>`
             : ` <span class="badge badge-green" title="Código del Club: se aplica solo al crear la OT">🎁 ${escapar(c.codigo_descuento)}</span>`) : "")
@@ -1198,7 +1212,9 @@
       }
       const citasHtml = citas.map(renderCitaCard).join('');
       const continuaHtml = (continua || []).map(c =>
-        `<div class="cita-continua">↳ ${escapar(nombreCliente(c))} (ocupado hasta las ${fmtHoraFin(c)})</div>`).join('');
+        c._continua
+          ? `<div class="cita-continua">🌙 ${escapar(nombreCliente(c))}${c.vehiculos && c.vehiculos.patente ? ' · ' + escapar(c.vehiculos.patente) : ''} quedó en el taller desde el ${escapar(fmtFecha(c.fecha_hora))} (sigue hasta las ${fmtHora(c.devolucion_estimada)})</div>`
+          : `<div class="cita-continua">↳ ${escapar(nombreCliente(c))} (ocupado hasta las ${fmtHoraFin(c)})</div>`).join('');
       const trasladoHtml = traslado.map(t =>
         `<div class="cita-continua">🚗 Traslado ${t.tipo === 'antes' ? 'hacia' : 'de vuelta de'} la atención a domicilio de ${escapar(nombreCliente(t.c))}</div>`).join('');
       return `<div class="horario-slot">
@@ -1211,6 +1227,7 @@
     }
 
     let citasDia = [];
+    let continuanHoy = [];   // citas de días anteriores cuyo vehículo quedó en el taller y sigue este día (v78)
     function renderCitas() {
       const dia  = document.getElementById('dia-actual').value;
       const grid = document.getElementById('horario-grid');
@@ -1253,6 +1270,16 @@
           const k = slots[idx];
           (continuaciones[k] = continuaciones[k] || []).push(c);
         }
+      });
+
+      // Vehículos que quedaron en el taller el día anterior: ocupan la mañana hasta su devolución estimada (v78)
+      continuanHoy.forEach(c => {
+        const desde = ymdChile(c.continua_desde) === dia ? minDeHHMM(fmtHora(c.continua_desde)) : 0;
+        const hasta = ymdChile(c.devolucion_estimada) === dia ? minDeHHMM(fmtHora(c.devolucion_estimada)) : 24 * 60;
+        slots.forEach(k => {
+          const s = minDeHHMM(k);
+          if (s + slotMinDia > desde && s < hasta) (continuaciones[k] = continuaciones[k] || []).push({ ...c, _continua: true });
+        });
       });
 
       // Traslado de las citas a domicilio: los bloques de antes y de después también quedan ocupados
@@ -1449,12 +1476,29 @@
         .neq('estado', 'cancelado');
       const ini = new Date(fechaHora).getTime() - (Number(margen.antes) || 0) * 60000;
       const fin = new Date(fechaHora).getTime() + (minutos + (Number(margen.despues) || 0)) * 60000;
-      return (data || []).filter(o => o.id !== ignorarId && o.bloquea !== false && citaChocaCon(ini, fin, o));
+      const choques = (data || []).filter(o => o.id !== ignorarId && o.bloquea !== false && citaChocaCon(ini, fin, o));
+      // Vehículos que quedaron en el taller el día anterior y siguen esa mañana (v78)
+      (await continuacionesDelDia(ymdChile(fechaHora))).forEach(o => {
+        if (o.id !== ignorarId && o.bloquea !== false && ini < new Date(o.devolucion_estimada).getTime() && new Date(o.continua_desde).getTime() < fin) choques.push({ ...o, _continua: true });
+      });
+      return choques;
     }
 
+    // Citas que quedaron en el taller y continúan el día `ymd` (v78; sin v78 no hay ninguna)
+    async function continuacionesDelDia(ymd) {
+      const lim = limitesDiaChile(ymd);
+      const { data, error } = await supabaseClient.from('citas')
+        .select('*, clientes(nombre), vehiculos(patente), trabajos(nombre)')
+        .eq('queda_taller', true).neq('estado', 'cancelado')
+        .lte('continua_desde', lim.hasta).gte('devolucion_estimada', lim.desde).lt('fecha_hora', lim.desde);
+      return error ? [] : (data || []).filter(o => o.continua_desde && o.devolucion_estimada);
+    }
     function descChoque(o) {
       const veh = o.vehiculos ? o.vehiculos.patente : (o.patente_contacto || '');
       const est = (ESTADOS_CITA[o.estado] || {}).label || o.estado;
+      if (o._continua) {
+        return `🌙 ${nombreCliente(o)}${veh ? ' · ' + veh : ''}: quedó en el taller y sigue hasta las ${fmtHora(o.devolucion_estimada)} (${est})`;
+      }
       const m = margenesCita(o);
       const traslado = (m.antes || m.despues) ? ` + traslado (${fmtHora(new Date(new Date(o.fecha_hora).getTime() - m.antes * 60000).toISOString())}–${fmtHoraTraslado(o)})` : '';
       return `${fmtHora(o.fecha_hora)}–${fmtHoraFin(o)}${traslado} · ${nombreCliente(o)}${veh ? ' · ' + veh : ''} (${est})`;
@@ -1466,6 +1510,83 @@
       confirmando = null;
     }
     document.getElementById('confirmar-backdrop').addEventListener('click', (e) => { if (e.target.id === 'confirmar-backdrop') cerrarConfirmacion(); });
+
+    // ---------- Criterio de agenda (v78): trabajo que pasa del cierre → el vehículo queda en el taller ----------
+    // Misma regla que la reserva en línea (sql/v78 _criterio_slot): la colación corre el término, el resto del trabajo
+    // sigue desde la apertura del próximo día hábil; un día bloqueado completo lo impide; a domicilio en terreno no puede quedar.
+    function calcularQuedaTaller(fechaHora, minutos, modalidad) {
+      const ini = new Date(fechaHora);
+      const ymd = ymdChile(fechaHora);
+      const dia = horarioDelDia(new Date(`${ymd}T12:00:00`).getDay());
+      if (!dia.abierto || !dia.cierre) return { pasa: false };
+      const iniMin = ini.getHours() * 60 + ini.getMinutes();
+      let finMin = iniMin + minutos;
+      if (dia.pausa_desde && dia.pausa_hasta && iniMin < minDeHHMM(dia.pausa_desde) && minDeHHMM(dia.pausa_desde) < finMin) {
+        finMin += minDeHHMM(dia.pausa_hasta) - minDeHHMM(dia.pausa_desde);
+      }
+      const cierre = minDeHHMM(dia.cierre);
+      if (finMin <= cierre) return { pasa: false };
+      const base = { pasa: true, cierre: dia.cierre, terminaria: hhmmDeMin(finMin % 1440) };
+      if (modalidad === 'terreno') return { ...base, imposible: `A domicilio (en terreno) el trabajo no puede quedar para el día siguiente: terminaría a las ${base.terminaria} y el cierre es a las ${dia.cierre}.` };
+      let resto = finMin - cierre, d = ymd, continua = null;
+      for (let i = 0; i < 14; i++) {
+        d = sumarDiasYmd(d, 1);
+        const h = horarioDelDia(new Date(`${d}T12:00:00`).getDay());
+        if (!h.abierto || !h.apertura || !h.cierre) continue;
+        if (bloqueosDelDia(d).some(b => !b.hora_desde)) {
+          return { ...base, imposible: `El vehículo tendría que quedar en el taller, pero el ${fmtFecha(d)} está bloqueado todo el día.` };
+        }
+        const ap = minDeHHMM(h.apertura), ci = minDeHHMM(h.cierre);
+        if (!continua) continua = new Date(`${d}T${h.apertura}:00`);
+        let hasta = Math.min(ap + resto, ci);
+        const cruzaPausa = h.pausa_desde && h.pausa_hasta && ap < minDeHHMM(h.pausa_desde) && minDeHHMM(h.pausa_desde) < hasta;
+        if (cruzaPausa) hasta = Math.min(hasta + minDeHHMM(h.pausa_hasta) - minDeHHMM(h.pausa_desde), ci);
+        resto -= (hasta - ap) - (cruzaPausa ? minDeHHMM(h.pausa_hasta) - minDeHHMM(h.pausa_desde) : 0);
+        if (resto <= 0) return { ...base, continua, devolucion: new Date(`${d}T${hhmmDeMin(hasta)}:00`), dia: d };
+      }
+      return { ...base, imposible: 'No encontré un día hábil para terminar el trabajo en las próximas 2 semanas.' };
+    }
+
+    // Cuadro del modal de confirmación: queda en el taller (con devolución estimada editable) o liberar la hora
+    async function pintarQuedaConfirmacion(c, q) {
+      const caja = document.getElementById('cf-queda');
+      const boton = document.getElementById('cf-confirmar');
+      if (!caja) return;
+      if (!q.pasa) { caja.innerHTML = ''; caja.dataset.clave = ''; if (boton) boton.textContent = 'Confirmar y bloquear horas'; return; }
+      const clave = `${q.imposible || ''}|${q.devolucion ? q.devolucion.toISOString() : ''}`;
+      if (caja.dataset.clave !== clave) {
+        caja.dataset.clave = clave;
+        // La devolución que ya tenía la cita (la calculó la reserva o la fijaste tú) manda si es del mismo día propuesto
+        const previa = c.devolucion_estimada && q.devolucion && ymdChile(c.devolucion_estimada) === q.dia ? new Date(c.devolucion_estimada) : q.devolucion;
+        caja.innerHTML = `<div class="queda-box">
+            <strong>🌙 El trabajo pasa del cierre (${escapar(q.cierre)})</strong> — terminaría a las ${escapar(q.terminaria)}.
+            ${q.imposible ? `<div class="queda-alerta">⚠ ${escapar(q.imposible)}</div>` : `
+            <label class="reag-op"><input type="radio" name="cf-queda" value="queda" checked />
+              <span>El vehículo <strong>queda en el taller</strong>. Devolución estimada:
+                <span class="queda-dev"><input type="date" id="cf-dev-fecha" value="${q.dia}" /> <input type="time" id="cf-dev-hora" value="${hhmmDeFecha(previa)}" /></span>
+                <small>Al cliente le llega como hora estimada (puede variar según los procesos mecánicos).</small></span></label>`}
+            <label class="reag-op"><input type="radio" name="cf-queda" value="devolver"${q.imposible ? ' checked' : ''} />
+              <span><strong>No puede quedar:</strong> liberar la hora y pedirle que elija otro día <small>(sus datos y su vehículo quedan guardados)</small></span></label>
+            <div id="cf-queda-choques"></div>
+          </div>`;
+        caja.querySelectorAll('input[name="cf-queda"]').forEach(r => r.addEventListener('change', () => pintarBotonQueda()));
+      }
+      pintarBotonQueda();
+      // La mañana siguiente: ¿hay otras citas en ese tramo?
+      const choquesCaja = document.getElementById('cf-queda-choques');
+      if (q.continua && q.devolucion && choquesCaja) {
+        const min = Math.round((q.devolucion - q.continua) / 60000);
+        const otros = (await buscarChoques(q.continua.toISOString(), min, c.id)).filter(o => o.id !== c.id);
+        choquesCaja.innerHTML = otros.length
+          ? `<div class="queda-alerta">⚠ El ${escapar(fmtFecha(q.dia))} entre ${hhmmDeFecha(q.continua)} y ${hhmmDeFecha(q.devolucion)} ya hay: ${otros.map(o => escapar(descChoque(o))).join('; ')}</div>`
+          : `<div style="color:#1b6e3c; font-size:0.85rem; margin-top:0.3rem;">✅ El ${escapar(fmtFecha(q.dia))} de ${hhmmDeFecha(q.continua)} a ${hhmmDeFecha(q.devolucion)} está libre para terminarlo.</div>`;
+      }
+    }
+    function pintarBotonQueda() {
+      const op = document.querySelector('input[name="cf-queda"]:checked');
+      const boton = document.getElementById('cf-confirmar');
+      if (boton) boton.textContent = op && op.value === 'devolver' ? 'Liberar la hora y avisar al cliente…' : 'Confirmar y bloquear horas';
+    }
 
     // Avisos del horario (no impiden confirmar): cierre, pausa y bloqueos que se cruzan
     function avisosHorarioConfirmacion(c, minutos) {
@@ -1698,6 +1819,7 @@
         </div>
         <p id="cf-resumen" style="font-weight:600; margin:0.5rem 0 0.25rem;"></p>
         <div id="cf-choques"></div>
+        <div id="cf-queda"></div>
 
         <label style="display:flex; gap:0.5rem; align-items:flex-start; margin-top:0.6rem; font-weight:500;">
           <input type="checkbox" id="cf-paralelo" style="margin-top:0.2rem; width:auto;" />
@@ -1746,7 +1868,9 @@
         const choques = await buscarChoques(c.fecha_hora, minutos, c.id, margenesCita(c));
         if (!confirmando || confirmando.cita.id !== c.id) return;
         confirmando.choques = choques;
-        const avisos = avisosHorarioConfirmacion(c, minutos);
+        const quedaInfo = calcularQuedaTaller(c.fecha_hora, minutos, c.modalidad);
+        // Si pasa del cierre, el cuadro «queda en el taller» lo explica: no se repite el aviso del cierre
+        const avisos = avisosHorarioConfirmacion(c, minutos).filter(a => !(quedaInfo.pasa && /después del cierre/.test(a)));
         const paralelo = document.getElementById('cf-paralelo').checked;
         caja.innerHTML = (choques.length && !paralelo
             ? `<div style="background:#fff4f2; border:1px solid #e3b4ae; border-radius:8px; padding:0.5rem 0.7rem; color:#7a1f14; font-size:0.88rem;">
@@ -1757,6 +1881,7 @@
                               : '<div style="color:#1b6e3c; font-size:0.88rem;">✅ Sin choques con otras citas.</div>'))
           + avisos.map(a => `<div style="color:#92600a; font-size:0.85rem; margin-top:0.25rem;">⚠ ${escapar(a)}</div>`).join('');
         document.getElementById('cf-sobre-box').style.display = (choques.length && !paralelo) ? 'flex' : 'none';
+        await pintarQuedaConfirmacion(c, quedaInfo);
       };
       const programar = () => { clearTimeout(confirmando && confirmando.timer); if (confirmando) confirmando.timer = setTimeout(refrescar, 200); };
 
@@ -1796,6 +1921,21 @@
         errorEl.textContent = '';
         const minutos = minutosActuales();
         if (!(minutos > 0)) { errorEl.textContent = 'Indica cuánto dura el trabajo.'; return; }
+        // Pasa del cierre (v78): queda en el taller con devolución estimada, o se libera la hora y se le pide otro día
+        const quedaInfo = calcularQuedaTaller(c.fecha_hora, minutos, c.modalidad);
+        const opQueda = document.querySelector('input[name="cf-queda"]:checked');
+        if (quedaInfo.pasa && (!opQueda || opQueda.value === 'devolver')) {
+          cerrarConfirmacion();
+          abrirCancelarConAviso(c, { motivo: 'no_queda' });
+          return;
+        }
+        let datosQueda = { queda_taller: false, continua_desde: null, devolucion_estimada: null };
+        if (quedaInfo.pasa) {
+          const f = document.getElementById('cf-dev-fecha').value, h = document.getElementById('cf-dev-hora').value;
+          const dev = f && h ? new Date(`${f}T${h}:00`) : null;
+          if (!dev || isNaN(dev) || dev <= new Date(c.fecha_hora)) { errorEl.textContent = 'Indica la fecha y hora estimada de devolución del vehículo.'; return; }
+          datosQueda = { queda_taller: true, continua_desde: (quedaInfo.continua && quedaInfo.continua < dev ? quedaInfo.continua : dev).toISOString(), devolucion_estimada: dev.toISOString() };
+        }
         const paralelo = document.getElementById('cf-paralelo').checked;
         const choques = await buscarChoques(c.fecha_hora, minutos, c.id, margenesCita(c));
         if (choques.length && !paralelo && !document.getElementById('cf-sobre').checked) {
@@ -1823,6 +1963,11 @@
         }
         const payload = { estado: 'confirmado', duracion_min: minutos, personal_id: document.getElementById('cf-mec').value || null };
         if ('bloquea' in c) payload.bloquea = !paralelo;
+        if ('queda_taller' in c) Object.assign(payload, datosQueda);
+        else if (datosQueda.queda_taller) {
+          errorEl.textContent = 'Para registrar que el vehículo queda en el taller falta ejecutar sql/actualizacion-v78-criterio-de-agenda.sql en Supabase.';
+          return;
+        }
         // Servicio corregido por el taller (el cliente eligió otro al reservar)
         const trabajoElegido = selServicio.value || null;
         const otroTexto = otroServicio.value.trim();
@@ -1988,6 +2133,7 @@
       taller:             { label: 'Solicitud del taller', cliente: 'por un ajuste de agenda del taller (disculpe las molestias)' },
       imprevisto_taller:  { label: 'Imprevisto del taller', cliente: 'por un imprevisto del taller (disculpe las molestias)' },
       repuestos:          { label: 'Repuestos no disponibles', cliente: 'porque los repuestos para su vehículo aún no están disponibles (disculpe las molestias)' },
+      no_queda:           { label: 'No alcanza a terminar y el vehículo no puede quedar', cliente: 'porque el servicio no alcanza a terminar ese día y su vehículo no puede quedar en el taller hasta el día siguiente' },
       otro:               { label: 'Otro (escribir)', cliente: '' },
     };
     let reagendando = null;   // { c, fecha, citasDelDia }
@@ -2043,6 +2189,8 @@
     // ---------- Cancelar y pedirle al cliente que reagende ----------
     // Link a la reserva en línea con el mismo servicio, la misma atención (taller / domicilio) y su código del Club
     function linkReagendarCliente(c) {
+      // Con su link privado (v77/v78) vuelve a la reserva con sus datos y su vehículo ya guardados
+      if (c.token_cliente) return `${window.location.origin}/reservar.html?cita=${encodeURIComponent(c.token_cliente)}`;
       const p = new URLSearchParams();
       if (c.trabajo_id) p.set('servicio', c.trabajo_id);
       if (c.modalidad === 'terreno' || c.modalidad === 'retiro') p.set('modalidad', c.modalidad);
@@ -2056,14 +2204,14 @@
         `Le saluda el equipo de ${tallerHorarios.nombre || 'el taller'}. Su cita del ${fechaLargaCita(c.fecha_hora)} a las ${fmtHora(c.fecha_hora)} quedó cancelada ${textoMotivo}.`,
         `Servicio: ${servicioCita(c) || 'Servicio agendado'}`,
         '',
-        'Elija su nueva hora aquí, en menos de 1 minuto (el servicio ya va marcado):',
+        c.token_cliente ? 'Elija su nueva hora aquí, en menos de 1 minuto (sus datos y su vehículo ya van guardados):' : 'Elija su nueva hora aquí, en menos de 1 minuto (el servicio ya va marcado):',
         linkReagendarCliente(c),
         '',
         'Si prefiere, respóndanos este mensaje y le ayudamos a agendar. ¡Gracias por su comprensión!',
       ].join('\n');
     }
 
-    function abrirCancelarConAviso(c) {
+    function abrirCancelarConAviso(c, opciones = {}) {
       const correo = correoCita(c), tel = telefonoCita(c);
       const puedeCorreo = correoValido(correo) && envioCorreoListo();
       const textoCorreo = puedeCorreo ? ` (${escapar(correo)})` : (correoValido(correo) ? ' (el envío automático no está configurado)' : ' (no tiene correo)');
@@ -2113,6 +2261,8 @@
           tipo: 'cancelacion', desde: c.fecha_hora, motivo, motivo_texto: motivo === 'otro' ? otro : MOTIVOS_REAGENDAR[motivo].label,
           hora_anterior: bloquear ? 'bloqueada' : 'disponible', aviso: [quiereCorreo ? 'correo' : '', quiereWa ? 'whatsapp' : ''].filter(Boolean),
           fecha: new Date().toISOString(),
+          // Con su link puede elegir otra hora sin volver a escribir sus datos (v78)
+          ...(c.token_cliente && (quiereCorreo || quiereWa) ? { reagendable: true, motivo_cliente: textoMotivoCx() } : {}),
         };
         let { error } = await supabaseClient.from('citas').update({ estado: 'cancelado', reagendamientos: [...(Array.isArray(c.reagendamientos) ? c.reagendamientos : []), entrada] }).eq('id', c.id);
         if (faltaColumnaNueva(error)) ({ error } = await supabaseClient.from('citas').update({ estado: 'cancelado' }).eq('id', c.id));   // aún sin v73
@@ -2139,6 +2289,11 @@
         mostrarToast(`Cita cancelada y ${quiereCorreo || quiereWa ? 'se le pidió al cliente elegir una nueva hora' : 'sin aviso al cliente'}. La hora quedó ${bloquear ? 'bloqueada sin cliente' : 'disponible'}.`, 'ok', 9000);
         await cargar();
       });
+      if (opciones.motivo && MOTIVOS_REAGENDAR[opciones.motivo]) {
+        const sel = document.getElementById('cx-motivo');
+        sel.value = opciones.motivo;
+        sel.dispatchEvent(new Event('change'));
+      }
       previa();
     }
 
@@ -2244,9 +2399,14 @@
       if (ini === new Date(r.c.fecha_hora).getTime()) avisos.push('Es la misma hora que ya tiene.');
       const choques = r.citasDelDia.filter(o => citaChocaCon(ini - m.antes * 60000, ini + (dur + m.despues) * 60000, o));
       if (choques.length) avisos.push('Se cruza con: ' + choques.map(descChoque).join(' · '));
+      // Pasa del cierre (v78): queda en el taller con su devolución estimada, o no se puede (día bloqueado / a domicilio)
+      const q = calcularQuedaTaller(new Date(ini).toISOString(), dur, r.c.modalidad);
+      if (q.pasa && q.imposible) avisos.push(q.imposible);
       aviso.className = 'reag-aviso ' + (avisos.length ? 'alerta' : 'ok');
       aviso.innerHTML = avisos.length ? '⚠ ' + avisos.map(escapar).join('<br>⚠ ')
-        : `✓ Nueva hora: ${escapar(fechaLargaCita(new Date(ini).toISOString()))} a las ${hora} (hasta las ${hhmmDeFecha(new Date(ini + dur * 60000))}).`;
+        : (q.pasa
+          ? `✓ Nueva hora: ${escapar(fechaLargaCita(new Date(ini).toISOString()))} a las ${hora}. 🌙 Pasa del cierre (${escapar(q.cierre)}): el vehículo queda en el taller y la devolución estimada es el ${escapar(fechaLargaCita(q.devolucion.toISOString()))} a las ${hhmmDeFecha(q.devolucion)}.`
+          : `✓ Nueva hora: ${escapar(fechaLargaCita(new Date(ini).toISOString()))} a las ${hora} (hasta las ${hhmmDeFecha(new Date(ini + dur * 60000))}).`);
     }
 
     // Mensaje al cliente (WhatsApp y cuerpo del correo): antes → ahora, motivo amable y lo mismo que la confirmación
@@ -2311,7 +2471,12 @@
         motivo_texto: motivo === 'otro' ? otro : MOTIVOS_REAGENDAR[motivo].label,
         hora_anterior: bloquear ? 'bloqueada' : 'disponible', fecha: new Date().toISOString(),
       };
-      let { error } = await supabaseClient.from('citas').update({ fecha_hora: nueva, reagendamientos: [...(Array.isArray(c.reagendamientos) ? c.reagendamientos : []), entrada] }).eq('id', c.id);
+      // Con la nueva hora se recalcula si el vehículo queda en el taller y su devolución estimada (v78)
+      const qn = calcularQuedaTaller(nueva, duracionCita(c), c.modalidad);
+      const datosQueda = 'queda_taller' in c ? (qn.pasa && !qn.imposible
+        ? { queda_taller: true, continua_desde: qn.continua.toISOString(), devolucion_estimada: qn.devolucion.toISOString() }
+        : { queda_taller: false, continua_desde: null, devolucion_estimada: null }) : {};
+      let { error } = await supabaseClient.from('citas').update({ fecha_hora: nueva, ...datosQueda, reagendamientos: [...(Array.isArray(c.reagendamientos) ? c.reagendamientos : []), entrada] }).eq('id', c.id);
       if (faltaColumnaNueva(error)) ({ error } = await supabaseClient.from('citas').update({ fecha_hora: nueva }).eq('id', c.id));   // aún sin v73
       if (error) { btn.disabled = false; btn.textContent = '📅 Reagendar'; err.textContent = 'Error: ' + error.message; return; }
 
@@ -2326,7 +2491,7 @@
       }
 
       // Avisos al cliente: WhatsApp listo para enviar y correo automático
-      const cNueva = { ...c, fecha_hora: nueva };
+      const cNueva = { ...c, fecha_hora: nueva, ...datosQueda };
       const textoMotivo = motivo === 'otro' ? `por el siguiente motivo: ${otro}` : MOTIVOS_REAGENDAR[motivo].cliente;
       const mensaje = await mensajeReagendarCita(cNueva, c.fecha_hora, textoMotivo);
       if (quiereWa) avisarWhatsAppCita(cNueva, mensaje);
@@ -2455,6 +2620,7 @@
         .gte('fecha_hora', desde).lte('fecha_hora', hasta)
         .order('fecha_hora');
       citasDia = data || [];
+      continuanHoy = await continuacionesDelDia(dia);   // vehículos que quedaron del día anterior (v78)
       renderCitas(); // siempre renderizar la grilla de slots aunque falle la query
       if (error) {
         document.getElementById('horario-grid').insertAdjacentHTML('afterbegin',

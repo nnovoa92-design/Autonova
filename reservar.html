@@ -42,6 +42,12 @@
     .banner-reagenda { margin: 0 0 0.75rem; padding: 0.7rem 0.9rem; border-radius: var(--radius); background: #eef4ff; border: 1px solid #c9d8f5; font-size: 0.9rem; color: #1f3a68; }
     .banner-reagenda strong { color: #0f2a55; }
     .banner-reagenda.aviso { background: #fff8e6; border-color: #ecd9a0; color: #5b4a12; }
+    /* Criterio de agenda (v78): horas en que el vehículo queda en el taller */
+    .slot-btn.queda { border-style: dashed; border-color: #8a6ad8; }
+    .slot-btn.queda.sel { border-style: solid; }
+    .leyenda-queda { font-size: 0.8rem; color: var(--color-text-muted); margin: 0.4rem 0 0; }
+    .aviso-queda { margin: 0.75rem 0 0; padding: 0.7rem 0.9rem; border-radius: var(--radius); background: #f3effc; border: 1px solid #d2c4f2; color: #3b2a6b; font-size: 0.9rem; }
+    .bloqueado-reagenda { opacity: 0.6; pointer-events: none; }
   </style>
 </head>
 <body class="portal-page">
@@ -110,6 +116,7 @@
           <button type="button" id="sem-next" class="btn-secondary btn-mini">Siguiente →</button>
         </div>
         <div id="semana"></div>
+        <div id="aviso-queda" class="aviso-queda" hidden></div>
       </div>
 
       <!-- Paso 3: datos -->
@@ -261,7 +268,7 @@
         if (selTrabajo) elegido.innerHTML = `Servicio elegido: <strong>${htmlSeguro(etiquetaTrabajo(selTrabajo))}</strong>`;
         if (!selTrabajo && !selOtro) return;
         mostrarPaso('p-fecha');
-        if (!semanaCargada) cargarSemana();
+        recargarHorasSiCambia();   // cada servicio dura distinto: las horas en que alcanza cambian (v78)
         if (selOtro) document.getElementById('r-otro').focus();
         else document.getElementById('p-fecha').scrollIntoView({ behavior: 'smooth' });
       });
@@ -288,6 +295,30 @@
     // Toda la semana: cada día con sus horas libres, o "SIN HORAS DISPONIBLES"
     // si está cerrado, bloqueado o ya no queda ninguna hora.
     let semanaSeq = 0;   // si se pide otra semana o se cambia la modalidad, la respuesta antigua se descarta
+    // ---------- Criterio de agenda (v78): el servicio tiene que alcanzar; si pasa del cierre, el vehículo queda ----------
+    let quedanSemana = {};        // { 'AAAA-MM-DD': { 'HH:MM': 'AAAA-MM-DDTHH:MM' (devolución estimada) } }
+    let semanaConsultada = '';    // servicio|modalidad|tipo con que se consultaron las horas
+    const claveHoras = () => `${selTrabajo ? selTrabajo.id : ''}|${modalidad}|${domicilioTipo}`;
+    function recargarHorasSiCambia() {
+      if (!semanaCargada) { if (selTrabajo || selOtro) cargarSemana(); return; }
+      if (semanaConsultada === claveHoras()) return;
+      selYmd = null; selSlot = null;
+      document.getElementById('p-datos').hidden = true;
+      mostrarAvisoQueda();
+      cargarSemana();
+    }
+    const textoDevolucion = (dev) => {
+      const [ymd, hm] = String(dev).split('T');
+      return `${textoDia(ymd, { weekday: 'long', day: 'numeric', month: 'long' })} a las ${hm}`;
+    };
+    function mostrarAvisoQueda() {
+      const caja = document.getElementById('aviso-queda');
+      const dev = selYmd && selSlot && quedanSemana[selYmd] ? quedanSemana[selYmd][selSlot] : null;
+      caja.hidden = !dev;
+      if (dev) caja.innerHTML = `🌙 <strong>Tu vehículo quedará en el taller.</strong> Este servicio pasa del horario de cierre, así que lo terminamos el día hábil siguiente.
+        Devolución estimada: <strong>${htmlSeguro(textoDevolucion(dev))}</strong> (puede variar según lo que encontremos al revisar el vehículo).
+        Queda sujeto a la confirmación del taller.`;
+    }
     async function cargarSemana() {
       const seq = ++semanaSeq;
       const cont = document.getElementById('semana');
@@ -298,7 +329,10 @@
       document.getElementById('sem-next').disabled = sumarDias(semanaDesde, 7) > sumarDias(hoy, SEMANAS_MAX * 7 - 1);
 
       cont.innerHTML = '<p style="color:var(--color-text-muted);">Consultando disponibilidad...</p>';
-      let { data, error } = await supabaseClient.rpc('reservar_semana', { p_desde: semanaDesde, p_dias: 7, p_modalidad: modalidad });
+      // Con el servicio elegido (v78): solo las horas en que alcanza, y las que dejan el vehículo en el taller
+      let { data, error } = await supabaseClient.rpc('reservar_semana_v2', { p_desde: semanaDesde, p_dias: 7, p_modalidad: modalidad,
+        p_trabajo_id: selTrabajo ? selTrabajo.id : null, p_domicilio_tipo: modalidad === 'domicilio' ? domicilioTipo : null });
+      if (error && error.code === 'PGRST202') ({ data, error } = await supabaseClient.rpc('reservar_semana', { p_desde: semanaDesde, p_dias: 7, p_modalidad: modalidad }));
       // Servidor sin v57 (sin modalidad): las horas se consultan como antes
       if (error && error.code === 'PGRST202') ({ data, error } = await supabaseClient.rpc('reservar_semana', { p_desde: semanaDesde, p_dias: 7 }));
       if (seq !== semanaSeq) return;
@@ -307,6 +341,9 @@
         return;
       }
       semanaCargada = true;
+      semanaConsultada = claveHoras();
+      quedanSemana = {};
+      data.forEach(d => { if (d.quedan && Object.keys(d.quedan).length) quedanSemana[d.fecha] = d.quedan; });
 
       cont.innerHTML = data.map(d => {
         const t = textoDia(d.fecha, { weekday: 'long', day: 'numeric', month: 'long' });
@@ -315,15 +352,20 @@
           return `<div class="dia-card sin-horas"><h4>${titulo}</h4><span class="sin-horas-txt">SIN HORAS DISPONIBLES</span></div>`;
         }
         return `<div class="dia-card"><h4>${titulo}</h4><div class="slots-grid">${
-          d.slots.map(s => `<div class="slot-btn${d.fecha === selYmd && s === selSlot ? ' sel' : ''}" data-fecha="${d.fecha}" data-slot="${s}">${s}</div>`).join('')
+          d.slots.map(s => {
+            const q = quedanSemana[d.fecha] && quedanSemana[d.fecha][s];
+            return `<div class="slot-btn${q ? ' queda' : ''}${d.fecha === selYmd && s === selSlot ? ' sel' : ''}" data-fecha="${d.fecha}" data-slot="${s}"${q ? ' title="Tu vehículo queda en el taller"' : ''}>${s}${q ? ' 🌙' : ''}</div>`;
+          }).join('')
         }</div></div>`;
-      }).join('');
+      }).join('') + (Object.keys(quedanSemana).length
+        ? '<p class="leyenda-queda">🌙 = el servicio pasa del horario de cierre: tu vehículo queda en el taller y te lo devolvemos el día hábil siguiente (sujeto a confirmación del taller).</p>' : '');
 
       cont.querySelectorAll('.slot-btn').forEach(el => el.addEventListener('click', () => {
         cont.querySelectorAll('.slot-btn').forEach(x => x.classList.remove('sel'));
         el.classList.add('sel');
         selYmd = el.dataset.fecha;
         selSlot = el.dataset.slot;
+        mostrarAvisoQueda();
         mostrarPaso('p-datos');
         document.getElementById('p-datos').scrollIntoView({ behavior: 'smooth' });
       }));
@@ -334,6 +376,7 @@
       if (semanaDesde < hoy) semanaDesde = hoy;
       selYmd = null; selSlot = null;
       document.getElementById('p-datos').hidden = true;
+      mostrarAvisoQueda();
       cargarSemana();
     }
     // En el taller / a domicilio: cambia las horas libres (a domicilio se bloquea también el traslado)
@@ -363,6 +406,7 @@
       if (!e.target.matches('input[name="r-dom-tipo"]')) return;
       domicilioTipo = e.target.value === 'retiro' ? 'retiro' : 'terreno';
       renderOpcionesDomicilio();
+      recargarHorasSiCambia();   // con retiro el vehículo puede quedar en el taller; en terreno no
     });
     async function cargarOpcionesDomicilio() {
       const { data, error } = await supabaseClient.rpc('domicilio_opciones');
@@ -385,6 +429,7 @@
       renderOpcionesDomicilio();
       selYmd = null; selSlot = null;
       document.getElementById('p-datos').hidden = true;
+      mostrarAvisoQueda();
       if (semanaCargada) cargarSemana();
       if (modalidad === 'domicilio') document.getElementById('r-direccion').focus();
     });
@@ -777,7 +822,7 @@
         // A domicilio (en terreno o con retiro) y/o con código: la reserva v5 (v72). Si el servidor aún no la tiene,
         // el código y el «retiro y entrega» viajan en el comentario para no perderlos.
         const notaRetiro = modalidad === 'domicilio' && domicilioTipo === 'retiro' ? 'Pide retiro y entrega' : '';
-        if (codigoReserva || modalidad === 'domicilio') {
+        {   // siempre v5: valida que el servicio alcance y guarda si el vehículo queda en el taller (v78)
           ({ data, error } = await supabaseClient.rpc('reservar_cita_v5', { ...intentos[0], p_codigo: codigoReserva || null, p_domicilio_tipo: modalidad === 'domicilio' ? domicilioTipo : null }));
           reservado = !(error && error.code === 'PGRST202');
           if (!reservado && codigoReserva) {   // servidor con v67-v71 (sin el tipo de domicilio)
@@ -832,7 +877,8 @@
       document.getElementById('confirm-detalle').innerHTML = `
         <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>Servicio</span><strong style="text-align:right;">${htmlSeguro(selOtro ? `Otro: ${otroTexto}` : selTrabajo.nombre)}</strong></div>${filaValor}${filaDescripcion}
         <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>Día</span><strong>${textoDia(selYmd, { weekday: 'long', day: 'numeric', month: 'long' })}</strong></div>
-        <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>Hora</span><strong>${selSlot} hrs</strong></div>${filaAtencion}
+        <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>Hora</span><strong>${selSlot} hrs</strong></div>${filaAtencion}${data && data.queda && data.devolucion ? `
+        <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>🌙 Tu vehículo</span><strong style="text-align:right;">Queda en el taller · devolución estimada ${htmlSeguro(textoDevolucion(data.devolucion))}</strong></div>` : ''}
         <div class="fila" style="display:flex; justify-content:space-between; padding:0.25rem 0;"><span>A nombre de</span><strong>${htmlSeguro(nombreMostrado)}</strong></div>
         <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>Confirmación a</span><strong style="text-align:right; word-break:break-all;">${htmlSeguro(correo)}</strong></div>${codigoReserva ? `
         <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>🎁 Código de descuento</span><strong style="text-align:right;">${htmlSeguro(codigoReserva)}</strong></div>
@@ -921,7 +967,11 @@
       reagenda = data;
       const textoAntes = `${textoDia(data.fecha, { weekday: 'long', day: 'numeric', month: 'long' })} a las ${data.hora}`;
       banner.hidden = false;
-      banner.innerHTML = `🔁 <strong>Cambiando la hora de ${htmlSeguro(data.nombre)}</strong>${data.patente ? ` · ${htmlSeguro(data.patente)}` : ''}<br>
+      banner.innerHTML = data.devuelta
+        ? `📅 <strong>${htmlSeguro(data.nombre)}, elige un nuevo día para tu hora</strong>${data.patente ? ` · ${htmlSeguro(data.patente)}` : ''}<br>
+          Tu hora del ${htmlSeguro(textoAntes)} (${htmlSeguro(data.servicio || '')}) no se pudo mantener${data.motivo_devolucion ? ` ${htmlSeguro(data.motivo_devolucion)}` : ''}.<br>
+          <span style="font-size:0.84rem;">Tus datos y tu vehículo ya están guardados: ${data.solo_fecha ? 'solo elige el nuevo día y hora' : 'elige el nuevo día y hora (y si lo necesitas, el servicio o dónde te atendemos)'}.</span>`
+        : `🔁 <strong>Cambiando la hora de ${htmlSeguro(data.nombre)}</strong>${data.patente ? ` · ${htmlSeguro(data.patente)}` : ''}<br>
         Hora actual: ${htmlSeguro(textoAntes)} · ${htmlSeguro(data.servicio || '')}<br>
         <span style="font-size:0.84rem;">Tus datos y tu vehículo ya están guardados: elige el nuevo día y hora. Si lo necesitas, también puedes cambiar el servicio o dónde te atendemos.</span>`;
       document.getElementById('g-codigo').hidden = true;     // el código queda con la cita
@@ -942,6 +992,12 @@
       btn.hidden = false;
       elegirModalidadInicial(data.modalidad, data.direccion || '');
       preseleccionarServicio(data.trabajo_id, data.servicio_otro || '');
+      if (data.devuelta) datos.querySelector('.cliente-ficha').lastElementChild.querySelector('span').textContent = 'Hora anterior';
+      // Devuelta porque el vehículo no podía quedar en el taller: solo cambia el día y la hora (v78)
+      if (data.solo_fecha) {
+        document.getElementById('p-servicio').classList.add('bloqueado-reagenda');
+        document.getElementById('modalidad-box').classList.add('bloqueado-reagenda');
+      }
       return true;
     }
     async function confirmarReagenda() {
@@ -981,6 +1037,7 @@
         fila('Nuevo día', textoDia(selYmd, { weekday: 'long', day: 'numeric', month: 'long' })) +
         fila('Nueva hora', `${selSlot} hrs`) +
         fila('Atención', atencion) +
+        (data.queda && data.devolucion ? fila('🌙 Tu vehículo', `Queda en el taller · devolución estimada ${htmlSeguro(textoDevolucion(data.devolucion))}`) : '') +
         (data.modalidad !== 'taller' && dom && dom.valor != null ? fila(data.modalidad === 'retiro' ? 'Retiro y entrega' : 'Atención en terreno', `${dom.desde ? 'desde ' : ''}${fmtMoneda(dom.valor)} + IVA`) : '') +
         fila('A nombre de', htmlSeguro(reagenda.nombre)) +
         `<p style="font-size:0.8rem; color:var(--color-text-muted); margin:0.4rem 0 0;">Es un valor referencial: según la revisión del vehículo puede variar, y si encontramos algo adicional te lo avisamos antes de hacerlo.</p>`;

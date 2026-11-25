@@ -79,6 +79,7 @@
           ${fila('Servicio', c.servicio)}
           ${fila('Atención', atencionTexto(c))}
           ${fila('Vehículo', [c.patente, c.vehiculo].filter(Boolean).join(' · '))}
+          ${c.queda && c.devolucion && !c.devuelta ? fila('🌙 Devolución estimada', `${fechaLarga(c.devolucion.slice(0, 10))} a las ${c.devolucion.slice(11, 16)} (queda en el taller)`) : ''}
           ${fila('🎁 Código', c.codigo)}
         </div>`;
       if (!c.puede_modificar) {
@@ -86,6 +87,18 @@
           : 'Esta hora ya pasó o ya fue atendida, así que no se puede cambiar desde aquí.';
         contenido().innerHTML = `<h2 style="margin-top:0;">Hola, ${htmlSeguro(c.nombre)} 👋</h2><p>${estado}</p>${detalle}
           <p>${motivo}</p><a class="btn mc-principal" href="reservar.html">📅 Reservar una hora</a>${contactoTaller('Hola, tengo una consulta sobre mi hora.')}`;
+        return;
+      }
+      if (c.devuelta) {
+        // El taller canceló esta hora y le pide elegir otra: sus datos siguen guardados (v78)
+        contenido().innerHTML = `
+          <h2 style="margin-top:0;">Hola, ${htmlSeguro(c.nombre)} 👋</h2>
+          <p style="margin:0 0 0.25rem;">Necesitamos que elijas <strong>otro día</strong> para tu hora${c.motivo_devolucion ? ` ${htmlSeguro(c.motivo_devolucion)}` : ''}. Disculpa las molestias.</p>
+          <p style="margin:0;"><span class="mc-estado no">Hora anterior</span></p>
+          ${detalle}
+          <a class="btn mc-principal" href="reservar.html?cita=${encodeURIComponent(token)}">📅 Elegir nuevo día y hora</a>
+          <p class="mc-ayuda">Tus datos y tu vehículo ya están guardados${c.solo_fecha ? ': solo eliges el nuevo día y hora' : ''}.</p>
+          ${contactoTaller('Hola, quiero coordinar una nueva hora.')}`;
         return;
       }
       contenido().innerHTML = `
