@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>Mi hora · Autonova</title>
+  <link rel="stylesheet" href="assets/css/style.css" />
+  <style>
+    .mc-filas { margin: 0.75rem 0 1rem; }
+    .mc-fila { display: flex; justify-content: space-between; gap: 1rem; padding: 0.35rem 0; border-bottom: 1px solid var(--color-border); font-size: 0.95rem; }
+    .mc-fila:last-child { border-bottom: 0; }
+    .mc-fila strong { text-align: right; }
+    .mc-estado { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.8rem; font-weight: 700; }
+    .mc-estado.ok { background: #e7f5ea; color: #1b6e3c; }
+    .mc-estado.pend { background: #fff4dc; color: #7a5a00; }
+    .mc-estado.no { background: #f1f2f4; color: #5b616b; }
+    .mc-principal { display: block; width: 100%; text-align: center; font-size: 1.1rem; padding: 0.95rem 1rem; border-radius: 12px; font-weight: 700; text-decoration: none; }
+    .mc-ayuda { color: var(--color-text-muted); font-size: 0.85rem; text-align: center; margin: 0.5rem 0 0; }
+    .mc-cancelar-link { display: block; margin: 1.6rem auto 0; background: none; border: 0; color: var(--color-text-muted); font-size: 0.8rem; text-decoration: underline; cursor: pointer; padding: 0.25rem; }
+    .mc-cancelar-link:hover { background: none; color: var(--color-danger); }
+    .mc-cancelar-box { margin-top: 1rem; padding: 0.85rem 1rem; border: 1px solid var(--color-border); border-radius: var(--radius); background: #fafafb; }
+    .mc-cancelar-box p { margin: 0 0 0.6rem; font-size: 0.9rem; }
+    .mc-motivos { display: grid; gap: 0.35rem; margin: 0.4rem 0 0.75rem; }
+    .mc-motivos label { display: flex; gap: 0.5rem; align-items: center; font-size: 0.88rem; font-weight: 500; }
+    .mc-motivos input[type=radio] { width: auto; margin: 0; }
+    .mc-acciones { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: space-between; align-items: center; }
+    .btn-cancelar-chico { background: none; border: 1px solid var(--color-danger); color: var(--color-danger); font-size: 0.82rem; padding: 0.4rem 0.75rem; }
+    .btn-cancelar-chico:hover { background: #fdecea; }
+  </style>
+</head>
+<body class="portal-page">
+  <div class="brand-band" style="max-width:560px; width:100%; margin-bottom:1rem;">
+    <img src="assets/img/logo.png" alt="Autonova" onerror="this.style.display='none'" />
+    <div class="brand-band-text">
+      <div class="brand-band-name" id="taller-nombre">Autonova</div>
+      <div class="brand-band-sub">Tu hora en el taller</div>
+    </div>
+  </div>
+
+  <div class="portal-card" id="tarjeta" style="max-width:560px;">
+    <p id="cargando">Cargando tu hora...</p>
+    <div id="contenido" hidden></div>
+  </div>
+
+  <script src="assets/vendor/supabase.min.js"></script>
+  <script src="assets/js/supabaseClient.js"></script>
+  <script src="assets/js/layout.js"></script>
+  <script>
+    // Link privado de la cita (sql/v77): primero se propone reagendar; cancelar queda en pequeño, al final
+    const token = String(new URLSearchParams(window.location.search).get('t') || '').trim();
+    let cita = null;
+    const fechaLarga = (ymd) => { const t = new Date(`${ymd}T12:00:00`).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' }); return t.charAt(0).toUpperCase() + t.slice(1); };
+    const atencionTexto = (c) => c.modalidad === 'terreno' ? `A domicilio (en terreno)${c.direccion ? ' · ' + c.direccion : ''}`
+      : c.modalidad === 'retiro' ? `Retiro y entrega${c.direccion ? ' · ' + c.direccion : ''}` : 'En el taller';
+    const fila = (k, v) => v ? `<div class="mc-fila"><span>${k}</span><strong>${htmlSeguro(v)}</strong></div>` : '';
+    const contenido = () => document.getElementById('contenido');
+    function contactoTaller(mensaje) {
+      const t = cita && cita.taller;
+      if (!t || !t.telefono) return '';
+      const wa = linkWhatsApp(t.telefono, mensaje);
+      return `<p class="mc-ayuda">¿Prefieres hablarlo? <a href="${htmlSeguro(wa)}" target="_blank" rel="noopener">Escríbenos por WhatsApp</a> o llámanos al ${htmlSeguro(t.telefono)}.</p>`;
+    }
+    function mostrarError(texto) {
+      document.getElementById('cargando').hidden = true;
+      contenido().hidden = false;
+      contenido().innerHTML = `<h2 style="margin-top:0;">No pudimos abrir tu hora</h2><p>${htmlSeguro(texto)}</p>
+        <a class="btn mc-principal" href="reservar.html">📅 Reservar una hora</a>`;
+    }
+    function render() {
+      const c = cita;
+      const estado = c.estado === 'confirmado' ? '<span class="mc-estado ok">✓ Confirmada</span>'
+        : c.estado === 'pendiente' ? '<span class="mc-estado pend">⏳ Pendiente de confirmar por el taller</span>'
+        : c.estado === 'cancelado' ? '<span class="mc-estado no">Cancelada</span>'
+        : '<span class="mc-estado no">Realizada</span>';
+      const detalle = `<div class="mc-filas">
+          ${fila('Día', fechaLarga(c.fecha))}
+          ${fila('Hora', `${c.hora} hrs`)}
+          ${fila('Servicio', c.servicio)}
+          ${fila('Atención', atencionTexto(c))}
+          ${fila('Vehículo', [c.patente, c.vehiculo].filter(Boolean).join(' · '))}
+          ${fila('🎁 Código', c.codigo)}
+        </div>`;
+      if (!c.puede_modificar) {
+        const motivo = c.estado === 'cancelado' ? 'Esta hora está cancelada. Si quieres, reserva una nueva en menos de 1 minuto.'
+          : 'Esta hora ya pasó o ya fue atendida, así que no se puede cambiar desde aquí.';
+        contenido().innerHTML = `<h2 style="margin-top:0;">Hola, ${htmlSeguro(c.nombre)} 👋</h2><p>${estado}</p>${detalle}
+          <p>${motivo}</p><a class="btn mc-principal" href="reservar.html">📅 Reservar una hora</a>${contactoTaller('Hola, tengo una consulta sobre mi hora.')}`;
+        return;
+      }
+      contenido().innerHTML = `
+        <h2 style="margin-top:0;">Hola, ${htmlSeguro(c.nombre)} 👋</h2>
+        <p style="margin:0 0 0.25rem;">Esta es tu hora en ${htmlSeguro((c.taller && c.taller.nombre) || 'el taller')}:</p>
+        <p style="margin:0;">${estado}</p>
+        ${detalle}
+        <a class="btn mc-principal" href="reservar.html?cita=${encodeURIComponent(token)}">📅 Reagendar mi hora</a>
+        <p class="mc-ayuda">Tus datos y tu vehículo ya están guardados: solo eliges el nuevo día y hora (y el servicio, si cambió).</p>
+        ${contactoTaller(`Hola, quiero cambiar mi hora del ${fechaLarga(c.fecha)} a las ${c.hora}.`)}
+        <button type="button" class="mc-cancelar-link" id="mc-quiero-cancelar">No puedo asistir: cancelar mi hora</button>
+        <div id="mc-cancelar" class="mc-cancelar-box" hidden>
+          <p><strong>¿Seguro que quieres cancelar?</strong> Si es por el día o la hora, puedes <a href="reservar.html?cita=${encodeURIComponent(token)}">reagendarla aquí</a> y no pierdes tu reserva.</p>
+          <p style="margin-bottom:0.2rem;">Cuéntanos por qué (opcional):</p>
+          <div class="mc-motivos">
+            <label><input type="radio" name="mc-motivo" value="No puedo ese día" /> No puedo ese día</label>
+            <label><input type="radio" name="mc-motivo" value="Ya lo solucioné" /> Ya lo solucioné</label>
+            <label><input type="radio" name="mc-motivo" value="Lo haré en otro momento" /> Lo haré en otro momento</label>
+            <label><input type="radio" name="mc-motivo" value="otro" /> Otro motivo</label>
+          </div>
+          <input type="text" id="mc-motivo-otro" maxlength="200" placeholder="Escribe el motivo" hidden style="margin-bottom:0.75rem;" />
+          <div class="mc-acciones">
+            <button type="button" class="btn-secondary btn-mini" id="mc-volver">Volver</button>
+            <button type="button" class="btn-cancelar-chico" id="mc-confirmar-cancelar">Sí, cancelar mi hora</button>
+          </div>
+          <p class="error-message" id="mc-error" style="margin:0.5rem 0 0;"></p>
+        </div>`;
+      document.getElementById('mc-quiero-cancelar').addEventListener('click', (e) => {
+        e.currentTarget.hidden = true;
+        document.getElementById('mc-cancelar').hidden = false;
+        document.getElementById('mc-cancelar').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+      document.getElementById('mc-volver').addEventListener('click', () => {
+        document.getElementById('mc-cancelar').hidden = true;
+        document.getElementById('mc-quiero-cancelar').hidden = false;
+      });
+      document.querySelectorAll('input[name="mc-motivo"]').forEach(r => r.addEventListener('change', () => {
+        document.getElementById('mc-motivo-otro').hidden = r.value !== 'otro' || !r.checked;
+      }));
+      document.getElementById('mc-confirmar-cancelar').addEventListener('click', cancelar);
+    }
+    async function cancelar() {
+      const btn = document.getElementById('mc-confirmar-cancelar'), err = document.getElementById('mc-error');
+      err.textContent = '';
+      const elegido = document.querySelector('input[name="mc-motivo"]:checked');
+      const motivo = elegido ? (elegido.value === 'otro' ? document.getElementById('mc-motivo-otro').value.trim() : elegido.value) : '';
+      btn.disabled = true; btn.textContent = 'Cancelando…';
+      const { data, error } = await supabaseClient.rpc('cita_cliente_cancelar', { p_token: token, p_motivo: motivo || null });
+      if (error || !data || data.ok === false) {
+        btn.disabled = false; btn.textContent = 'Sí, cancelar mi hora';
+        err.textContent = (data && data.error) || 'No se pudo cancelar. Intenta de nuevo o escríbenos.';
+        return;
+      }
+      contenido().innerHTML = `<div style="text-align:center;"><div style="font-size:2.6rem;">👋</div>
+        <h2>Tu hora quedó cancelada</h2>
+        <p>Gracias por avisarnos, ${htmlSeguro(cita.nombre)}: así le damos esa hora a otra persona.</p>
+        <p style="color:var(--color-text-muted);">Cuando lo necesites, reserva de nuevo en menos de 1 minuto.</p>
+        <a class="btn mc-principal" href="reservar.html">📅 Reservar otra hora</a></div>`;
+    }
+    (async () => {
+      if (token.length < 20) { mostrarError('El link no está completo. Ábrelo de nuevo desde tu correo.'); return; }
+      const { data, error } = await supabaseClient.rpc('cita_cliente_info', { p_token: token });
+      if (error || !data) { mostrarError('No pudimos cargar tu hora en este momento. Intenta más tarde o contáctanos.'); return; }
+      if (data.ok === false) { mostrarError(data.error || 'No encontramos esta reserva.'); return; }
+      cita = data;
+      if (data.taller && data.taller.nombre) document.getElementById('taller-nombre').textContent = data.taller.nombre;
+      document.getElementById('cargando').hidden = true;
+      contenido().hidden = false;
+      render();
+    })();
+  </script>
+</body>
+</html>

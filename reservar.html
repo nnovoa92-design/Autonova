@@ -38,6 +38,10 @@
     .domicilio-tipos .dom-titulo { margin: 0 0 0.45rem; font-weight: 700; font-size: 0.92rem; }
     .domicilio-tipos .dom-nota { margin: 0.45rem 0 0; font-size: 0.78rem; color: var(--color-text-muted); }
     .dom-precio { display: block; font-weight: 700; color: var(--color-primary); font-size: 1rem; margin-top: 0.15rem; }
+    /* Reagendar desde el link del correo (v77): sus datos y su vehículo ya están guardados */
+    .banner-reagenda { margin: 0 0 0.75rem; padding: 0.7rem 0.9rem; border-radius: var(--radius); background: #eef4ff; border: 1px solid #c9d8f5; font-size: 0.9rem; color: #1f3a68; }
+    .banner-reagenda strong { color: #0f2a55; }
+    .banner-reagenda.aviso { background: #fff8e6; border-color: #ecd9a0; color: #5b4a12; }
   </style>
 </head>
 <body class="portal-page">
@@ -53,6 +57,7 @@
     <p id="cargando">Cargando...</p>
 
     <div id="wizard" style="display:none;">
+      <div id="banner-reagenda" class="banner-reagenda" hidden></div>
       <div id="banner-codigo" class="banner-codigo" hidden></div>
       <!-- Paso 1: servicio -->
       <div class="paso" id="p-servicio">
@@ -109,7 +114,8 @@
 
       <!-- Paso 3: datos -->
       <div class="paso" id="p-datos" hidden>
-        <h3>3. Tus datos</h3>
+        <h3 id="p-datos-titulo">3. Tus datos</h3>
+        <div id="reagenda-datos" hidden></div>
         <!-- Club: código de un amigo o cupón de premio. Se valida al instante con los datos de la persona (v69) -->
         <div class="codigo-reserva" id="g-codigo">
           <label for="r-codigo">🎁 ¿Tienes un código de descuento?</label>
@@ -196,9 +202,9 @@
     <!-- Confirmación -->
     <div id="confirmacion" style="display:none; text-align:center;">
       <div style="font-size:3rem;">✅</div>
-      <h2>¡Reserva registrada!</h2>
+      <h2 id="confirm-titulo">¡Reserva registrada!</h2>
       <div id="confirm-detalle" style="text-align:left; max-width:400px; margin:1rem auto;"></div>
-      <p style="color:var(--color-text-muted);">El taller confirmará tu hora a la brevedad y te enviará la confirmación a tu correo. Te contactaremos si hay algún cambio.</p>
+      <p id="confirm-nota" style="color:var(--color-text-muted);">El taller confirmará tu hora a la brevedad y te enviará la confirmación a tu correo. Te contactaremos si hay algún cambio.</p>
     </div>
   </div>
 
@@ -658,6 +664,7 @@
         document.getElementById('confirmacion').style.display = 'block';
         return;
       }
+      if (reagenda) return confirmarReagenda();   // cambio de una hora ya reservada (link del correo)
       const reco = estadoRut === 'reconocido';
       const clasico = estadoRut === 'clasico';
       if (!reco && estadoRut !== 'nuevo' && !clasico) { errorEl.textContent = 'Ingresa tu RUT.'; return; }
@@ -852,22 +859,13 @@
       document.getElementById('wizard').style.display = 'block';
       renderTrabajos();
       cargarOpcionesDomicilio();   // valores a domicilio (en terreno / con retiro) a la vista, v72
+      // Link del correo para cambiar su hora (mi-cita.html → reservar.html?cita=...): todo marcado, solo elige servicio, atención y fecha
+      if (tokenReagenda && await activarReagenda()) return;
       // Link para reagendar (cita cancelada por el taller): reservar.html?servicio=<id>&modalidad=terreno|retiro
       const urlParams = new URLSearchParams(window.location.search);
       const modLink = urlParams.get('modalidad');
-      if (modLink === 'terreno' || modLink === 'retiro') {
-        domicilioTipo = modLink;
-        const radioDom = document.querySelector('input[name="r-modalidad"][value="domicilio"]');
-        if (radioDom) { radioDom.checked = true; radioDom.dispatchEvent(new Event('change', { bubbles: true })); }
-      }
-      const servLink = INFO.trabajos.find(t => t.id === urlParams.get('servicio'));
-      if (servLink) {
-        document.getElementById('trabajo-buscar').value = etiquetaTrabajo(servLink);
-        const selServ = document.getElementById('r-trabajo');
-        if (![...selServ.options].some(o => o.value === servLink.id)) selServ.add(new Option(etiquetaTrabajo(servLink), servLink.id));
-        selServ.value = servLink.id;
-        selServ.dispatchEvent(new Event('change'));
-      }
+      if (modLink === 'terreno' || modLink === 'retiro') elegirModalidadInicial(modLink, '');
+      preseleccionarServicio(urlParams.get('servicio'), '');
       // Link de los recordatorios de cotización: reservar.html?cotizacion=COT-0007 deja anotado por qué viene
       const cot = new URLSearchParams(window.location.search).get('cotizacion');
       if (/^COT-\d{1,7}$/.test(cot || '')) document.getElementById('r-notas').value = `Vengo por la cotización ${cot}`;
@@ -878,6 +876,118 @@
         validarCodigoReserva();
       }
     })();
+
+    // ---------- Servicio y atención ya marcados (links de reagendar) ----------
+    function elegirModalidadInicial(mod, direccion) {
+      if (mod !== 'terreno' && mod !== 'retiro') return;
+      domicilioTipo = mod;
+      const radioDom = document.querySelector('input[name="r-modalidad"][value="domicilio"]');
+      if (radioDom) { radioDom.checked = true; radioDom.dispatchEvent(new Event('change', { bubbles: true })); }
+      if (direccion) document.getElementById('r-direccion').value = direccion;
+    }
+    function preseleccionarServicio(id, otroTexto) {
+      const selServ = document.getElementById('r-trabajo');
+      const serv = id ? INFO.trabajos.find(t => t.id === id) : null;
+      if (serv) {
+        document.getElementById('trabajo-buscar').value = etiquetaTrabajo(serv);
+        if (![...selServ.options].some(o => o.value === serv.id)) selServ.add(new Option(etiquetaTrabajo(serv), serv.id));
+        selServ.value = serv.id;
+        selServ.dispatchEvent(new Event('change'));
+      } else if (otroTexto) {
+        document.getElementById('trabajo-buscar').value = OPCION_OTRO.label;
+        if (![...selServ.options].some(o => o.value === OPCION_OTRO.id)) selServ.add(new Option(OPCION_OTRO.label, OPCION_OTRO.id));
+        selServ.value = OPCION_OTRO.id;
+        selServ.dispatchEvent(new Event('change'));
+        document.getElementById('r-otro').value = otroTexto;
+      }
+    }
+
+    // ---------- Cambiar una hora ya reservada, desde el link del correo (sql/v77) ----------
+    // La cita es la misma: no se piden de nuevo RUT, nombre, teléfono, correo ni vehículo.
+    // Solo se puede cambiar el servicio, dónde se atiende (taller / domicilio) y el día y la hora.
+    const tokenReagenda = String(new URLSearchParams(window.location.search).get('cita') || '').trim();
+    let reagenda = null;
+    async function activarReagenda() {
+      const banner = document.getElementById('banner-reagenda');
+      const { data, error } = await supabaseClient.rpc('cita_cliente_info', { p_token: tokenReagenda });
+      if (error || !data || data.ok === false || !data.puede_modificar) {
+        banner.className = 'banner-reagenda aviso';
+        banner.hidden = false;
+        banner.innerHTML = data && data.ok !== false && !data.puede_modificar
+          ? `Tu hora anterior ya no se puede cambiar (${data.estado === 'cancelado' ? 'está cancelada' : 'ya pasó'}). Si quieres, reserva una nueva aquí abajo.`
+          : 'No pudimos abrir tu reserva para cambiarla. Puedes reservar una nueva aquí abajo o escribirnos.';
+        return false;
+      }
+      reagenda = data;
+      const textoAntes = `${textoDia(data.fecha, { weekday: 'long', day: 'numeric', month: 'long' })} a las ${data.hora}`;
+      banner.hidden = false;
+      banner.innerHTML = `🔁 <strong>Cambiando la hora de ${htmlSeguro(data.nombre)}</strong>${data.patente ? ` · ${htmlSeguro(data.patente)}` : ''}<br>
+        Hora actual: ${htmlSeguro(textoAntes)} · ${htmlSeguro(data.servicio || '')}<br>
+        <span style="font-size:0.84rem;">Tus datos y tu vehículo ya están guardados: elige el nuevo día y hora. Si lo necesitas, también puedes cambiar el servicio o dónde te atendemos.</span>`;
+      document.getElementById('g-codigo').hidden = true;     // el código queda con la cita
+      document.getElementById('g-rut').hidden = true;
+      document.getElementById('p-datos-titulo').textContent = '3. Confirma el cambio';
+      const filaR = (k, v) => v ? `<div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>${k}</span><strong style="text-align:right;">${htmlSeguro(v)}</strong></div>` : '';
+      const datos = document.getElementById('reagenda-datos');
+      datos.hidden = false;
+      datos.innerHTML = `<div class="cliente-ficha" style="margin-bottom:0.75rem;">
+          ${filaR('A nombre de', data.nombre)}
+          ${filaR('Vehículo', [data.patente, data.vehiculo].filter(Boolean).join(' · '))}
+          ${filaR('Confirmación a', data.correo)}
+          ${filaR('🎁 Código', data.codigo)}
+          ${filaR('Hora que se libera', textoAntes)}
+        </div>`;
+      const btn = document.getElementById('reservar-btn');
+      btn.textContent = 'Confirmar cambio de hora';
+      btn.hidden = false;
+      elegirModalidadInicial(data.modalidad, data.direccion || '');
+      preseleccionarServicio(data.trabajo_id, data.servicio_otro || '');
+      return true;
+    }
+    async function confirmarReagenda() {
+      const errorEl = document.getElementById('error');
+      const direccion = modalidad === 'domicilio' ? document.getElementById('r-direccion').value.trim() : '';
+      if (modalidad === 'domicilio' && direccion.length < 5) {
+        errorEl.textContent = 'Indica la dirección donde atenderemos tu vehículo (calle, número y comuna).';
+        document.getElementById('r-direccion').focus();
+        return;
+      }
+      if ((!selTrabajo && !selOtro) || !selYmd || !selSlot) { errorEl.textContent = 'Elige servicio, día y hora.'; return; }
+      const otroTexto = document.getElementById('r-otro').value.trim();
+      if (selOtro && otroTexto.length < 3) { errorEl.textContent = 'Cuéntanos qué necesitas en el recuadro de «Otro».'; document.getElementById('r-otro').focus(); return; }
+      const btn = document.getElementById('reservar-btn');
+      btn.disabled = true; btn.textContent = 'Guardando el cambio...';
+      const { data, error } = await supabaseClient.rpc('cita_cliente_reagendar', {
+        p_token: tokenReagenda, p_fecha: selYmd, p_hora: selSlot,
+        p_trabajo_id: selTrabajo ? selTrabajo.id : null, p_servicio_otro: selOtro ? otroTexto : null,
+        p_modalidad: modalidad, p_domicilio_tipo: modalidad === 'domicilio' ? domicilioTipo : null, p_direccion: direccion || null,
+      });
+      btn.disabled = false; btn.textContent = 'Confirmar cambio de hora';
+      if (error || !data || data.ok === false) {
+        errorEl.textContent = (data && data.error) || 'No se pudo cambiar tu hora. Intenta de nuevo o escríbenos.';
+        if (data && data.error && /disponible|tomado/.test(data.error)) { selYmd = null; selSlot = null; cargarSemana(); }
+        return;
+      }
+      const fila = (k, v) => `<div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>${k}</span><strong style="text-align:right;">${v}</strong></div>`;
+      const valor = selOtro ? '' : textoValorServicio(data, selTrabajo);
+      const dom = data.domicilio;
+      const atencion = data.modalidad === 'terreno' ? `A domicilio (en terreno) · ${htmlSeguro(direccion)}`
+        : data.modalidad === 'retiro' ? `A domicilio (retiro y entrega) · ${htmlSeguro(direccion)}` : 'En el taller';
+      document.getElementById('confirm-titulo').textContent = '¡Cambio de hora registrado!';
+      document.getElementById('confirm-nota').textContent = 'El taller confirmará tu nueva hora a la brevedad y te llegará la confirmación a tu correo. Tu hora anterior quedó liberada.';
+      document.getElementById('confirm-detalle').innerHTML =
+        fila('Servicio', htmlSeguro(selOtro ? `Otro: ${otroTexto}` : selTrabajo.nombre)) +
+        (valor ? fila('Valor del servicio', htmlSeguro(valor)) : '') +
+        fila('Nuevo día', textoDia(selYmd, { weekday: 'long', day: 'numeric', month: 'long' })) +
+        fila('Nueva hora', `${selSlot} hrs`) +
+        fila('Atención', atencion) +
+        (data.modalidad !== 'taller' && dom && dom.valor != null ? fila(data.modalidad === 'retiro' ? 'Retiro y entrega' : 'Atención en terreno', `${dom.desde ? 'desde ' : ''}${fmtMoneda(dom.valor)} + IVA`) : '') +
+        fila('A nombre de', htmlSeguro(reagenda.nombre)) +
+        `<p style="font-size:0.8rem; color:var(--color-text-muted); margin:0.4rem 0 0;">Es un valor referencial: según la revisión del vehículo puede variar, y si encontramos algo adicional te lo avisamos antes de hacerlo.</p>`;
+      document.getElementById('wizard').style.display = 'none';
+      document.getElementById('confirmacion').style.display = 'block';
+      document.getElementById('confirmacion').scrollIntoView({ behavior: 'smooth' });
+    }
 
     const campoCodigo = document.getElementById('r-codigo');
     let codigoTimer = null;

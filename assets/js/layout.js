@@ -616,9 +616,19 @@ const BOTONES_CORREO = [
   ['/cotizacion.html', '📄 Ver y aprobar la cotización'],
   ['/diagnostico.html', '🔎 Ver el informe de diagnóstico'],
   ['/portal.html', '🚗 Seguir mi vehículo'],
+  ['/mi-cita.html', '📅 Cambiar o cancelar mi hora'],
   ['/reservar.html', '📅 Reservar hora'],
   ['/club.html', '🎁 Compartir mi código'],
 ];
+// Link privado del cliente para reagendar o cancelar su hora (sql/v77): va en el correo de confirmación,
+// en el de reagendamiento y en el recordatorio del día anterior
+function linkMiCita(c) {
+  return c && c.token_cliente ? `${window.location.origin}/mi-cita.html?t=${encodeURIComponent(c.token_cliente)}` : '';
+}
+function bloqueMiCita(c) {
+  const l = linkMiCita(c);
+  return l ? `\n\n¿Necesita cambiar su hora? Puede reagendarla (o cancelarla) aquí, en menos de 1 minuto:\n${l}` : '';
+}
 const escCorreo = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 function botonCorreo(url) {
   const e = BOTONES_CORREO.find(([p]) => url.includes(p));

@@ -800,19 +800,24 @@
       // 3) Citas de agenda para mañana (mismo listado que en Agenda)
       const diaManana = sumarDiasYmd(hoyChile(), 1);
       const limitesManana = limitesDiaChile(diaManana);
-      const { data: citasManana } = await supabaseClient
+      const consultaManana = (columnas) => supabaseClient
         .from('citas')
-        .select('cliente_id, vehiculo_id, cotizacion_id, fecha_hora, modalidad, direccion, descripcion, telefono_contacto, nombre_contacto, clientes(nombre, telefono, email), vehiculos(patente, marca, modelo), trabajos(nombre, horas_estimadas, precio_fijo)')
+        .select(`${columnas}cliente_id, vehiculo_id, cotizacion_id, fecha_hora, modalidad, direccion, descripcion, telefono_contacto, nombre_contacto, clientes(nombre, telefono, email), vehiculos(patente, marca, modelo), trabajos(nombre, horas_estimadas, precio_fijo)`)
         .gte('fecha_hora', limitesManana.desde).lte('fecha_hora', limitesManana.hasta)
         .in('estado', ['pendiente', 'confirmado'])
         .order('fecha_hora');
+      // Con el link privado para que el cliente reagende o cancele desde el correo (v77); sin v77, como antes
+      let { data: citasManana, error: errManana } = await consultaManana('token_cliente, email_contacto, ');
+      if (errManana) ({ data: citasManana } = await consultaManana(''));
       for (const c of (citasManana || [])) {
         const horaCita = new Date(c.fecha_hora);
         const hora = `${String(horaCita.getHours()).padStart(2,'0')}:${String(horaCita.getMinutes()).padStart(2,'0')}`;
         filas.push({
           tipo: 'Cita mañana', badge: 'badge-purple',
-          // El teléfono que dejó la persona en esa reserva manda sobre el de la ficha
-          cliente: c.clientes ? { ...c.clientes, telefono: c.telefono_contacto || c.clientes.telefono } : { nombre: c.nombre_contacto, telefono: c.telefono_contacto },
+          // El teléfono (y el correo) que dejó la persona en esa reserva mandan sobre los de la ficha
+          cliente: c.clientes ? { ...c.clientes, telefono: c.telefono_contacto || c.clientes.telefono, email: c.email_contacto || c.clientes.email }
+            : { nombre: c.nombre_contacto, telefono: c.telefono_contacto, email: c.email_contacto || null },
+          tokenCita: c.token_cliente || null,
           vehiculo: c.vehiculos,
           aviso: `Mañana ${hora}`, recordatorioId: null,
           hora, servicio: c.trabajos ? c.trabajos.nombre : (c.descripcion || ''),
@@ -888,7 +893,8 @@
         const f = filas[btn.dataset.idx];
         const email = f.cliente && f.cliente.email;
         if (!email) { alert('El cliente no tiene correo registrado.'); return; }
-        await enviarCorreoOAbrirGmail(email, asuntoCorreo(f.tipo), generarMensaje(f), { evento: 'recordatorio_' + f.tipo, cliente_id: f.cliente && f.cliente.id, vehiculo_id: f.vehiculo && f.vehiculo.id });
+        const extraCita = f.tipo === 'Cita mañana' ? bloqueMiCita({ token_cliente: f.tokenCita }) : '';   // reagendar o cancelar (v77)
+        await enviarCorreoOAbrirGmail(email, asuntoCorreo(f.tipo), generarMensaje(f) + extraCita, { evento: 'recordatorio_' + f.tipo, cliente_id: f.cliente && f.cliente.id, vehiculo_id: f.vehiculo && f.vehiculo.id });
       }));
       tbody.querySelectorAll('.rec-ok').forEach(btn => btn.addEventListener('click', async () => {
         await supabaseClient.from('recordatorios').update({ enviado: true, fecha_envio: new Date().toISOString() }).eq('id', btn.dataset.id);

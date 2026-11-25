@@ -1086,7 +1086,7 @@
       const pie = [tallerHorarios.nombre, tallerHorarios.direccion, tallerHorarios.telefono].filter(Boolean).join(' · ');
       return {
         asunto: `Su hora en ${tallerHorarios.nombre || 'el taller'} está confirmada: ${fmtFecha(c.fecha_hora)} ${fmtHora(c.fecha_hora)}`,
-        texto: `${cuerpo}${bloque}${pie ? `\n\n${pie}` : ''}`,
+        texto: `${cuerpo}${bloque}${bloqueMiCita(c)}${pie ? `\n\n${pie}` : ''}`,
       };
     }
 
@@ -1999,15 +1999,21 @@
     document.getElementById('reagendar-backdrop').addEventListener('click', (e) => { if (e.target.id === 'reagendar-backdrop') cerrarReagendar(); });
 
     // Marcas del historial de la cita: 🔁 reagendada (cuántas veces) y ✉ cancelada con aviso para que reagende
+    // Último cambio de hora hecho por el propio cliente desde su correo (v77), si la cita está pendiente por eso
+    function reagendadaPorCliente(c) {
+      const ult = (Array.isArray(c.reagendamientos) ? c.reagendamientos : []).slice(-1)[0];
+      return ult && ult.por === 'cliente' && ult.tipo !== 'cancelacion' && c.estado === 'pendiente' ? ult : null;
+    }
     function badgesHistorialCita(c) {
       const hist = Array.isArray(c.reagendamientos) ? c.reagendamientos : [];
       const reag = hist.filter(r => r.tipo !== 'cancelacion');
       const cancel = hist.filter(r => r.tipo === 'cancelacion').slice(-1)[0];
       let html = '';
-      if (reag.length) html += ` <span class="badge badge-blue" title="${escapar(reag.map(r => `Antes: ${fmtFecha(r.desde)} ${fmtHora(r.desde)} · ${r.motivo_texto || ''} (hora anterior ${r.hora_anterior || ''})`).join(' | '))}">🔁 reagendada${reag.length > 1 ? ` ×${reag.length}` : ''}</span>`;
+      if (reag.length) html += ` <span class="badge badge-blue" title="${escapar(reag.map(r => `Antes: ${fmtFecha(r.desde)} ${fmtHora(r.desde)} · ${r.motivo_texto || ''}${r.servicio_antes ? ` · servicio anterior: ${r.servicio_antes}` : ''} (hora anterior ${r.hora_anterior || ''})`).join(' | '))}">🔁 reagendada${reag.some(r => r.por === 'cliente') ? ' por el cliente' : ''}${reag.length > 1 ? ` ×${reag.length}` : ''}</span>`;
       if (cancel && c.estado === 'cancelado') {
         const aviso = (cancel.aviso || []).length ? `se le pidió reagendar por ${cancel.aviso.join(' y ')}` : 'sin aviso al cliente';
-        html += ` <span class="badge badge-gray" title="${escapar(`Cancelada el ${fmtFecha(cancel.fecha)} · ${cancel.motivo_texto || ''} · ${aviso} · hora ${cancel.hora_anterior || ''}`)}">${(cancel.aviso || []).length ? '✉ se le pidió reagendar' : 'cancelada'}</span>`;
+        const etiqueta = cancel.por === 'cliente' ? '✖ la canceló el cliente' : ((cancel.aviso || []).length ? '✉ se le pidió reagendar' : 'cancelada');
+        html += ` <span class="badge badge-gray" title="${escapar(`Cancelada el ${fmtFecha(cancel.fecha)} · ${cancel.motivo_texto || ''}${cancel.por === 'cliente' ? '' : ` · ${aviso}`} · hora ${cancel.hora_anterior || ''}`)}">${etiqueta}</span>`;
       }
       return html;
     }
@@ -2271,7 +2277,7 @@
       const bloque = horarioReservadoTexto(c);   // mismo aviso de horario reservado que la confirmación
       const pie = [tallerHorarios.nombre, tallerHorarios.direccion, tallerHorarios.telefono].filter(Boolean).join(' · ');
       const asunto = `Su hora en ${tallerHorarios.nombre || 'el taller'} fue reagendada: ${fmtFecha(c.fecha_hora)} ${fmtHora(c.fecha_hora)}`;
-      const r = await enviarCorreo({ para, asunto, texto: `${cuerpo}${bloque}${pie ? `\n\n${pie}` : ''}`,
+      const r = await enviarCorreo({ para, asunto, texto: `${cuerpo}${bloque}${bloqueMiCita(c)}${pie ? `\n\n${pie}` : ''}`,
         ref: { evento: 'cita_reagendada', tabla: 'citas', id: c.id, cliente_id: c.cliente_id, vehiculo_id: c.vehiculo_id } });
       if (r.estado === 'enviado') mostrarToast(`✉ Correo con la nueva hora enviado a ${para}`, 'ok');
       else if (r.estado === 'error') mostrarToast(`No se pudo enviar el correo a ${para}: ${r.mensaje}`, 'error', 12000);
@@ -2388,7 +2394,7 @@
       document.getElementById('online-body').innerHTML = `<table><tbody>${onlinePendientes.map(c => `
         <tr>
           <td><strong>${fmtFecha(c.fecha_hora)} ${fmtHora(c.fecha_hora)}</strong></td>
-          <td>${escapar(nombreCliente(c))}${esReservaNueva(c) ? ETIQUETA_NUEVO : ''}${c.telefono_contacto ? ` · ${escapar(c.telefono_contacto)}` : ''}</td>
+          <td>${escapar(nombreCliente(c))}${esReservaNueva(c) ? ETIQUETA_NUEVO : ''}${reagendadaPorCliente(c) ? ` <span class="badge badge-blue" title="${escapar(`Antes: ${fmtFecha(reagendadaPorCliente(c).desde)} ${fmtHora(reagendadaPorCliente(c).desde)}`)}">🔁 la cambió el cliente</span>` : ''}${c.telefono_contacto ? ` · ${escapar(c.telefono_contacto)}` : ''}</td>
           <td>${escapar(c.trabajos ? c.trabajos.nombre : (c.descripcion || '–'))}</td>
           <td>${escapar(c.patente_contacto || (c.vehiculos ? c.vehiculos.patente : '–'))}</td>
           <td class="table-actions">
