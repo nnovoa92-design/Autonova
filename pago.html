@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>Mi cuenta · Autonova</title>
+  <link rel="stylesheet" href="assets/css/style.css" />
+  <style>
+    .pg-filas { margin: 0.75rem 0 0.5rem; }
+    .pg-fila { display: flex; justify-content: space-between; gap: 1rem; padding: 0.35rem 0; border-bottom: 1px solid var(--color-border); font-size: 0.95rem; }
+    .pg-fila:last-child { border-bottom: 0; }
+    .pg-fila strong { text-align: right; }
+    .pg-saldo { font-size: 1.35rem; color: #a93b33; }
+    .pg-ok { background: #e7f5ea; color: #1b6e3c; border-radius: var(--radius); padding: 0.75rem 0.9rem; margin: 0.75rem 0; }
+    .pg-info { background: #eef4ff; border: 1px solid #c9d8f5; color: #1f3a68; border-radius: var(--radius); padding: 0.7rem 0.9rem; margin: 0.75rem 0; font-size: 0.92rem; }
+    .pg-alerta { background: #fff8e6; border: 1px solid #ecd9a0; color: #5b4a12; border-radius: var(--radius); padding: 0.7rem 0.9rem; margin: 0.75rem 0; font-size: 0.92rem; }
+    .pg-opciones { display: grid; gap: 0.5rem; margin: 1rem 0 0; }
+    .pg-op { display: flex; gap: 0.75rem; align-items: center; text-align: left; width: 100%; background: #fff; color: var(--color-text); border: 1px solid var(--color-border); border-radius: 12px; padding: 0.8rem 0.9rem; font-weight: normal; }
+    .pg-op:hover, .pg-op.abierta { border-color: var(--color-primary); background: #fff7f5; color: var(--color-text); }
+    .pg-op .ico { font-size: 1.5rem; }
+    .pg-op strong { display: block; font-size: 1rem; }
+    .pg-op small { color: var(--color-text-muted); }
+    .pg-op.destacada { border: 2px solid #d4a84b; background: #fffaf0; }
+    .pg-panel { border: 1px solid var(--color-border); border-top: 0; border-radius: 0 0 12px 12px; padding: 0.85rem 0.9rem; margin: -0.6rem 0 0.25rem; background: #fafafb; }
+    .pg-datos { white-space: pre-line; font-family: inherit; background: #fff; border: 1px dashed var(--color-border); border-radius: var(--radius); padding: 0.7rem 0.8rem; margin: 0 0 0.5rem; }
+    .pg-cuotas { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin: 0.5rem 0; min-width: 0; }
+    .pg-cuotas td, .pg-cuotas th { padding: 0.35rem 0.3rem; border-bottom: 1px solid var(--color-border); text-align: left; }
+    .pg-cuotas td:last-child, .pg-cuotas th:last-child { text-align: right; }
+    .pg-chip { display: inline-block; font-size: 0.75rem; font-weight: 700; border-radius: 999px; padding: 0.1rem 0.5rem; }
+    .pg-chip.ok { background: #e7f5ea; color: #1b6e3c; } .pg-chip.pend { background: #f1f2f4; color: #5b616b; } .pg-chip.venc { background: #fdecea; color: #a93b33; }
+    .pg-ayuda { color: var(--color-text-muted); font-size: 0.85rem; margin: 0.4rem 0 0; }
+    .pg-legal { color: var(--color-text-muted); font-size: 0.75rem; margin-top: 1.25rem; text-align: center; }
+  </style>
+</head>
+<body class="portal-page">
+  <div class="brand-band" style="max-width:560px; width:100%; margin-bottom:1rem;">
+    <img src="assets/img/logo.png" alt="Autonova" onerror="this.style.display='none'" />
+    <div class="brand-band-text">
+      <div class="brand-band-name" id="taller-nombre">Autonova</div>
+      <div class="brand-band-sub">Tu cuenta en el taller</div>
+    </div>
+  </div>
+
+  <div class="portal-card" style="max-width:560px;">
+    <p id="cargando">Cargando tu cuenta...</p>
+    <div id="contenido" hidden></div>
+  </div>
+
+  <script src="assets/vendor/supabase.min.js"></script>
+  <script src="assets/js/supabaseClient.js"></script>
+  <script src="assets/js/layout.js"></script>
+  <script>
+    // Link privado de cobranza de una OT (sql/v79): saldo, cómo pagar, «Ya pagué» y convenio de pago en cuotas
+    const parametros = new URLSearchParams(window.location.search);
+    const token = String(parametros.get('t') || '').trim();
+    let cuenta = null;
+    const hoyPg = hoyChile();
+    const fechaPg = (ymd) => ymd ? String(ymd).slice(0, 10).split('-').reverse().join('-') : '';
+    const filaPg = (k, v, clase = '') => `<div class="pg-fila"><span>${k}</span><strong class="${clase}">${v}</strong></div>`;
+    const contenidoPg = () => document.getElementById('contenido');
+
+    function sumarDiasPg(ymd, n) { const d = new Date(`${ymd}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+    // Las mismas cuotas que arma el servidor: iguales, redondeadas a $100; la última ajusta la diferencia
+    function armarCuotas(saldo, n, primera, cada) {
+      const monto = Math.round(saldo / n / 100) * 100;
+      let resto = saldo;
+      return Array.from({ length: n }, (_, i) => {
+        const c = { n: i + 1, fecha: sumarDiasPg(primera, i * cada), monto: i === n - 1 ? resto : monto };
+        resto -= monto;
+        return c;
+      });
+    }
+    // Estado de cada cuota según lo pagado desde el convenio
+    function tablaCuotas(cuotas, pagadoConvenio, conEstado) {
+      let acum = 0;
+      return `<table class="pg-cuotas"><thead><tr><th>Cuota</th><th>Fecha</th>${conEstado ? '<th>Estado</th>' : ''}<th>Monto</th></tr></thead><tbody>${cuotas.map(c => {
+        acum += Number(c.monto);
+        const pagada = conEstado && pagadoConvenio >= acum - 1;
+        const vencida = conEstado && !pagada && c.fecha < hoyPg;
+        return `<tr><td>${c.n}</td><td>${fechaPg(c.fecha)}</td>${conEstado ? `<td><span class="pg-chip ${pagada ? 'ok' : vencida ? 'venc' : 'pend'}">${pagada ? 'Pagada' : vencida ? 'Atrasada' : 'Pendiente'}</span></td>` : ''}<td>${fmtMoneda(c.monto)}</td></tr>`;
+      }).join('')}</tbody></table>`;
+    }
+    function contactoPg(mensaje) {
+      const t = cuenta && cuenta.taller;
+      if (!t || !t.telefono) return '';
+      return `<a href="${htmlSeguro(linkWhatsApp(t.telefono, mensaje))}" target="_blank" rel="noopener">escríbenos por WhatsApp</a>`;
+    }
+    function errorPg(texto) {
+      document.getElementById('cargando').hidden = true;
+      contenidoPg().hidden = false;
+      contenidoPg().innerHTML = `<h2 style="margin-top:0;">No pudimos abrir tu cuenta</h2><p>${htmlSeguro(texto)}</p>`;
+    }
+
+    function render() {
+      const c = cuenta;
+      const conv = c.convenio;
+      const saldo = Number(c.saldo) || 0;
+      const resumen = `<div class="pg-filas">
+          ${filaPg('Orden de trabajo', htmlSeguro(c.ot))}
+          ${c.patente ? filaPg('Vehículo', htmlSeguro([c.patente, c.vehiculo].filter(Boolean).join(' · '))) : ''}
+          ${c.fecha_entrega ? filaPg('Entregado el', fechaPg(c.fecha_entrega)) : ''}
+          ${c.total != null ? filaPg('Total', fmtMoneda(c.total)) : ''}
+          ${filaPg('Pagado', fmtMoneda(c.pagado || 0))}
+          ${filaPg('Saldo pendiente', fmtMoneda(saldo), 'pg-saldo')}
+        </div>`;
+      let html = `<h2 style="margin-top:0;">Hola, ${htmlSeguro(c.nombre)} 👋</h2>${resumen}`;
+      if (c.estado === 'pagada' || saldo <= 1) {
+        contenidoPg().innerHTML = html + '<div class="pg-ok">✅ <strong>Esta cuenta está pagada.</strong> ¡Muchas gracias por tu confianza!</div>';
+        return;
+      }
+      if (c.estado === 'sin_cobranza') {
+        contenidoPg().innerHTML = html + `<div class="pg-info">Si tienes dudas sobre esta cuenta, ${contactoPg(`Hola, tengo una consulta sobre mi ${c.ot}.`) || 'contáctanos'}.</div>`;
+        return;
+      }
+      const inf = c.pago_informado;
+      if (inf && inf.en && (Date.now() - new Date(inf.en).getTime()) < 7 * 86400000) {
+        html += `<div class="pg-info">💳 Recibimos tu aviso de pago de <strong>${fmtMoneda(inf.monto)}</strong> del ${fechaPg(inf.fecha)}. Lo estamos revisando y te avisaremos cuando quede registrado.</div>`;
+      }
+      const conEstadoActivo = conv && conv.estado === 'activo';
+      if (conEstadoActivo) {
+        html += `<div class="pg-ok" style="background:#f3effc; color:#3b2a6b;">🤝 <strong>Tienes un convenio de pago activo</strong>. Estas son tus cuotas:${tablaCuotas(conv.cuotas || [], Number(conv.pagado_convenio) || 0, true)}
+          <span style="font-size:0.85rem;">Te avisaremos un día antes de cada vencimiento.</span></div>`;
+      } else if (conv && conv.estado === 'propuesto') {
+        html += `<div class="pg-info">🤝 <strong>Tu propuesta de convenio está en revisión.</strong> Mientras tanto no te enviaremos avisos de cobranza. Te responderemos a la brevedad.${tablaCuotas(conv.cuotas || [], 0, false)}</div>`;
+      } else if (conv && conv.estado === 'rechazado') {
+        html += `<div class="pg-alerta">No pudimos aceptar tu propuesta de convenio${conv.respuesta ? `: ${htmlSeguro(conv.respuesta)}` : '.'} Puedes proponer otra o ${contactoPg(`Hola, quiero conversar mi convenio de pago de la ${c.ot}.`) || 'contactarnos'}.</div>`;
+      } else if (conv && conv.estado === 'incumplido') {
+        html += `<div class="pg-alerta">Tu convenio anterior quedó sin efecto por cuotas atrasadas. Si necesitas una nueva forma de pago, ${contactoPg(`Hola, quiero conversar el pago de mi ${c.ot}.`) || 'contáctanos'}.</div>`;
+      }
+      const puedeConvenio = !conv || !['propuesto', 'activo'].includes(conv.estado);
+      const lim = c.limites || {};
+      html += `<div class="pg-opciones">
+          <button type="button" class="pg-op" data-panel="como"><span class="ico">💳</span><span><strong>Cómo pagar</strong><small>Datos para transferir o pagar en el taller</small></span></button>
+          <div class="pg-panel" id="panel-como" hidden>
+            ${c.datos_pago ? `<div class="pg-datos">${htmlSeguro(c.datos_pago)}</div>` : `<p style="margin:0 0 0.5rem;">Puedes pagar en el taller${c.taller && c.taller.direccion ? ` (${htmlSeguro(c.taller.direccion)})` : ''} o pedirnos los datos para transferir.</p>`}
+            <p class="pg-ayuda">Después de pagar, avísanos con «Ya pagué» para actualizar tu cuenta.${contactoPg('') ? ` También puedes ${contactoPg(`Hola, quiero pagar el saldo de mi ${c.ot}.`)}.` : ''}</p>
+          </div>
+          <button type="button" class="pg-op" data-panel="pague"><span class="ico">✅</span><span><strong>Ya pagué</strong><small>Avísanos para revisarlo y dejar de enviarte avisos</small></span></button>
+          <div class="pg-panel" id="panel-pague" hidden>
+            <div class="form-row">
+              <div class="form-group"><label for="pg-monto">Monto pagado *</label><input type="number" id="pg-monto" min="1" value="${Math.round(saldo)}" /></div>
+              <div class="form-group"><label for="pg-fecha">Fecha del pago *</label><input type="date" id="pg-fecha" value="${hoyPg}" max="${hoyPg}" /></div>
+            </div>
+            <div class="form-group"><label for="pg-medio">¿Cómo pagaste?</label>
+              <select id="pg-medio"><option>Transferencia</option><option>Efectivo</option><option>Tarjeta</option><option>Otro</option></select></div>
+            <div class="form-group"><label for="pg-com">Comentario (opcional)</label><input type="text" id="pg-com" maxlength="300" placeholder="Ej: transferí desde la cuenta de mi esposa" /></div>
+            <button type="button" id="pg-enviar-pago">Avisar mi pago</button>
+            <p class="error-message" id="pg-error-pago"></p>
+          </div>
+          ${puedeConvenio ? `
+          <button type="button" class="pg-op destacada" data-panel="convenio"><span class="ico">🤝</span><span><strong>¿No puedes pagar todo ahora? Propón un convenio</strong><small>Hasta ${lim.max_cuotas || 3} cuotas, sin trámites. Mientras lo revisamos, no te enviamos avisos.</small></span></button>
+          <div class="pg-panel" id="panel-convenio" hidden>
+            <div class="form-row">
+              <div class="form-group"><label for="cv-cuotas">Número de cuotas</label>
+                <select id="cv-cuotas">${Array.from({ length: Math.max(1, (lim.max_cuotas || 3) - 1) }, (_, i) => `<option value="${i + 2}">${i + 2} cuotas</option>`).join('')}</select></div>
+              <div class="form-group"><label for="cv-cada">Cada cuánto</label>
+                <select id="cv-cada">${(lim.dias_entre_cuotas || 30) >= 30 ? '<option value="30">Cada 30 días</option>' : ''}<option value="15">Cada 15 días</option></select></div>
+            </div>
+            <div class="form-group"><label for="cv-primera">Fecha del primer pago</label>
+              <input type="date" id="cv-primera" value="${sumarDiasPg(hoyPg, Math.min(7, lim.primer_pago_dias || 15))}" min="${hoyPg}" max="${sumarDiasPg(hoyPg, lim.primer_pago_dias || 15)}" />
+              <p class="pg-ayuda">Dentro de los próximos ${lim.primer_pago_dias || 15} días.</p></div>
+            <div id="cv-previa"></div>
+            <div class="form-group"><label for="cv-com">Comentario (opcional)</label><input type="text" id="cv-com" maxlength="500" placeholder="Ej: me pagan el día 5 de cada mes" /></div>
+            <button type="button" id="cv-enviar">Enviar mi propuesta</button>
+            <p class="pg-ayuda">El taller revisará tu propuesta y te responderá. Si la acepta, te llega el detalle de tus cuotas por correo.</p>
+            <p class="error-message" id="cv-error"></p>
+          </div>` : ''}
+        </div>
+        <p class="pg-ayuda" style="text-align:center; margin-top:1rem;">¿Dudas? ${contactoPg(`Hola, tengo una consulta sobre el saldo de mi ${c.ot}.`) || 'Contáctanos'}${c.taller && c.taller.telefono ? ` o llámanos al ${htmlSeguro(c.taller.telefono)}` : ''}.</p>
+        <p class="pg-legal">Cobranza extrajudicial conforme a la Ley 19.496 (modificada por la Ley 21.320): como máximo 2 avisos por semana, en días hábiles entre las 8:00 y las 20:00. No se cobran gastos de cobranza.</p>`;
+      contenidoPg().innerHTML = html;
+
+      contenidoPg().querySelectorAll('.pg-op').forEach(b => b.addEventListener('click', () => abrirPanel(b.dataset.panel)));
+      document.getElementById('pg-enviar-pago').addEventListener('click', avisarPago);
+      if (puedeConvenio) {
+        ['cv-cuotas', 'cv-cada', 'cv-primera'].forEach(id => document.getElementById(id).addEventListener('change', previaConvenio));
+        document.getElementById('cv-enviar').addEventListener('click', proponerConvenio);
+        previaConvenio();
+        if (parametros.get('convenio') === '1') abrirPanel('convenio');
+      }
+    }
+    function abrirPanel(nombre) {
+      ['como', 'pague', 'convenio'].forEach(p => {
+        const panel = document.getElementById('panel-' + p);
+        const boton = contenidoPg().querySelector(`.pg-op[data-panel="${p}"]`);
+        if (!panel) return;
+        const abrir = p === nombre && panel.hidden;
+        panel.hidden = !abrir;
+        if (boton) boton.classList.toggle('abierta', abrir);
+      });
+      const panel = document.getElementById('panel-' + nombre);
+      if (panel && !panel.hidden) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    function previaConvenio() {
+      const n = Number(document.getElementById('cv-cuotas').value), cada = Number(document.getElementById('cv-cada').value);
+      const primera = document.getElementById('cv-primera').value;
+      if (!primera) { document.getElementById('cv-previa').innerHTML = ''; return; }
+      document.getElementById('cv-previa').innerHTML = `<p style="margin:0.25rem 0 0; font-weight:600;">Así quedarían tus cuotas:</p>${tablaCuotas(armarCuotas(Number(cuenta.saldo), n, primera, cada), 0, false)}`;
+    }
+    async function proponerConvenio() {
+      const err = document.getElementById('cv-error'), btn = document.getElementById('cv-enviar');
+      err.textContent = '';
+      btn.disabled = true; btn.textContent = 'Enviando…';
+      const { data, error } = await supabaseClient.rpc('pago_proponer_convenio', {
+        p_token: token, p_cuotas: Number(document.getElementById('cv-cuotas').value), p_primera: document.getElementById('cv-primera').value,
+        p_cada_dias: Number(document.getElementById('cv-cada').value), p_comentario: document.getElementById('cv-com').value.trim() || null });
+      btn.disabled = false; btn.textContent = 'Enviar mi propuesta';
+      if (error || !data || data.ok === false) { err.textContent = (data && data.error) || 'No se pudo enviar. Intenta de nuevo o escríbenos.'; return; }
+      await cargar();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    async function avisarPago() {
+      const err = document.getElementById('pg-error-pago'), btn = document.getElementById('pg-enviar-pago');
+      err.textContent = '';
+      const monto = Number(document.getElementById('pg-monto').value), fecha = document.getElementById('pg-fecha').value;
+      if (!(monto > 0)) { err.textContent = 'Indica el monto que pagaste.'; return; }
+      if (!fecha) { err.textContent = 'Indica la fecha del pago.'; return; }
+      btn.disabled = true; btn.textContent = 'Enviando…';
+      const { data, error } = await supabaseClient.rpc('pago_informar', {
+        p_token: token, p_monto: monto, p_fecha: fecha, p_medio: document.getElementById('pg-medio').value,
+        p_comentario: document.getElementById('pg-com').value.trim() || null });
+      btn.disabled = false; btn.textContent = 'Avisar mi pago';
+      if (error || !data || data.ok === false) { err.textContent = (data && data.error) || 'No se pudo enviar. Intenta de nuevo o escríbenos.'; return; }
+      await cargar();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    async function cargar() {
+      const { data, error } = await supabaseClient.rpc('pago_info', { p_token: token });
+      if (error || !data) { errorPg('No pudimos cargar tu cuenta en este momento. Intenta más tarde o contáctanos.'); return; }
+      if (data.ok === false) { errorPg(data.error || 'No encontramos esta cuenta.'); return; }
+      cuenta = data;
+      if (data.taller && data.taller.nombre) document.getElementById('taller-nombre').textContent = data.taller.nombre;
+      document.getElementById('cargando').hidden = true;
+      contenidoPg().hidden = false;
+      render();
+    }
+    if (token.length < 20) errorPg('El link no está completo. Ábrelo de nuevo desde tu correo.');
+    else cargar();
+  </script>
+</body>
+</html>

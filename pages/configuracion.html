@@ -357,6 +357,43 @@
           <p id="encuesta-ok" style="color:#1b6e3c; font-size:0.85rem;"></p>
         </div>
 
+        <div class="card" id="cobranza-cfg-card">
+          <h2 data-cfg="cobranza" style="margin-top:0;">Cobranza y convenios de pago</h2>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
+            Cuando inicias la cobranza de una OT en Inicio, los avisos salen solos <strong>dentro de la ley</strong> (Ley 19.496 modificada por la
+            Ley 21.320): solo de lunes a viernes (sin feriados ni días bloqueados en la agenda), <strong>máximo 2 por semana</strong> con al menos
+            3 días entre uno y otro, el primero de la semana a las 09:00 y el segundo a las 17:00. Los WhatsApp y correos que mandes a mano
+            desde Inicio también cuentan. Cada aviso trae un link donde el cliente ve su saldo, cómo pagar, avisa «Ya pagué» o
+            <strong>propone un convenio de pago</strong> en cuotas, que tú aceptas o rechazas en Inicio.
+          </p>
+          <div class="form-group">
+            <label for="cob-datos">Cómo pagar (lo ve el cliente en su link)</label>
+            <textarea id="cob-datos" rows="5" data-autolista="no" placeholder="Ej: Transferencia a nombre de …, banco …, tipo y número de cuenta, RUT y correo para el comprobante. También puede pagar en el taller con efectivo o tarjeta."></textarea>
+            <small style="display:block; color:var(--color-text-muted); font-size:0.75rem; margin-top:0.25rem;">Escribe aquí tus datos de transferencia tal como quieres que los vea el cliente. Si lo dejas vacío, se le invita a pagar en el taller o a pedirte los datos.</small>
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="max-width:220px;">
+              <label for="cob-max-avisos">Avisos automáticos antes de detenerse</label>
+              <input type="number" id="cob-max-avisos" min="2" max="20" step="1" value="8" />
+            </div>
+            <div class="form-group" style="max-width:180px;">
+              <label for="cob-max-cuotas">Máximo de cuotas</label>
+              <input type="number" id="cob-max-cuotas" min="2" max="12" step="1" value="3" />
+            </div>
+            <div class="form-group" style="max-width:200px;">
+              <label for="cob-cada">Cuotas como máximo cada</label>
+              <select id="cob-cada"><option value="30">30 días (mensual)</option><option value="15">15 días (quincenal)</option></select>
+            </div>
+            <div class="form-group" style="max-width:220px;">
+              <label for="cob-primer">Primer pago dentro de (días)</label>
+              <input type="number" id="cob-primer" min="1" max="60" step="1" value="15" />
+            </div>
+          </div>
+          <button type="button" id="guardar-cobranza-btn">Guardar</button>
+          <p class="error-message" id="cobranza-cfg-error"></p>
+          <p id="cobranza-cfg-ok" style="color:#1b6e3c; font-size:0.85rem;"></p>
+        </div>
+
         <div class="card" id="correo-card">
           <h2 data-cfg="correo" style="margin-top:0;">Correo automático (desde tu Gmail)</h2>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin-top:0;">
@@ -1000,6 +1037,10 @@
       link_reserva: `${window.location.origin}/reservar.html?cotizacion=COT-0007`,
       fecha_entrega: '10-11-26', saldo: '$18.068', pagado: '$20.000', documento: 'OT-0015',
       referido: 'Pedro', cupon: 'PREMIO-7QX2M', link_encuesta: `${window.location.origin}/encuesta.html?e=…`,
+      // Cobranza y convenio (v79)
+      ...valoresLinkCobranza({ token_pago: 'ejemplo' }, null),
+      cuota: '2 de 3', monto_cuota: '$6.100', cuando: 'mañana, 05-12-26',
+      detalle_cuotas: '▸ Cuota 1: 05-12-2026 · $6.000\n▸ Cuota 2: 04-01-2027 · $6.000\n▸ Cuota 3: 03-02-2027 · $6.068',
     };
     const valoresEjemplo = (clave) => {
       // Club: código de ejemplo con las condiciones que están en pantalla
@@ -1575,6 +1616,37 @@
         : 'Guardado: la encuesta quedó apagada.';
     });
 
+    // ---------- Cobranza y convenios de pago (sql/v79) ----------
+    function cargarCobranzaCfg(cfg) {
+      const c = cobranzaConfig(cfg);
+      document.getElementById('cob-datos').value = c.datos_pago || '';
+      document.getElementById('cob-max-avisos').value = c.max_avisos;
+      document.getElementById('cob-max-cuotas').value = c.max_cuotas;
+      document.getElementById('cob-cada').value = Number(c.dias_entre_cuotas) >= 30 ? '30' : '15';
+      document.getElementById('cob-primer').value = c.primer_pago_dias;
+    }
+    document.getElementById('guardar-cobranza-btn').addEventListener('click', async () => {
+      const errorEl = document.getElementById('cobranza-cfg-error'), okEl = document.getElementById('cobranza-cfg-ok');
+      errorEl.textContent = ''; okEl.textContent = '';
+      const num = (id) => Math.round(Number(document.getElementById(id).value));
+      const c = {
+        datos_pago: document.getElementById('cob-datos').value.trim().slice(0, 1000),
+        max_avisos: num('cob-max-avisos'), max_cuotas: num('cob-max-cuotas'),
+        dias_entre_cuotas: Number(document.getElementById('cob-cada').value), primer_pago_dias: num('cob-primer'),
+      };
+      if (!(c.max_avisos >= 2 && c.max_avisos <= 20)) { errorEl.textContent = 'Los avisos automáticos deben estar entre 2 y 20.'; return; }
+      if (!(c.max_cuotas >= 2 && c.max_cuotas <= 12)) { errorEl.textContent = 'El máximo de cuotas debe estar entre 2 y 12.'; return; }
+      if (!(c.primer_pago_dias >= 1 && c.primer_pago_dias <= 60)) { errorEl.textContent = 'El primer pago debe ser dentro de 1 a 60 días.'; return; }
+      const { error } = await supabaseClient.from('taller_config').update({ cobranza: c }).eq('id', 1);
+      if (error) {
+        errorEl.textContent = /cobranza/.test(error.message || '')
+          ? 'Falta ejecutar sql/actualizacion-v79-cobranza-ley-y-convenios.sql en el SQL Editor de Supabase.' : `Error: ${error.message}`;
+        return;
+      }
+      tallerConfigCache = null;
+      okEl.textContent = `Guardado: hasta ${c.max_avisos} avisos automáticos; convenios de hasta ${c.max_cuotas} cuotas cada ${c.dias_entre_cuotas === 30 ? '30' : '15'} días, con el primer pago dentro de ${c.primer_pago_dias} días.`;
+    });
+
     // ---------- Correo de confirmaciones (Google Apps Script con el Gmail del taller) ----------
     const CODIGO_SCRIPT_CORREO = String.raw`// Script de correo de Autonova. Se pega en script.google.com con la cuenta de Gmail del taller.
 const CLAVE = '__CLAVE__';
@@ -2028,6 +2100,7 @@ function responder(obj) {
       cargarDomicilio(data).catch(e => console.error('Error en cargarDomicilio:', e));
       try { cargarClub(data); } catch (e) { console.error('Error en cargarClub:', e); }
       try { cargarEncuesta(data); } catch (e) { console.error('Error en cargarEncuesta:', e); }
+      try { cargarCobranzaCfg(data); } catch (e) { console.error('Error en cargarCobranzaCfg:', e); }
       correoEventos = (data.correo_eventos && typeof data.correo_eventos === 'object') ? data.correo_eventos : {};
       renderCorreoEventos();
       renderCopiaCorreo(data);

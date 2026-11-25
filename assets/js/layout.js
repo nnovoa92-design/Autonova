@@ -31,6 +31,7 @@ const SECCIONES_CONFIG = [
   { id: 'domicilio', label: 'Atención a domicilio' },
   { id: 'club', label: 'Club Autonova (referidos)' },
   { id: 'encuesta', label: 'Encuesta y reseñas' },
+  { id: 'cobranza', label: 'Cobranza y convenios' },
   { id: 'correo', label: 'Correo automático' },
   { id: 'mensajes-correo', label: 'Mensajes al cliente' },
   { id: 'registro-correos', label: 'Correos enviados' },
@@ -617,6 +618,8 @@ const BOTONES_CORREO = [
   ['/diagnostico.html', '🔎 Ver el informe de diagnóstico'],
   ['/portal.html', '🚗 Seguir mi vehículo'],
   ['/mi-cita.html', '📅 Cambiar o cancelar mi hora'],
+  ['convenio=1', '🤝 Proponer un convenio de pago'],
+  ['/pago.html', '💳 Ver mi saldo y cómo pagar'],
   ['/reservar.html', '📅 Reservar hora'],
   ['/club.html', '🎁 Compartir mi código'],
 ];
@@ -628,6 +631,30 @@ function linkMiCita(c) {
 function bloqueMiCita(c) {
   const l = linkMiCita(c);
   return l ? `\n\n¿Necesita cambiar su hora? Puede reagendarla (o cancelarla) aquí, en menos de 1 minuto:\n${l}` : '';
+}
+// ---------- Cobranza dentro de la ley (sql/v79) ----------
+// Valores por defecto de Configuración → Cobranza (mismos que _cobranza_cfg() en SQL)
+const COBRANZA_POR_DEFECTO = { max_avisos: 8, max_cuotas: 3, dias_entre_cuotas: 30, primer_pago_dias: 15, datos_pago: '' };
+const cobranzaConfig = (cfg) => ({ ...COBRANZA_POR_DEFECTO, ...((cfg && cfg.cobranza) || {}) });
+// Feriados nacionales (lunes a viernes) en que no sale cobranza: mismos que _dia_habil_cobranza() en SQL
+const FERIADOS_COBRANZA = ['2026-01-01', '2026-04-03', '2026-04-04', '2026-05-01', '2026-05-21', '2026-06-29', '2026-07-16', '2026-08-15',
+  '2026-09-18', '2026-09-19', '2026-10-12', '2026-10-31', '2026-11-01', '2026-12-08', '2026-12-25',
+  '2027-01-01', '2027-03-26', '2027-03-27', '2027-05-01', '2027-05-21', '2027-06-21', '2027-06-28', '2027-07-16',
+  '2027-08-15', '2027-09-18', '2027-09-19', '2027-10-11', '2027-11-01', '2027-12-08', '2027-12-25'];
+const PIE_LEGAL_COBRANZA = '\n\nAviso de cobranza extrajudicial conforme a la Ley 19.496 (modificada por la Ley 21.320): enviamos como máximo 2 avisos por semana, en días hábiles entre las 8:00 y las 20:00, y no cobramos gastos de cobranza.';
+function linkPagoOT(o) {
+  return o && o.token_pago ? `${window.location.origin}/pago.html?t=${encodeURIComponent(o.token_pago)}` : '';
+}
+// Variables extra de los avisos de cobranza: link de pago, banner del convenio y pie legal (igual que en SQL)
+function valoresLinkCobranza(o, cfg) {
+  const link = linkPagoOT(o);
+  const cc = cobranzaConfig(cfg);
+  return {
+    link_pago: link || '(link disponible al correr sql/actualizacion-v79)',
+    max_cuotas: String(cc.max_cuotas),
+    bloque_convenio: link ? `\n\n━━━━━━━━━━━━\n¿NO PUEDE PAGAR TODO AHORA?\nPuede pagarlo en hasta ${cc.max_cuotas} cuotas con un convenio de pago. Propóngalo aquí en 1 minuto, sin trámites:\n${link}&convenio=1` : '',
+    pie_legal: PIE_LEGAL_COBRANZA,
+  };
 }
 const escCorreo = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 function botonCorreo(url) {
@@ -915,23 +942,50 @@ const PLANTILLAS_CORREO = {
     texto: 'Hola {nombre},\n\nHoy es el último día de validez de la cotización {cotizacion} para {vehiculo} ({total}, {iva}). A partir de mañana deja de ser válida y los valores pueden cambiar.\n\nSi desea mantener estos valores, apruébela hoy aquí:\n{link}\n\nO reserve su hora directamente:\n{link_reserva}\n\n{firma}',
     variables: ['nombre', 'cotizacion', 'vehiculo', 'total', 'iva', 'vence', 'link', 'link_reserva', 'taller', 'firma'],
   },
+  // Cobranza dentro de la ley (sql/v79 cobranza_automatica, la envía Supabase sola): mismos textos por defecto allá.
+  // {link_pago} = página del cliente (saldo, cómo pagar, «Ya pagué»); {bloque_convenio} = banner del convenio de pago;
+  // {pie_legal} = aviso de la Ley 19.496 / 21.320. Si se cambia un texto por defecto, cambiarlo también en v79.
   cobranza_1: {
-    titulo: 'Cobranza de OT — día 3',
+    titulo: 'Cobranza de OT — 1.er aviso (a los 3 días de iniciada)',
     asunto: 'Saldo pendiente de su {ot} - {taller}',
-    texto: 'Hola {nombre},\n\nLe recordamos que el servicio de {vehiculo} ({ot}), entregado el {fecha_entrega}, tiene un saldo pendiente de {saldo} (total {total}, pagado {pagado}).\n\nSi ya realizó el pago, por favor envíenos el comprobante y disculpe la molestia.\n\n{firma}',
-    variables: ['nombre', 'ot', 'vehiculo', 'fecha_entrega', 'saldo', 'total', 'pagado', 'taller', 'firma'],
+    texto: 'Hola {nombre},\n\nLe recordamos que el servicio de {vehiculo} ({ot}), entregado el {fecha_entrega}, tiene un saldo pendiente de {saldo} (total {total}, pagado {pagado}).\n\nPuede ver el detalle, cómo pagar o avisarnos si ya pagó aquí:\n{link_pago}\n\nSi ya realizó el pago, disculpe la molestia.{bloque_convenio}\n\n{firma}{pie_legal}',
+    variables: ['nombre', 'ot', 'vehiculo', 'fecha_entrega', 'saldo', 'total', 'pagado', 'link_pago', 'bloque_convenio', 'pie_legal', 'taller', 'firma'],
   },
   cobranza_2: {
-    titulo: 'Cobranza de OT — día 5',
+    titulo: 'Cobranza de OT — 2.º aviso',
     asunto: 'Recordatorio de pago - {ot} · {taller}',
-    texto: 'Hola {nombre},\n\nLe escribimos nuevamente por el saldo pendiente de {saldo} del servicio de {vehiculo} ({ot}), entregado el {fecha_entrega}.\n\nLe agradeceremos regularizarlo a la brevedad. Si ya pagó, envíenos el comprobante para actualizar su cuenta.\n\n{firma}',
-    variables: ['nombre', 'ot', 'vehiculo', 'fecha_entrega', 'saldo', 'total', 'pagado', 'taller', 'firma'],
+    texto: 'Hola {nombre},\n\nLe escribimos nuevamente por el saldo pendiente de {saldo} del servicio de {vehiculo} ({ot}), entregado el {fecha_entrega}.\n\nPuede ver el detalle, cómo pagar o avisarnos si ya pagó aquí:\n{link_pago}{bloque_convenio}\n\n{firma}{pie_legal}',
+    variables: ['nombre', 'ot', 'vehiculo', 'fecha_entrega', 'saldo', 'total', 'pagado', 'link_pago', 'bloque_convenio', 'pie_legal', 'taller', 'firma'],
   },
   cobranza_3: {
-    titulo: 'Cobranza de OT — día 15',
-    asunto: 'Último aviso: saldo pendiente de su {ot} - {taller}',
-    texto: 'Hola {nombre},\n\nEste es nuestro último aviso por el saldo pendiente de {saldo} del servicio de {vehiculo} ({ot}), entregado el {fecha_entrega}.\n\nLe pedimos regularizar el pago o comunicarse con nosotros para acordar cómo hacerlo. Si ya pagó, envíenos el comprobante y disculpe la molestia.\n\n{firma}',
-    variables: ['nombre', 'ot', 'vehiculo', 'fecha_entrega', 'saldo', 'total', 'pagado', 'taller', 'firma'],
+    titulo: 'Cobranza de OT — avisos siguientes (seguimiento)',
+    asunto: 'Seguimos atentos a su pago - {ot} · {taller}',
+    texto: 'Hola {nombre},\n\nSu {ot} ({vehiculo}) mantiene un saldo pendiente de {saldo}. Si tiene alguna dificultad para pagarlo, cuéntenos: queremos ayudarle a encontrar una forma cómoda de hacerlo.\n\nVer el detalle, cómo pagar o avisar un pago:\n{link_pago}{bloque_convenio}\n\n{firma}{pie_legal}',
+    variables: ['nombre', 'ot', 'vehiculo', 'fecha_entrega', 'saldo', 'total', 'pagado', 'link_pago', 'bloque_convenio', 'pie_legal', 'taller', 'firma'],
+  },
+  cobranza_ultimo: {
+    titulo: 'Cobranza de OT — último aviso automático',
+    asunto: 'Último aviso automático: saldo pendiente de su {ot} - {taller}',
+    texto: 'Hola {nombre},\n\nEste es nuestro último aviso automático por el saldo pendiente de {saldo} del servicio de {vehiculo} ({ot}), entregado el {fecha_entrega}. Desde ahora le contactaremos directamente.\n\nLe pedimos regularizar el pago o acordar con nosotros cómo hacerlo:\n{link_pago}{bloque_convenio}\n\n{firma}{pie_legal}',
+    variables: ['nombre', 'ot', 'vehiculo', 'fecha_entrega', 'saldo', 'total', 'pagado', 'link_pago', 'bloque_convenio', 'pie_legal', 'taller', 'firma'],
+  },
+  convenio_cuota: {
+    titulo: 'Convenio de pago — la cuota vence mañana / hoy',
+    asunto: 'Su cuota {cuota} vence {cuando} - {ot} · {taller}',
+    texto: 'Hola {nombre},\n\nLe recordamos que la cuota {cuota} de su convenio de pago de la {ot} ({monto_cuota}) vence {cuando}.\n\nVer su convenio, cómo pagar o avisar el pago:\n{link_pago}\n\n¡Gracias por cumplir su convenio!\n\n{firma}{pie_legal}',
+    variables: ['nombre', 'ot', 'cuota', 'monto_cuota', 'cuando', 'vence', 'link_pago', 'pie_legal', 'taller', 'firma'],
+  },
+  convenio_cuota_vencida: {
+    titulo: 'Convenio de pago — cuota atrasada (3 días después)',
+    asunto: 'Cuota {cuota} pendiente - {ot} · {taller}',
+    texto: 'Hola {nombre},\n\nNo hemos registrado el pago de la cuota {cuota} de su convenio de la {ot} ({monto_cuota}), que venció el {vence}. Si ya pagó, avísenos aquí para actualizar su cuenta; si tuvo algún problema, cuéntenos y lo vemos juntos:\n{link_pago}\n\n{firma}{pie_legal}',
+    variables: ['nombre', 'ot', 'cuota', 'monto_cuota', 'vence', 'link_pago', 'pie_legal', 'taller', 'firma'],
+  },
+  convenio_aceptado: {
+    titulo: 'Convenio de pago — aceptado (lo envías tú desde Inicio)',
+    asunto: 'Su convenio de pago está aceptado - {ot} · {taller}',
+    texto: 'Hola {nombre},\n\n¡Listo! Aceptamos su convenio de pago para la {ot} ({vehiculo}). Estas son sus cuotas:\n{detalle_cuotas}\n\nLe avisaremos un día antes de cada vencimiento. Puede ver su convenio, cómo pagar y avisar sus pagos aquí:\n{link_pago}\n\n{firma}',
+    variables: ['nombre', 'ot', 'vehiculo', 'detalle_cuotas', 'link_pago', 'taller', 'firma'],
   },
   // Lo envía Supabase solo (sql/v67, procesar_referidos): si se cambia el texto por defecto, cambiarlo también allá
   premio_referido: {
@@ -1034,8 +1088,8 @@ const PLANTILLAS_WHATSAPP = {
   },
   wa_cobranza: {
     titulo: 'Cobranza de OT (botón WhatsApp en Inicio)',
-    texto: 'Hola {nombre}, le saluda {taller}. Le recordamos que el servicio de {vehiculo} ({ot}), entregado el {fecha_entrega}, tiene un saldo pendiente de {saldo}. Si ya realizó el pago, por favor envíenos el comprobante. ¡Muchas gracias!',
-    variables: ['nombre', 'ot', 'vehiculo', 'fecha_entrega', 'saldo', 'total', 'pagado', 'taller'],
+    texto: 'Hola {nombre}, le saluda {taller}. Le recordamos que el servicio de {vehiculo} ({ot}), entregado el {fecha_entrega}, tiene un saldo pendiente de {saldo}. Aquí puede ver el detalle, cómo pagar, avisarnos si ya pagó o proponer un convenio de pago en cuotas: {link_pago} ¡Muchas gracias!',
+    variables: ['nombre', 'ot', 'vehiculo', 'fecha_entrega', 'saldo', 'total', 'pagado', 'link_pago', 'taller'],
   },
   wa_inspeccion: {
     titulo: 'Inspección precompra (botón WhatsApp)',

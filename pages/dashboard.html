@@ -5,6 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Inicio · Autonova</title>
   <link rel="stylesheet" href="../assets/css/style.css" />
+  <style>
+    /* Cobranza dentro de la ley y convenios de pago (v79) */
+    .cobranza-bloque { margin-top: 0.5rem; padding: 0.55rem 0.7rem; border-radius: 8px; font-size: 0.86rem; }
+    .cobranza-bloque.convenio { background: #f6f2fd; border: 1px solid #d2c4f2; color: #3b2a6b; }
+    .cobranza-bloque.pago { background: #eef7ee; border: 1px solid #bfe3c6; color: #1b5e20; }
+    .cobranza-bloque .aviso-acciones { margin-top: 0.4rem; }
+    .cuotas-lista { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.35rem 0; }
+    .conv-ajuste[hidden] { display: none; }
+    .conv-ajuste { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.35rem 0; font-size: 0.82rem; }
+    .conv-ajuste label { display: flex; align-items: center; gap: 0.3rem; font-weight: 500; }
+    .conv-ajuste select, .conv-ajuste input { width: auto; padding: 0.2rem 0.35rem; }
+  </style>
 </head>
 <body>
   <div class="app-shell">
@@ -47,8 +59,9 @@
             <span class="badge badge-yellow" id="cobranza-resumen"></span>
           </div>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.5rem;">
-            OT entregadas que no aparecen pagadas. Si de verdad tienen saldo, <strong>inicia la cobranza</strong>: le llegará un
-            correo al cliente a los 3, 5 y 15 días, y se detiene sola cuando registras el pago. Si ya pagó, registra el pago en la OT.
+            OT entregadas que no aparecen pagadas. Si de verdad tienen saldo, <strong>inicia la cobranza</strong>: le llegan avisos por correo
+            <strong>dentro de la ley</strong> (máx. 2 por semana, días hábiles, 09:00 y 17:00), con un link para ver su saldo, avisar que pagó
+            o <strong>proponer un convenio de pago</strong>. Se detiene sola cuando registras el pago. Si ya pagó, registra el pago en la OT.
           </p>
           <div id="cobranza-lista" class="avisos-lista"><p style="color:var(--color-text-muted);">Cargando...</p></div>
         </div>
@@ -306,55 +319,157 @@
       return { total: Math.round(total + bodegaje), pagado, saldo: Math.round(total + bodegaje - pagado) };
     }
 
+    // ---------- Cobranza dentro de la ley (sql/v79) ----------
+    // Supabase envía los avisos solo (cobranza_automatica, cada hora): días hábiles, máx. 2 por semana, al menos 3 días
+    // entre avisos, el 1.º de la semana desde las 09:00 y el 2.º desde las 17:00. Los WhatsApp y correos a mano desde
+    // aquí también cuentan (cobranza_gestiones), así que se revisan las mismas reglas antes de mandarlos.
+    let cobranzaV79 = true;   // false si aún no se corrió v79 (se usa la vista anterior)
+    const esDiaHabilCobranza = (ymd) => { const dow = new Date(ymd + 'T12:00:00').getDay(); return dow >= 1 && dow <= 5 && !FERIADOS_COBRANZA.includes(ymd); };
+    const lunesDe = (ymd) => sumarDiasYmd(ymd, -((new Date(ymd + 'T12:00:00').getDay() + 6) % 7));
+    const horaChile = () => Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Santiago', hour: '2-digit', hourCycle: 'h23' }).format(new Date()));
+    const fechasGestiones = (o) => (o.cobranza_gestiones || []).map(g => ymdChile(g.creado_en)).sort();
+    // ¿Se puede hacer HOY una gestión de cobranza (automática o a mano)?
+    function revisarLeyCobranza(o) {
+      const hoy = hoyChile(), hora = horaChile(), fechas = fechasGestiones(o);
+      const semana = fechas.filter(f => f >= lunesDe(hoy)).length, ult = fechas[fechas.length - 1];
+      if (!esDiaHabilCobranza(hoy)) return { ok: false, motivo: 'Hoy no es día hábil: la ley solo permite cobrar de lunes a viernes (sin feriados).' };
+      if (hora < 8 || hora >= 20) return { ok: false, motivo: 'La ley solo permite cobrar entre las 8:00 y las 20:00.' };
+      if (semana >= 2) return { ok: false, motivo: 'Esta semana ya hubo 2 avisos de cobranza (el máximo legal).' };
+      if (ult && diasEntre(ult, hoy) < 3) return { ok: false, motivo: `El último aviso fue el ${fmtFecha(ult + 'T12:00:00')}: deben pasar al menos 3 días entre avisos.` };
+      return { ok: true };
+    }
+    // Próximo aviso automático (misma regla que cobranza_automatica en SQL; los días bloqueados en la agenda también se saltan allá)
+    function proximoAvisoCobranza(o) {
+      const hoy = hoyChile(), hora = horaChile(), fechas = fechasGestiones(o);
+      const desde = ymdChile(o.cobranza_desde || o.fecha_entrega || new Date().toISOString());
+      const n = (o.cobranza_gestiones || []).filter(g => !String(g.plantilla || '').startsWith('convenio') && ymdChile(g.creado_en) >= desde).length;
+      for (let i = 0; i < 40; i++) {
+        const d = sumarDiasYmd(hoy, i);
+        if (!esDiaHabilCobranza(d)) continue;
+        const sem = fechas.filter(f => f >= lunesDe(d) && f <= d).length;
+        if (sem >= 2) continue;
+        const ult = fechas.filter(f => f <= d).pop();
+        if (ult && diasEntre(ult, d) < 3) continue;
+        if (n === 0 && diasEntre(desde, d) < 3) continue;
+        const h = sem === 1 ? 17 : 9;
+        if (i === 0 && hora >= 20) continue;
+        return { ymd: d, texto: i === 0 ? (hora >= h ? 'hoy, en la próxima hora' : `hoy desde las ${h}:00`) : `el ${fmtFecha(d + 'T12:00:00')} desde las ${h}:00` };
+      }
+      return null;
+    }
+    const horaGestion = (iso) => new Date(iso).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "America/Santiago" });
+    const iconoCanal = (g) => g.canal === 'whatsapp' ? '💬' : '✉';
+    function chipsGestiones(o) {
+      const gs = (o.cobranza_gestiones || []).slice().sort((a, b) => String(a.creado_en).localeCompare(String(b.creado_en)));
+      if (!gs.length) return '<span class="paso-chip omitido">aún sin avisos</span>';
+      const mostrar = gs.slice(-6);
+      return (gs.length > 6 ? `<span class="paso-chip omitido">+${gs.length - 6} anteriores</span>` : '') + mostrar.map(g => {
+        const cuando = `${fechaCorta(ymdChile(g.creado_en))} ${horaGestion(g.creado_en)}`;
+        const tipo = String(g.plantilla || '').startsWith('convenio') ? ' cuota' : '';
+        const clase = g.estado === 'error' ? 'error' : (g.estado === 'enviado' || g.canal === 'whatsapp' ? 'hecho' : 'aviso');
+        return `<span class="paso-chip ${clase}" title="${g.origen === 'manual' ? 'Enviado a mano' : 'Automático'} · ${htmlSeguro(g.plantilla || '')}${g.estado ? ' · ' + htmlSeguro(g.estado) : ''}">${iconoCanal(g)}${tipo} ${cuando}${g.estado === 'error' ? ' · falló' : ''}</span>`;
+      }).join('');
+    }
+    // Cuotas iguales redondeadas a $100 (igual que pago_proponer_convenio en SQL); la última ajusta la diferencia
+    function armarCuotasConvenio(saldo, n, primera, cada) {
+      const monto = Math.round(saldo / n / 100) * 100;
+      let resto = saldo;
+      return Array.from({ length: n }, (_, i) => {
+        const c = { n: i + 1, fecha: sumarDiasYmd(primera, i * cada), monto: i === n - 1 ? resto : monto };
+        resto -= monto;
+        return c;
+      });
+    }
+    function tablaCuotasConvenio(cuotas, pagadoConvenio) {
+      let acum = 0;
+      return `<div class="cuotas-lista">${(cuotas || []).map(c => {
+        acum += Number(c.monto);
+        const pagada = pagadoConvenio != null && pagadoConvenio >= acum - 1;
+        const atrasada = pagadoConvenio != null && !pagada && c.fecha < hoyChile();
+        return `<span class="paso-chip ${pagada ? 'hecho' : atrasada ? 'error' : ''}">${pagada ? '✓ ' : atrasada ? '⚠ ' : ''}Cuota ${c.n}: ${fechaCorta(c.fecha)} · ${fmtMoneda(c.monto)}</span>`;
+      }).join('')}</div>`;
+    }
+    const convenioVigente = (o) => (o.convenios || []).filter(c => ['propuesto', 'activo'].includes(c.estado))
+      .sort((a, b) => String(b.creado_en).localeCompare(String(a.creado_en)))[0] || null;
+
     async function cargarCobranza() {
       cfgAvisos = await getTallerConfig();
       const cont = document.getElementById('cobranza-lista');
-      const { data, error } = await supabaseClient.from('ordenes')
-        .select('*, orden_items(cantidad, precio_unitario, tipo, tipo_otro), pagos(monto), abonos(monto), clientes(id, nombre, telefono, email), vehiculos(id, patente, marca, modelo)')
+      const base = '*, orden_items(cantidad, precio_unitario, tipo, tipo_otro), pagos(monto), abonos(monto), clientes(id, nombre, telefono, email), vehiculos(id, patente, marca, modelo)';
+      let { data, error } = await supabaseClient.from('ordenes')
+        .select(`${base}, convenios(*), cobranza_gestiones(canal, origen, plantilla, detalle, estado, creado_en)`)
         .eq('estado', 'entregado').order('fecha_entrega', { ascending: false });
+      cobranzaV79 = !error;
+      if (error) ({ data, error } = await supabaseClient.from('ordenes').select(base).eq('estado', 'entregado').order('fecha_entrega', { ascending: false }));
       if (error) { cont.innerHTML = `<p class="error-message">${htmlSeguro(error.message)}</p>`; return; }
       cobranzas = (data || [])
         .filter(o => o.cobranza_estado !== 'omitida' && o.cobranza_estado !== 'pagada')
         .map(o => ({ ...o, cuentas: cuentasOT(o) }))
         .filter(o => o.cuentas.saldo > 1);
-      const registro = await cargarRegistroCorreos('ordenes', cobranzas.map(o => o.id), ['cobranza_ot']);
-      cobranzas.forEach(o => { o.registro = registro[o.id] || []; });
       renderCobranza();
     }
 
     function renderCobranza() {
       const cont = document.getElementById('cobranza-lista');
       const porDecidir = cobranzas.filter(o => !o.cobranza_estado).length;
+      const propuestas = cobranzas.filter(o => (convenioVigente(o) || {}).estado === 'propuesto').length;
+      const informados = cobranzas.filter(o => o.pago_informado).length;
       document.getElementById('cobranza-resumen').textContent = cobranzas.length
-        ? `${cobranzas.length} con saldo${porDecidir ? ` · ${porDecidir} por revisar` : ''}` : 'Al día';
+        ? `${cobranzas.length} con saldo${porDecidir ? ` · ${porDecidir} por revisar` : ''}${propuestas ? ` · ${propuestas} convenio${propuestas > 1 ? 's' : ''} por responder` : ''}${informados ? ` · ${informados} pago${informados > 1 ? 's' : ''} informado${informados > 1 ? 's' : ''}` : ''}` : 'Al día';
       if (!cobranzas.length) { cont.innerHTML = '<p style="color:var(--color-text-muted);">No hay OT entregadas con saldo pendiente. 👍</p>'; return; }
       const hoy = hoyChile();
-      cont.innerHTML = cobranzas.map((o, idx) => {
+      const cc = cobranzaConfig(cfgAvisos);
+      cont.innerHTML = (cobranzaV79 ? '' : '<p class="aviso-nota" style="color:#92600a;">⚠ Falta correr sql/actualizacion-v79-cobranza-ley-y-convenios.sql: hasta entonces la cobranza funciona como antes.</p>') + cobranzas.map((o, idx) => {
         const entrega = o.fecha_entrega ? ymdChile(o.fecha_entrega) : null;
         const c = o.cuentas;
         const cli = o.clientes || {};
-        let estado = '', acciones = '';
+        const conv = convenioVigente(o);
+        let estado = '', extra = '', acciones = '';
         if (o.cobranza_estado === 'activa') {
-          // Los avisos cuentan desde que se inició la cobranza (igual que el envío automático)
           const desde = ymdChile(o.cobranza_desde || o.fecha_entrega || new Date().toISOString());
-          const hecho = pasosHechos(o.cobranza_enviados);
-          const dias = diasEntre(desde, hoy);
-          const pasoHoy = dias >= 15 ? 3 : pasoPorDias(dias, false);
-          const fechas = { 1: sumarDiasYmd(desde, 3), 2: sumarDiasYmd(desde, 5), 3: sumarDiasYmd(desde, 15) };
-          const sig = [1, 2, 3].find(p => p > Math.max(hecho, pasoHoy));
           const sinCorreo = !correoValido(cli.email);
           const apagado = !correoActivo('cobranza_ot');
-          const porPaso = logsPorPaso(o.registro, fechas);
-          const salieron = Object.values(porPaso).filter(l => l.estado === 'enviado').length;
-          estado = `<div class="aviso-estado">Cobranza activa desde el ${fmtFecha(desde + 'T12:00:00')} · <span class="pasos-titulo">Avisos por correo:</span> ${chipsEnvios(PASOS_COBRANZA, fechas, hecho, porPaso, { sinCorreo, apagado, hoy })}</div>
-            <div class="aviso-nota">${sinCorreo ? '⚠ Sin correo registrado: no le llegan avisos por correo (por eso salen en gris). Cóbrale por WhatsApp.'
-              : apagado ? '⚠ El aviso automático de cobranza está apagado en Configuración.'
-              : pasoHoy > hecho ? `Hoy sale el aviso del ${PASOS_COBRANZA[pasoHoy]} (desde las 10:00).`
-              : sig ? `Próximo aviso por correo: ${PASOS_COBRANZA[sig]}, ${proximoEnvioTexto(fechas[sig], hoy)}.`
-              : `Listo: ${salieron === 1 ? 'salió 1 aviso' : `salieron ${salieron} avisos`} por correo. No salen más correos automáticos.`}</div>`;
+          const nAvisos = (o.cobranza_gestiones || []).filter(g => !String(g.plantilla || '').startsWith('convenio') && ymdChile(g.creado_en) >= desde).length;
+          const pausa = o.cobranza_pausa_hasta && new Date(o.cobranza_pausa_hasta) > new Date();
+          const prox = proximoAvisoCobranza(o);
+          const nota = sinCorreo ? '⚠ Sin correo registrado: no le llegan avisos automáticos. Cóbrale por WhatsApp (respetando los límites).'
+            : apagado ? '⚠ El aviso automático de cobranza está apagado en Configuración.'
+            : conv && conv.estado === 'propuesto' ? '⏸ Avisos en pausa: el cliente propuso un convenio. Respóndele abajo.'
+            : conv && conv.estado === 'activo' ? '🤝 Convenio activo: solo se le avisa el día antes de cada cuota y si una cuota se atrasa.'
+            : pausa ? `⏸ Avisos en pausa hasta el ${fmtFecha(o.cobranza_pausa_hasta)}: el cliente avisó que pagó.`
+            : o.cobranza_tope_avisado || nAvisos >= cc.max_avisos ? `📞 Ya salieron ${nAvisos} avisos sin respuesta: los automáticos se detuvieron. Llámalo, o reinicia los avisos.`
+            : prox ? `Próximo aviso automático: ${prox.texto}.` : '';
+          estado = `<div class="aviso-estado">Cobranza activa desde el ${fmtFecha(desde + 'T12:00:00')} · <span class="pasos-titulo">Avisos (${nAvisos}/${cc.max_avisos}):</span> ${cobranzaV79 ? chipsGestiones(o) : ''}</div>
+            <div class="aviso-nota">${nota}</div>`;
+          if (o.pago_informado) {
+            const p = o.pago_informado;
+            extra += `<div class="cobranza-bloque pago">💳 <strong>El cliente avisa que pagó ${fmtMoneda(p.monto)}</strong> el ${fmtFecha(String(p.fecha).slice(0, 10) + 'T12:00:00')}${p.medio ? ` por ${htmlSeguro(p.medio)}` : ''}${p.comentario ? ` — «${htmlSeguro(p.comentario)}»` : ''}.
+              <div class="aviso-acciones"><a class="btn" href="ordenes.html?id=${o.id}">💳 Registrar el pago en la OT</a>
+              <button type="button" class="btn-secondary cob-no-llego" data-idx="${idx}">No ha llegado: reanudar avisos</button></div></div>`;
+          }
+          if (conv && conv.estado === 'propuesto') {
+            extra += `<div class="cobranza-bloque convenio">🤝 <strong>Propuesta de convenio</strong> del ${fmtFecha(conv.creado_en)}: ${fmtMoneda(conv.saldo)} en ${(conv.cuotas || []).length} cuotas${conv.comentario ? ` — «${htmlSeguro(conv.comentario)}»` : ''}
+              ${tablaCuotasConvenio(conv.cuotas, null)}
+              <div class="conv-ajuste" id="conv-ajuste-${idx}" hidden>
+                <label>Cuotas <select class="conv-n">${[2, 3, 4, 5, 6].map(n => `<option value="${n}"${n === (conv.cuotas || []).length ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
+                <label>Primer pago <input type="date" class="conv-primera" value="${(conv.cuotas && conv.cuotas[0] && conv.cuotas[0].fecha) || hoy}" /></label>
+                <label>Cada <select class="conv-cada"><option value="15">15 días</option><option value="30" selected>30 días</option></select></label>
+              </div>
+              <div class="aviso-acciones">
+                <button type="button" class="conv-aceptar" data-idx="${idx}">✅ Aceptar</button>
+                <button type="button" class="btn-secondary conv-ajustar" data-idx="${idx}">✏️ Ajustar cuotas</button>
+                <button type="button" class="btn-secondary conv-rechazar" data-idx="${idx}">✖ Rechazar</button>
+              </div></div>`;
+          } else if (conv && conv.estado === 'activo') {
+            extra += `<div class="cobranza-bloque convenio">🤝 <strong>Convenio activo</strong> desde el ${fmtFecha(conv.respondido_en || conv.creado_en)}: ${fmtMoneda(conv.saldo)} en ${(conv.cuotas || []).length} cuotas
+              ${tablaCuotasConvenio(conv.cuotas, c.pagado - Number(conv.pagado_base || 0))}
+              <div class="aviso-acciones"><button type="button" class="btn-secondary conv-anular" data-idx="${idx}">Anular convenio</button></div></div>`;
+          }
           acciones = `<button type="button" class="${sinCorreo ? '' : 'btn-secondary '}cob-wa" data-idx="${idx}">💬 WhatsApp</button>
             ${sinCorreo ? '' : `<button type="button" class="btn-secondary cob-mail" data-idx="${idx}">✉ Enviar aviso ahora</button>`}
             <a class="btn btn-secondary" href="ordenes.html?id=${o.id}">💳 Registrar pago</a>
+            ${o.token_pago ? `<button type="button" class="btn-secondary cob-link" data-idx="${idx}">🔗 Copiar link de pago</button>` : ''}
+            ${o.cobranza_tope_avisado || nAvisos >= cc.max_avisos ? `<button type="button" class="btn-secondary cob-reiniciar" data-idx="${idx}">🔁 Reiniciar avisos</button>` : ''}
             <button type="button" class="btn-secondary cob-detener" data-idx="${idx}">⏸ Detener</button>`;
         } else {
           estado = `<div class="aviso-nota">¿Tiene saldo de verdad? Si se te olvidó registrar un pago, regístralo en la OT. Si no, inicia la cobranza automática.</div>`;
@@ -363,15 +478,16 @@
             <button type="button" class="btn-secondary cob-wa" data-idx="${idx}">💬 WhatsApp</button>
             <button type="button" class="btn-secondary cob-omitir" data-idx="${idx}">No cobrar</button>`;
         }
+        const destacado = o.pago_informado || (conv && conv.estado === 'propuesto');
         return `
-          <div class="aviso-fila${o.cobranza_estado === 'activa' ? '' : ' por-decidir'}">
+          <div class="aviso-fila${o.cobranza_estado === 'activa' ? '' : ' por-decidir'}${destacado ? ' por-decidir' : ''}">
             <div class="aviso-cab">
               <strong>${fmtNumero('OT', o.numero)}</strong> · ${htmlSeguro(cli.nombre || '–')}
               ${o.vehiculos ? `· <span class="badge">${htmlSeguro(o.vehiculos.patente)}</span>` : ''}
               ${entrega ? `<span class="aviso-fecha">entregado el ${fmtFecha(entrega + 'T12:00:00')} (hace ${textoDias(diasEntre(entrega, hoy))})</span>` : ''}
             </div>
             <div class="aviso-montos">Total ${fmtMoneda(c.total)} · Pagado ${fmtMoneda(c.pagado)} · <strong style="color:#a93b33;">Saldo ${fmtMoneda(c.saldo)}</strong></div>
-            ${estado}
+            ${estado}${extra}
             <div class="aviso-acciones">${acciones}</div>
           </div>`;
       }).join('');
@@ -384,7 +500,23 @@
         vehiculo: textoVehiculo(o.vehiculos),
         fecha_entrega: o.fecha_entrega ? fmtFecha(o.fecha_entrega) : '',
         saldo: fmtMoneda(o.cuentas.saldo), total: fmtMoneda(o.cuentas.total), pagado: fmtMoneda(o.cuentas.pagado),
+        ...valoresLinkCobranza(o, cfgAvisos),
       };
+    }
+    // Registra una gestión hecha a mano (cuenta para los límites de la ley); sin v79 no hace nada
+    async function registrarGestion(o, canal, plantilla) {
+      if (!cobranzaV79) return;
+      const { error } = await supabaseClient.from('cobranza_gestiones').insert({ orden_id: o.id, canal, origen: 'manual', plantilla, estado: canal === 'whatsapp' ? 'abierto' : 'enviado' });
+      void error;
+    }
+    // Antes de cobrar a mano: si la ley no lo permite hoy, se explica y se dice cuándo sí
+    function permiteCobrarAhora(o) {
+      if (!cobranzaV79) return true;
+      const ley = revisarLeyCobranza(o);
+      if (ley.ok) return true;
+      const prox = proximoAvisoCobranza(o);
+      alert(`No se puede cobrar ahora: ${ley.motivo}${prox ? `\n\nPróxima fecha permitida: ${prox.texto}.` : ''}\n\n(Ley 19.496, modificada por la Ley 21.320: máximo 2 avisos por semana, en días hábiles entre las 8:00 y las 20:00.)`);
+      return false;
     }
 
     document.getElementById('cobranza-lista').addEventListener('click', async (e) => {
@@ -395,35 +527,99 @@
       const cambiarCobranza = async (cambios, aviso) => {
         const { error } = await supabaseClient.from('ordenes').update(cambios).eq('id', o.id);
         if (error) {
-          alert(faltaColumnaNueva(error) ? 'Falta ejecutar sql/actualizacion-v64-recordatorios-automaticos.sql en Supabase.' : 'No se pudo guardar: ' + error.message);
-          return;
+          alert(faltaColumnaNueva(error) ? 'Falta ejecutar en Supabase el SQL más reciente de cobranza (sql/actualizacion-v79-cobranza-ley-y-convenios.sql).' : 'No se pudo guardar: ' + error.message);
+          return false;
         }
         if (aviso) mostrarToast(aviso, 'ok');
         await cargarCobranza();
+        return true;
+      };
+      const conv = convenioVigente(o);
+      const cambiarConvenio = async (cambios, aviso) => {
+        const { error } = await supabaseClient.from('convenios').update(cambios).eq('id', conv.id);
+        if (error) { alert('No se pudo guardar el convenio: ' + error.message); return false; }
+        if (aviso) mostrarToast(aviso, 'ok');
+        await cargarCobranza();
+        return true;
       };
       if (b.classList.contains('cob-iniciar')) {
-        if (!confirm(`¿Iniciar la cobranza de ${fmtNumero('OT', o.numero)} por ${fmtMoneda(o.cuentas.saldo)}?\n\nLe llegará un correo al cliente a los 3, 5 y 15 días. Se detiene sola cuando registres el pago.`)) return;
-        await cambiarCobranza({ cobranza_estado: 'activa', cobranza_desde: new Date().toISOString(), cobranza_total: o.cuentas.total, cobranza_enviados: [] }, 'Cobranza iniciada.');
+        if (!confirm(`¿Iniciar la cobranza de ${fmtNumero('OT', o.numero)} por ${fmtMoneda(o.cuentas.saldo)}?\n\nLe llegarán avisos por correo dentro de la ley (el primero a los 3 días; máximo 2 por semana, en días hábiles a las 09:00 y 17:00), con un link para ver su saldo, avisar que pagó o proponer un convenio. Se detiene sola cuando registres el pago.`)) return;
+        await cambiarCobranza({ cobranza_estado: 'activa', cobranza_desde: new Date().toISOString(), cobranza_total: o.cuentas.total, cobranza_enviados: [],
+          ...('cobranza_tope_avisado' in o ? { cobranza_tope_avisado: false, cobranza_pausa_hasta: null, pago_informado: null } : {}) }, 'Cobranza iniciada.');
       } else if (b.classList.contains('cob-omitir') || b.classList.contains('cob-detener')) {
         if (!confirm(b.classList.contains('cob-detener') ? '¿Detener los avisos de cobranza de esta OT?' : '¿No cobrar esta OT? Deja de aparecer aquí.')) return;
         await cambiarCobranza({ cobranza_estado: 'omitida' }, 'Listo.');
+      } else if (b.classList.contains('cob-reiniciar')) {
+        if (!confirm('¿Reiniciar los avisos automáticos? Vuelve a contar desde hoy (el primero sale en 3 días), siempre dentro de los límites de la ley.')) return;
+        await cambiarCobranza({ cobranza_desde: new Date().toISOString(), cobranza_tope_avisado: false }, 'Avisos reiniciados.');
+      } else if (b.classList.contains('cob-no-llego')) {
+        if (!confirm('¿El pago que informó el cliente no ha llegado? Se quitan el aviso y la pausa, y los avisos siguen según la ley.')) return;
+        await cambiarCobranza({ pago_informado: null, cobranza_pausa_hasta: null }, 'Listo: los avisos siguen.');
+      } else if (b.classList.contains('cob-link')) {
+        const link = linkPagoOT(o);
+        try { await navigator.clipboard.writeText(link); mostrarToast('Link de pago copiado: pégalo donde quieras.', 'ok'); }
+        catch (err) { prompt('Copia el link de pago:', link); }
       } else if (b.classList.contains('cob-wa')) {
         const tel = o.clientes && o.clientes.telefono;
         if (!tel) { alert('El cliente no tiene teléfono registrado.'); return; }
+        if (!permiteCobrarAhora(o)) return;
         abrirEnlace(linkWhatsApp(tel, armarWhatsApp('wa_cobranza', valoresCobranza(o), cfgAvisos)));
+        await registrarGestion(o, 'whatsapp', 'wa_cobranza');
+        await cargarCobranza();
       } else if (b.classList.contains('cob-mail')) {
         const email = o.clientes && o.clientes.email;
         if (!correoValido(email)) { alert('El cliente no tiene correo registrado.'); return; }
-        // El siguiente aviso; el «último aviso» solo desde el día 15
+        if (!permiteCobrarAhora(o)) return;
+        // El siguiente aviso de la secuencia (igual que el automático)
         const desde = ymdChile(o.cobranza_desde || o.fecha_entrega || new Date().toISOString());
-        const paso = diasEntre(desde, hoyChile()) >= 15 ? 3 : Math.min(2, pasosHechos(o.cobranza_enviados) + 1);
-        const m = armarCorreo('cobranza_' + paso, valoresCobranza(o), cfgAvisos);
+        const n = (o.cobranza_gestiones || []).filter(g => !String(g.plantilla || '').startsWith('convenio') && ymdChile(g.creado_en) >= desde).length;
+        const cc = cobranzaConfig(cfgAvisos);
+        const clave = !cobranzaV79 ? 'cobranza_1' : n === 0 ? 'cobranza_1' : n >= cc.max_avisos - 1 ? 'cobranza_ultimo' : n === 1 ? 'cobranza_2' : 'cobranza_3';
+        const m = armarCorreo(clave, valoresCobranza(o), cfgAvisos);
         const r = await enviarCorreoOAbrirGmail(email, m.asunto, m.texto, { evento: 'cobranza_ot', tabla: 'ordenes', id: o.id, cliente_id: o.cliente_id, vehiculo_id: o.vehiculo_id });
         if (r.estado === 'enviado' || r.estado === 'incierto') {
-          const { error } = await supabaseClient.from('ordenes').update({ cobranza_enviados: Array.from({ length: paso }, (_, k) => k + 1) }).eq('id', o.id);
-          void error;
+          await registrarGestion(o, 'correo', clave);
           await cargarCobranza();
         }
+      } else if (b.classList.contains('conv-ajustar')) {
+        const caja = document.getElementById('conv-ajuste-' + b.dataset.idx);
+        caja.hidden = !caja.hidden;
+        b.textContent = caja.hidden ? '✏️ Ajustar cuotas' : 'Usar la propuesta del cliente';
+      } else if (b.classList.contains('conv-aceptar')) {
+        if (!conv) return;
+        // Ajustada por el taller: se recalculan las cuotas sobre el saldo de hoy
+        const caja = document.getElementById('conv-ajuste-' + b.dataset.idx);
+        let cuotas = conv.cuotas || [];
+        let respuesta = null;
+        if (caja && !caja.hidden) {
+          const n = Number(caja.querySelector('.conv-n').value), primera = caja.querySelector('.conv-primera').value, cada = Number(caja.querySelector('.conv-cada').value);
+          if (!primera) { alert('Indica la fecha del primer pago.'); return; }
+          cuotas = armarCuotasConvenio(o.cuentas.saldo, n, primera, cada);
+          respuesta = 'Ajustado por el taller';
+        }
+        const detalle = cuotas.map(q => `▸ Cuota ${q.n}: ${fmtFecha(q.fecha + 'T12:00:00')} · ${fmtMoneda(q.monto)}`).join('\n');
+        if (!confirm(`¿Aceptar el convenio de ${fmtNumero('OT', o.numero)}?\n\n${detalle}\n\nSe le avisará un día antes de cada cuota${correoValido(o.clientes && o.clientes.email) ? ' y le llega ahora un correo con sus cuotas' : ''}.`)) return;
+        const ok = await cambiarConvenio({ estado: 'activo', cuotas, saldo: cuotas.reduce((s, q) => s + Number(q.monto), 0), pagado_base: o.cuentas.pagado,
+          respondido_en: new Date().toISOString(), ...(respuesta ? { respuesta, propuesto_por: 'taller' } : {}) }, 'Convenio aceptado.');
+        if (!ok) return;
+        const email = o.clientes && o.clientes.email;
+        if (correoValido(email)) {
+          const m = armarCorreo('convenio_aceptado', { ...valoresCobranza(o), detalle_cuotas: detalle }, cfgAvisos);
+          const r = await enviarCorreoOAbrirGmail(email, m.asunto, m.texto, { evento: 'convenio_aceptado', tabla: 'ordenes', id: o.id, cliente_id: o.cliente_id, vehiculo_id: o.vehiculo_id });
+          void r;
+        }
+      } else if (b.classList.contains('conv-rechazar')) {
+        if (!conv) return;
+        const motivo = prompt('¿Por qué no puedes aceptarla? (opcional; el cliente lo verá en su link y podrá proponer otra)', '');
+        if (motivo === null) return;
+        const ok = await cambiarConvenio({ estado: 'rechazado', respuesta: motivo.trim() || null, respondido_en: new Date().toISOString() }, 'Propuesta rechazada: los avisos siguen según la ley.');
+        const tel = o.clientes && o.clientes.telefono;
+        if (ok && tel && confirm('¿Avisarle por WhatsApp para que proponga otra forma de pago?')) {
+          abrirEnlace(linkWhatsApp(tel, `Hola ${(o.clientes && o.clientes.nombre) || ''}, le saluda ${cfgAvisos.nombre || 'el taller'}. Revisamos su propuesta de convenio para la ${fmtNumero('OT', o.numero)} y no pudimos aceptarla${motivo.trim() ? `: ${motivo.trim()}` : ''}. Puede proponer otra aquí: ${linkPagoOT(o)}&convenio=1`));
+        }
+      } else if (b.classList.contains('conv-anular')) {
+        if (!conv || !confirm('¿Anular el convenio? Vuelve la cobranza normal (dentro de la ley).')) return;
+        await cambiarConvenio({ estado: 'anulado', respondido_en: new Date().toISOString() }, 'Convenio anulado.');
       }
     });
 
