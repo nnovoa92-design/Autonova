@@ -112,7 +112,14 @@
             <span id="inspeccion-ingreso-resumen" style="font-size:0.82rem; color:var(--color-text-muted); margin-left:0.5rem;"></span>
           </div>
 
-          <h3>Ítems de la orden</h3>
+          <h3 style="margin-top:1.25rem;">📊 Avance del trabajo</h3>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.5rem;">
+            Toca cada tarea cuando esté hecha: puedes dejar un comentario y fotos (aparecen también en «Trabajos realizados / avances»).
+            El % se pondera con las horas de cada trabajo. Los repuestos se marcan pedido / recibido / instalado y no suman al avance.
+          </p>
+          <div id="avance-ot"></div>
+
+          <h3 style="margin-top:1.5rem;">Ítems de la orden</h3>
           <div id="editor-items"></div>
           <p style="color:var(--color-text-muted); font-size:0.82rem; margin:0.4rem 0 0.25rem;">Puedes corregir la descripción, las horas, la cantidad y el precio de cada línea: se guarda al salir de la casilla. <strong>Valores sin IVA.</strong></p>
           <table>
@@ -319,6 +326,7 @@
   <script src="../assets/js/supabaseClient.js"></script>
   <script src="../assets/js/layout.js"></script>
   <script src="../assets/js/documentos.js"></script>
+  <script src="../assets/js/avanceOT.js"></script>
   <script>
     let clientesCache = [], vehiculosCache = [], trabajosCache = [], repuestosCache = [], personalCache = [];
     let categoriasCache = [], policiesCache = [];
@@ -773,6 +781,9 @@
       renderItemsDetalle();
       renderHoras();
       renderAvances();
+      avEdit = null; avEnvio = null;
+      await cargarChecksOT();
+      renderAvanceOT();
       cargarEstadoMantencion();
       await cargarAbonos();
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -827,10 +838,11 @@
         <div class="card" style="margin:0.5rem 0; padding:0.75rem;">
           <div style="display:flex; justify-content:space-between; gap:0.5rem; align-items:flex-start;">
             <div style="font-weight:600; white-space:pre-wrap; min-width:0;">${a.texto ? htmlSeguro(a.texto) : '(sin descripción)'}</div>
+            ${a.ref ? `<small style="flex-shrink:0; color:var(--color-text-muted); font-size:0.75rem; text-align:right;">Se edita en<br>📊 Avance del trabajo</small>` : `
             <div style="display:flex; gap:0.3rem; flex-shrink:0;">
               <button type="button" class="btn-secondary avance-edit-btn" data-idx="${idx}" style="padding:0.2rem 0.5rem;">✏️ Editar</button>
               <button type="button" class="btn-danger avance-del-btn" data-idx="${idx}" title="Eliminar el avance completo (texto y fotos)" style="padding:0.2rem 0.5rem;">🗑 Eliminar</button>
-            </div>
+            </div>`}
           </div>
           <div style="font-size:0.78rem; color:var(--color-text-muted);">${fmtFechaHora(a.fecha)}${a.editado ? ` · editado ${fmtFechaHora(a.editado)}` : ''}</div>
           ${(a.fotos && a.fotos.length) ? `<div class="fotos-grid" style="margin-top:0.4rem;">${a.fotos.map(u => `<div class="foto-item"><a href="${htmlSeguro(u)}" target="_blank"><img src="${htmlSeguro(u)}" loading="lazy" /></a></div>`).join('')}</div>` : ''}
@@ -924,6 +936,274 @@
           avanceEditando.nuevas.push(url);
         }
         renderAvances();
+      });
+    })();
+
+    // ---------- 📊 Avance del trabajo por categoría (sql/v81, assets/js/avanceOT.js) ----------
+    let checksOT = [];            // filas de ot_checks de la OT abierta
+    let checksDisponible = true;  // false si falta correr v81
+    let avEdit = null;            // tarea o estado de repuesto en edición: { item_id, clave, titulo, comentario, fotos, nuevas, quitadas }
+    let avEnvio = null;           // envío al cliente en preparación: { pct, correo: { asunto, texto }, wa }
+    const avCerradas = new Set(); // categorías plegadas por el usuario
+    AvanceOT.estilos();
+
+    async function cargarChecksOT() {
+      if (!ordenActual) return;
+      const { data, error } = await supabaseClient.from('ot_checks').select('*').eq('orden_id', ordenActual.id).order('creado_en');
+      checksDisponible = !error;
+      checksOT = data || [];
+    }
+    const modeloOT = () => AvanceOT.modelo(ordenActual, checksOT, trabajosCache, categoriasCache);
+    const checkDe = (item_id, clave) => checksOT.find(c => c.item_id === item_id && c.clave === clave) || null;
+
+    function metaCheck(c) {
+      if (!c) return '';
+      const quien = c.hecho_por_nombre ? ` · ${htmlSeguro(c.hecho_por_nombre)}` : '';
+      return `<span class="av-meta">✓ ${fmtFechaHora(c.creado_en)}${quien}${c.comentario ? ` · «${htmlSeguro(c.comentario)}»` : ''}</span>`
+        + ((c.fotos || []).length ? `<span class="av-fotos">${c.fotos.map(u => `<a href="${htmlSeguro(u)}" target="_blank" onclick="event.stopPropagation()"><img src="${htmlSeguro(u)}" loading="lazy" alt=""></a>`).join('')}</span>` : '');
+    }
+    function hojaAvance() {
+      const e = avEdit, existe = !!checkDe(e.item_id, e.clave);
+      return `<div class="av-hoja" data-hoja="1">
+        <strong>${htmlSeguro(e.titulo)}</strong> — ¿qué se hizo? <span style="color:var(--color-text-muted); font-size:0.8rem;">(opcional)</span>
+        <textarea class="av-comentario" rows="2" placeholder="Ej: se armó con empaquetadura nueva, torque 90 Nm">${htmlSeguro(e.comentario)}</textarea>
+        ${e.fotos.length ? `<div class="av-fotos" style="margin-bottom:0.4rem;">${e.fotos.map((u, fi) => `<span style="position:relative;"><img src="${htmlSeguro(u)}" alt=""><button type="button" class="av-foto-quitar" data-fi="${fi}" title="Quitar foto" style="position:absolute; top:-7px; right:-7px; width:20px; height:20px; padding:0; border-radius:50%; font-size:0.65rem; line-height:1;">✕</button></span>`).join('')}</div>` : ''}
+        <div class="av-acc">
+          <label class="btn btn-secondary btn-mini" style="cursor:pointer;">📷 Fotos<input type="file" class="av-foto-input" accept="image/*" multiple style="display:none;"></label>
+          <button type="button" class="btn-mini av-guardar">${existe ? 'Guardar cambios' : 'Guardar ✓'}</button>
+          ${existe ? '<button type="button" class="btn-danger btn-mini av-desmarcar">Desmarcar</button>' : ''}
+          <button type="button" class="btn-secondary btn-mini av-cancelar">Cancelar</button>
+          <span class="av-estado" style="font-size:0.78rem; color:var(--color-text-muted);"></span>
+        </div>
+      </div>`;
+    }
+    const editandoEste = (item_id, clave) => avEdit && avEdit.item_id === item_id && avEdit.clave === clave;
+
+    function renderAvanceOT() {
+      const cont = document.getElementById('avance-ot');
+      if (!cont || !ordenActual) return;
+      if (!checksDisponible) {
+        cont.innerHTML = '<p style="font-size:0.85rem; color:var(--color-danger);">Para marcar el avance por categoría falta ejecutar <strong>sql/actualizacion-v81-avance-ot-por-categoria.sql</strong> en el SQL Editor de Supabase.</p>';
+        return;
+      }
+      const m = modeloOT();
+      if (!m.categorias.length && !m.repuestos.length) {
+        cont.innerHTML = '<p style="font-size:0.85rem; color:var(--color-text-muted);">Agrega los trabajos de la OT en «Ítems de la orden» (abajo) y aquí aparecerán por categoría para marcar su avance.</p>';
+        return;
+      }
+      const prog = ordenActual.progreso || {};
+      const anillos = `<div class="av-anillos">
+        <div class="av-anillo">${AvanceOT.anillo(m.pct, 66, '#e1341e', m.pct + '%')}<strong style="color:var(--color-text);">Total</strong><br>${fmtNumItem(Math.round(m.hechas * 10) / 10)} de ${fmtNumItem(Math.round(m.horas * 10) / 10)} h</div>
+        ${m.categorias.map(c => `<div class="av-anillo">${AvanceOT.anillo(c.pct, 50, '#1b8a4b', c.pct + '%')}${c.icono} ${htmlSeguro(c.nombre)}</div>`).join('')}
+      </div>`;
+      const cats = m.categorias.map(c => `
+        <details class="av-cat" data-cat="${htmlSeguro(c.key)}"${avCerradas.has(c.key) ? '' : ' open'}>
+          <summary>${c.icono} ${htmlSeguro(c.nombre)} <span class="av-mini"><i style="width:${c.pct}%"></i></span><span class="av-cp">${c.pct} %</span></summary>
+          ${c.servicios.map(s => `
+            <div class="av-serv">
+              <div class="av-sn"><span>${htmlSeguro(s.nombre)}</span><small>${fmtNumItem(Math.round(s.horas * 10) / 10)} h · ${s.pct} %</small></div>
+              ${s.tareas.map(t => `
+                <div class="av-tarea${t.check ? ' hecha' : ''}" data-item="${s.item.id}" data-clave="${htmlSeguro(t.clave)}" data-titulo="${htmlSeguro(t.unica ? s.nombre : t.nombre)}" role="button" tabindex="0">
+                  <span class="av-caja">${t.check ? '✓' : ''}</span>
+                  <span style="flex:1; min-width:0;"><span class="av-tn">${htmlSeguro(t.unica ? 'Trabajo completo' : t.nombre)}</span>${metaCheck(t.check)}</span>
+                </div>
+                ${editandoEste(s.item.id, t.clave) ? hojaAvance() : ''}`).join('')}
+            </div>`).join('')}
+        </details>`).join('');
+      const reps = m.repuestos.length ? `
+        <details class="av-cat" data-cat="_repuestos"${avCerradas.has('_repuestos') ? '' : ' open'}>
+          <summary>📦 Repuestos <span style="flex:1"></span><span class="av-cp" style="min-width:auto; font-weight:400;">no suman al avance</span></summary>
+          ${m.repuestos.map(r => `
+            <div class="av-rep">
+              <strong>${htmlSeguro(r.nombre)}</strong>
+              <div class="av-rep-estados">${AvanceOT.ESTADOS_REP.map(([k, et]) => r.estados[k]
+                ? `<button type="button" class="av-chip usado" data-item="${r.item.id}" data-clave="${k}" data-titulo="${htmlSeguro(r.nombre)}: ${et.replace(/^\S+\s/, '')}">${et} ✓</button>`
+                : `<button type="button" class="av-chip" data-item="${r.item.id}" data-clave="${k}" data-titulo="${htmlSeguro(r.nombre)}: ${et.replace(/^\S+\s/, '')}">+ ${et.replace(/^\S+\s/, '')}</button>`).join('')}</div>
+              ${AvanceOT.ESTADOS_REP.filter(([k]) => r.estados[k]).map(([k, et]) => `<div style="margin-top:0.25rem;"><span style="font-size:0.8rem;">${et}</span>${metaCheck(r.estados[k])}</div>`).join('')}
+              ${AvanceOT.ESTADOS_REP.some(([k]) => editandoEste(r.item.id, k)) ? hojaAvance().replace('margin:0.35rem 0 0.5rem 1.9rem', 'margin:0.4rem 0') : ''}
+            </div>`).join('')}
+        </details>` : '';
+      const envio = avEnvio ? `
+        <div class="av-envio-box">
+          <strong>📤 Avance para ${htmlSeguro((ordenActual.clientes && ordenActual.clientes.nombre) || 'el cliente')} (${avEnvio.pct} %)</strong>
+          <p style="font-size:0.8rem; color:var(--color-text-muted); margin:0.25rem 0;">Revisa el mensaje (puedes corregirlo) y elige cómo enviarlo. Los textos base se cambian en Configuración → Plantillas de mensajes.</p>
+          <label style="font-size:0.8rem;">✉ Correo · ${htmlSeguro(avEnvio.correo.asunto)}</label>
+          <textarea class="av-envio-correo" rows="9">${htmlSeguro(avEnvio.correo.texto)}</textarea>
+          <details style="margin:0.3rem 0;"><summary style="font-size:0.8rem; cursor:pointer;">💬 Ver / corregir el WhatsApp</summary>
+            <textarea class="av-envio-wa" rows="7">${htmlSeguro(avEnvio.wa)}</textarea></details>
+          <div class="av-acc" style="display:flex; gap:0.4rem; flex-wrap:wrap;">
+            <button type="button" class="av-enviar-correo">✉ Enviar por correo</button>
+            <button type="button" class="btn-secondary av-enviar-wa">💬 Enviar por WhatsApp</button>
+            <button type="button" class="btn-secondary av-envio-cancelar">Cancelar</button>
+          </div>
+        </div>` : '';
+      cont.innerHTML = anillos + cats + reps + `
+        <div class="av-enviar">
+          <button type="button" class="av-preparar-envio">📤 Enviar avance al cliente (${m.pct} %)</button>
+          <small style="color:var(--color-text-muted);">${prog.enviado_en ? `Último envío: ${fmtFechaHora(prog.enviado_en)} (${prog.enviado_pct ?? '–'} %)` : 'Aún no se ha enviado el avance al cliente.'}</small>
+        </div>` + envio;
+      const ta = cont.querySelector('.av-comentario');
+      if (ta && document.activeElement !== ta && avEdit && avEdit.enfocar) { ta.focus(); avEdit.enfocar = false; }
+    }
+
+    // Avances (lista de «qué se hizo») y resumen del % después de cada cambio
+    async function sincronizarAvanceOT(fila, idEliminado) {
+      const antes = (ordenActual.progreso && ordenActual.progreso.pct) || 0;
+      const m = modeloOT();
+      const avances = (ordenActual.avances || []).slice();
+      const ref = fila ? fila.id : idEliminado;
+      const idx = avances.findIndex(a => a.ref === ref);
+      if (fila && (String(fila.comentario || '').trim() || (fila.fotos || []).length)) {
+        const entrada = { ...(idx >= 0 ? avances[idx] : {}), fecha: idx >= 0 ? avances[idx].fecha : fila.creado_en,
+          texto: AvanceOT.textoAvance(m, fila.item_id, fila.clave, fila.comentario), fotos: (fila.fotos || []).slice(), ref: fila.id };
+        if (idx >= 0) { entrada.editado = new Date().toISOString(); avances[idx] = entrada; } else avances.push(entrada);
+      } else if (idx >= 0) avances.splice(idx, 1);
+      const progreso = AvanceOT.resumen(m, ordenActual.progreso);
+      const { error } = await supabaseClient.from('ordenes').update({ avances, progreso }).eq('id', ordenActual.id);
+      if (error) { mostrarToast('No se pudo actualizar el avance: ' + error.message, 'error', 9000); return; }
+      ordenActual.avances = avances;
+      ordenActual.progreso = progreso;
+      renderAvances();
+      renderAvanceOT();
+      if (m.pct === 100 && antes < 100) mostrarToast('✓ Todas las tareas están listas. Cuando corresponda, cambia el estado a «Listo» y el aviso le llega solo al cliente.', 'ok', 8000);
+    }
+
+    async function guardarCheckOT() {
+      const e = avEdit;
+      if (!e || !ordenActual) return;
+      const cont = document.getElementById('avance-ot');
+      const estado = cont.querySelector('.av-estado');
+      if (estado) estado.textContent = 'Guardando...';
+      const existente = checkDe(e.item_id, e.clave);
+      const datos = { comentario: e.comentario.trim() || null, fotos: e.fotos.slice() };
+      const r = existente
+        ? await supabaseClient.from('ot_checks').update(datos).eq('id', existente.id).select('*').single()
+        : await supabaseClient.from('ot_checks').insert({ orden_id: ordenActual.id, item_id: e.item_id, clave: e.clave, ...datos }).select('*').single();
+      if (r.error) {
+        if (/23505|duplicate/i.test(`${r.error.code} ${r.error.message}`)) {   // otra persona la marcó recién
+          await cargarChecksOT();
+          avEdit = null;
+          renderAvanceOT();
+          mostrarToast('Alguien más marcó esta tarea recién: se actualizó la lista.', 'error', 7000);
+        } else if (estado) estado.textContent = 'Error: ' + r.error.message;
+        return;
+      }
+      checksOT = checksOT.filter(c => c.id !== r.data.id).concat(r.data);
+      await borrarFotosStorage(e.quitadas);
+      avEdit = null;
+      await sincronizarAvanceOT(r.data);
+    }
+
+    async function desmarcarCheckOT() {
+      const e = avEdit;
+      const c = e && checkDe(e.item_id, e.clave);
+      if (!c) return;
+      if ((c.comentario || (c.fotos || []).length) && !confirm('¿Desmarcar? Se borran también su comentario y fotos (y el avance que generó).')) return;
+      const { error } = await supabaseClient.from('ot_checks').delete().eq('id', c.id);
+      if (error) { mostrarToast('No se pudo desmarcar: ' + error.message, 'error', 9000); return; }
+      checksOT = checksOT.filter(x => x.id !== c.id);
+      await borrarFotosStorage([...(c.fotos || []), ...e.nuevas]);
+      avEdit = null;
+      await sincronizarAvanceOT(null, c.id);
+    }
+
+    // Mensaje de avance para el cliente (correo y WhatsApp)
+    function prepararEnvioAvance() {
+      const o = ordenActual, m = modeloOT();
+      const v = o.vehiculos;
+      const modelo = v ? [v.marca, v.modelo].filter(Boolean).join(' ') : '';
+      const valores = {
+        nombre: (o.clientes && o.clientes.nombre) || '',
+        vehiculo: v ? `su vehículo ${v.patente}${modelo ? ` (${modelo})` : ''}` : 'su vehículo',
+        patente: (v && v.patente) || '',
+        ot: fmtNumero('OT', o.numero),
+        avance_pct: `${m.pct} %`,
+        bloque_avance: AvanceOT.bloqueAvance(m, o.progreso && o.progreso.enviado_en),
+        bloque_seguimiento: (v && v.patente)
+          ? `\n\nPuede ver el detalle y las fotos aquí:\n${window.location.origin}/portal.html?patente=${encodeURIComponent(v.patente)}&ot=${o.numero}` : '',
+      };
+      avEnvio = { pct: m.pct, correo: armarCorreo('ot_avance', valores, config), wa: armarWhatsApp('wa_ot_avance', valores, config) };
+      renderAvanceOT();
+      const box = document.querySelector('.av-envio-box');
+      if (box) box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    async function marcarAvanceEnviado(pct) {
+      const m = modeloOT();
+      const progreso = { ...AvanceOT.resumen(m, ordenActual.progreso), enviado_en: new Date().toISOString(), enviado_pct: pct };
+      const { error } = await supabaseClient.from('ordenes').update({ progreso }).eq('id', ordenActual.id);
+      if (!error) ordenActual.progreso = progreso;
+      avEnvio = null;
+      renderAvanceOT();
+    }
+
+    (function wireAvanceOT() {
+      const cont = document.getElementById('avance-ot');
+      const abrir = (el) => {
+        const item_id = el.dataset.item, clave = el.dataset.clave;
+        if (editandoEste(item_id, clave)) return;
+        if (avEdit && avEdit.nuevas.length) borrarFotosStorage(avEdit.nuevas);
+        const c = checkDe(item_id, clave);
+        avEdit = { item_id, clave, titulo: el.dataset.titulo || '', comentario: (c && c.comentario) || '', fotos: (c && c.fotos || []).slice(), nuevas: [], quitadas: [], enfocar: true };
+        renderAvanceOT();
+      };
+      cont.addEventListener('click', async (ev) => {
+        if (!ordenActual) return;
+        const enHoja = ev.target.closest('[data-hoja]');
+        const tarea = ev.target.closest('.av-tarea, .av-chip');
+        if (tarea && !enHoja) { abrir(tarea); return; }
+        const b = ev.target.closest('button');
+        if (!b) return;
+        if (b.classList.contains('av-guardar')) { b.disabled = true; await guardarCheckOT(); }
+        else if (b.classList.contains('av-desmarcar')) await desmarcarCheckOT();
+        else if (b.classList.contains('av-cancelar')) { if (avEdit) await borrarFotosStorage(avEdit.nuevas); avEdit = null; renderAvanceOT(); }
+        else if (b.classList.contains('av-foto-quitar') && avEdit) {
+          const [url] = avEdit.fotos.splice(Number(b.dataset.fi), 1);
+          if (avEdit.nuevas.includes(url)) { avEdit.nuevas = avEdit.nuevas.filter(u => u !== url); borrarFotosStorage([url]); }
+          else avEdit.quitadas.push(url);
+          renderAvanceOT();
+        }
+        else if (b.classList.contains('av-preparar-envio')) prepararEnvioAvance();
+        else if (b.classList.contains('av-envio-cancelar')) { avEnvio = null; renderAvanceOT(); }
+        else if (b.classList.contains('av-enviar-correo') && avEnvio) {
+          const email = ordenActual.clientes && ordenActual.clientes.email;
+          if (!email) { alert('El cliente no tiene correo registrado. Envíalo por WhatsApp o agrega su correo en Clientes.'); return; }
+          const texto = cont.querySelector('.av-envio-correo').value;
+          b.disabled = true;
+          const r = await enviarCorreoOAbrirGmail(email, avEnvio.correo.asunto, texto, { tabla: 'ordenes', id: ordenActual.id, cliente_id: ordenActual.cliente_id, vehiculo_id: ordenActual.vehiculo_id });
+          b.disabled = false;
+          if (r && ['enviado', 'gmail', 'incierto'].includes(r.estado)) await marcarAvanceEnviado(avEnvio.pct);
+        }
+        else if (b.classList.contains('av-enviar-wa') && avEnvio) {
+          const tel = ordenActual.clientes && ordenActual.clientes.telefono;
+          if (!tel) { alert('El cliente no tiene teléfono registrado.'); return; }
+          const waTa = cont.querySelector('.av-envio-wa');
+          abrirEnlace(linkWhatsApp(tel, waTa ? waTa.value : avEnvio.wa));
+          await marcarAvanceEnviado(avEnvio.pct);
+        }
+      });
+      cont.addEventListener('keydown', (ev) => {
+        const tarea = ev.target.closest('.av-tarea');
+        if (tarea && (ev.key === 'Enter' || ev.key === ' ') && ev.target === tarea) { ev.preventDefault(); abrir(tarea); }
+      });
+      cont.addEventListener('input', (ev) => {
+        if (avEdit && ev.target.classList.contains('av-comentario')) avEdit.comentario = ev.target.value;
+      });
+      cont.addEventListener('toggle', (ev) => {
+        const d = ev.target;
+        if (d.classList && d.classList.contains('av-cat')) { if (d.open) avCerradas.delete(d.dataset.cat); else avCerradas.add(d.dataset.cat); }
+      }, true);
+      cont.addEventListener('change', async (ev) => {
+        if (!ev.target.classList.contains('av-foto-input') || !avEdit || !ordenActual) return;
+        const estado = cont.querySelector('.av-estado');
+        if (estado) estado.textContent = 'Subiendo fotos...';
+        for (const file of Array.from(ev.target.files)) {
+          const ruta = `${ordenActual.id}/avance/tarea_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9_.-]/g, '_')}`;
+          const { error } = await supabaseClient.storage.from('fotos-ot').upload(ruta, await comprimirImagen(file));
+          if (error) { mostrarToast(`No se pudo subir ${file.name}: ${error.message}`, 'error', 9000); continue; }
+          const url = supabaseClient.storage.from('fotos-ot').getPublicUrl(ruta).data.publicUrl;
+          avEdit.fotos.push(url); avEdit.nuevas.push(url);
+        }
+        renderAvanceOT();
       });
     })();
 
@@ -1225,7 +1505,7 @@
         ({ error } = await supabaseClient.from('orden_items').update(cambios).eq('id', i.id));
       }
       if (error) mostrarToast(`No se pudo guardar el cambio de la línea: ${error.message}`, 'error', 9000);
-      else mostrarToast('✓ Línea guardada', 'ok', 1800);
+      else { mostrarToast('✓ Línea guardada', 'ok', 1800); if (!avEdit) renderAvanceOT(); }   // las horas cambian el peso en el avance
     }
 
     // Línea del descuento: con código del Club se nombra el código (el cliente ve de dónde sale)
@@ -2038,6 +2318,13 @@
       reemplazarEnSitio(trabajosCache, t.data);
       reemplazarEnSitio(repuestosCache, r.data);
       if (editorItems) editorItems.recargar();
+      // Avance de la OT abierta: tareas del catálogo al día y lo que marcaron otros (si no se está editando nada)
+      if (ordenActual && !avEdit && !avEnvio) {
+        const cats = await supabaseClient.from('categorias_trabajos').select('*');
+        if (!cats.error) reemplazarEnSitio(categoriasCache, cats.data);
+        await cargarChecksOT();
+        renderAvanceOT();
+      }
     }
 
     (async () => {

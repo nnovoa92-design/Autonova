@@ -893,6 +893,12 @@ const PLANTILLAS_CORREO = {
     texto: 'Hola {nombre},\n\nLe informamos que {vehiculo} ya está siendo trabajado en nuestro taller ({ot}).{bloque_seguimiento}\n\n{firma}',
     variables: ['nombre', 'vehiculo', 'patente', 'ot', 'taller', 'bloque_seguimiento', 'firma'],
   },
+  ot_avance: {
+    titulo: 'Avance del trabajo (lo envías desde la OT con «📤 Enviar avance»)',
+    asunto: 'Avance de su vehículo: {avance_pct} — {ot} · {taller}',
+    texto: 'Hola {nombre},\n\nLe contamos cómo va el trabajo de {vehiculo} ({ot}): lleva un {avance_pct} de avance.\n\nAVANCE POR ÁREA\n{bloque_avance}{bloque_seguimiento}\n\n{firma}',
+    variables: ['nombre', 'vehiculo', 'patente', 'ot', 'taller', 'avance_pct', 'bloque_avance', 'bloque_seguimiento', 'firma'],
+  },
   ot_listo: {
     titulo: 'Vehículo listo para retiro',
     asunto: 'Su vehículo está listo para retiro — {ot} · {taller}',
@@ -1056,6 +1062,11 @@ const PLANTILLAS_WHATSAPP = {
     texto: 'Hola {nombre}, le saluda {taller}: {vehiculo} está siendo trabajado en nuestro taller ({ot}).{bloque_seguimiento}',
     variables: ['nombre', 'vehiculo', 'patente', 'ot', 'bloque_seguimiento', 'taller'],
   },
+  wa_ot_avance: {
+    titulo: 'OT — avance del trabajo (con «📤 Enviar avance»)',
+    texto: 'Hola {nombre}, le saluda {taller} 👋 El trabajo de {vehiculo} lleva un *{avance_pct}* de avance ({ot}).\n\n{bloque_avance}{bloque_seguimiento}',
+    variables: ['nombre', 'vehiculo', 'patente', 'ot', 'avance_pct', 'bloque_avance', 'bloque_seguimiento', 'taller'],
+  },
   wa_ot_listo: {
     titulo: 'OT — listo para retiro',
     texto: 'Hola {nombre}, le saluda {taller}: {vehiculo} está listo para retiro ({ot}).{bloque_seguimiento}',
@@ -1117,6 +1128,8 @@ const DESCRIPCION_VARIABLES_CORREO = {
   taller: 'nombre del taller',
   bloque_inspeccion: 'párrafo con el link de la inspección de ingreso (solo si se registró)',
   bloque_seguimiento: 'párrafo con el link para seguir el estado del vehículo',
+  avance_pct: 'porcentaje de avance ponderado de la OT (ej. 37 %)',
+  bloque_avance: 'avance por área con su barra y lo nuevo desde el último aviso',
   firma: 'despedida con nombre, dirección y teléfono del taller',
   cotizacion: 'número de la cotización (ej. COT-0007)',
   detalle: 'lista de trabajos y repuestos con su valor',
