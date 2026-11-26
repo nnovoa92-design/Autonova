@@ -258,6 +258,36 @@
               <input type="number" id="domicilio_margen_min" min="0" max="240" step="15" value="60" />
             </div>
           </div>
+          <div id="dom-km-box" style="border-top:1px solid var(--color-border); margin-top:0.5rem; padding-top:0.75rem;">
+            <h3 style="margin:0 0 0.3rem; font-size:1rem;">📏 Distancia y recargo (Google Maps)</h3>
+            <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.6rem;">
+              El cliente busca su dirección con sugerencias de Google Maps (o usa su ubicación) y se mide la distancia
+              <strong>en línea recta</strong> desde el taller. Dentro del radio no hay recargo; afuera se cobra cada km extra o fracción.
+              El recargo se muestra al reservar, va en la confirmación y se agrega a la OT.
+            </p>
+            <div class="form-group">
+              <label for="dom-maps-key">Clave de Google Maps (de navegador)</label>
+              <input type="text" id="dom-maps-key" placeholder="Pega aquí la clave que creaste en Google Cloud" autocomplete="off" spellcheck="false" />
+              <small style="display:block; margin-top:0.25rem; color:var(--color-text-muted);">Restríngela en Google Cloud a la página del taller. Después de pegarla, guarda y recarga esta página.</small>
+            </div>
+            <div class="form-group">
+              <label for="dom-taller-dir">Ubicación del taller (desde donde se mide)</label>
+              <input type="text" id="dom-taller-dir" placeholder="Busca la dirección del taller" autocomplete="off" />
+              <button type="button" id="dom-taller-usar" class="btn-secondary btn-mini" style="margin-top:0.4rem;">Usar la dirección del taller</button>
+              <small id="dom-taller-estado" style="display:block; margin-top:0.25rem; color:var(--color-text-muted);"></small>
+            </div>
+            <div class="form-row">
+              <div class="form-group" style="max-width:220px;">
+                <label for="dom-radio">Radio sin recargo (km)</label>
+                <input type="number" id="dom-radio" min="0" max="200" step="0.5" value="6" />
+              </div>
+              <div class="form-group" style="max-width:220px;">
+                <label for="dom-valor-km">Valor por km extra ($ neto)</label>
+                <input type="number" id="dom-valor-km" min="0" step="100" value="3000" />
+              </div>
+            </div>
+            <small id="dom-km-ejemplo" style="display:block; margin:-0.2rem 0 0.6rem; color:var(--color-text-muted);"></small>
+          </div>
           <button type="button" id="guardar-domicilio-btn">Guardar</button>
           <p class="error-message" id="domicilio-error"></p>
           <p id="domicilio-ok" style="color:#1b6e3c; font-size:0.85rem;"></p>
@@ -667,6 +697,7 @@
   <script src="../assets/js/supabaseClient.js"></script>
   <script src="../assets/js/layout.js"></script>
   <script src="../assets/js/checklist.js"></script>
+  <script src="../assets/js/mapsDireccion.js"></script>
   <script>
     const CAMPOS = ['nombre','rut','telefono','email','direccion','valor_hora','iva_pct','pct_mecanico','pct_dueno','pct_taller','politicas_generales_texto','bodegaje_dias_gracia','bodegaje_monto_dia','politica_inspeccion_texto','politica_revision_tecnica_texto','msg_confirmacion_cita','msg_recordatorio_cita','msg_recordatorio_mantencion','msg_recordatorio_revision_tecnica','msg_modalidad_taller','msg_modalidad_retiro','msg_modalidad_terreno'];
 
@@ -1454,7 +1485,57 @@
       selR.value = (cfg && cfg.trabajo_retiro_id) || '';
       if (cfg && cfg.domicilio_margen_min != null) document.getElementById('domicilio_margen_min').value = cfg.domicilio_margen_min;
       mostrarValorDomicilio();
+      cargarDistanciaCfg(cfg);
     }
+
+    // ---------- Distancia y recargo a domicilio (Google Maps), sql/v80 ----------
+    let origenTaller = null;   // { direccion, lat, lng }
+    function pintarOrigenTaller(msg) {
+      const el = document.getElementById('dom-taller-estado');
+      el.style.color = origenTaller ? '#1b6e3c' : 'var(--color-text-muted)';
+      el.textContent = msg || (origenTaller
+        ? `✓ Ubicación guardada (${origenTaller.lat.toFixed(5)}, ${origenTaller.lng.toFixed(5)}). Las distancias se miden desde aquí.`
+        : MapsDireccion.disponible() ? 'Busca la dirección y elígela de la lista, o pulsa «Usar la dirección del taller».'
+        : 'Pega la clave de Google Maps, guarda y recarga la página para poder buscar la dirección.');
+    }
+    function pintarEjemploKm() {
+      const radio = Math.max(0, Number(document.getElementById('dom-radio').value) || 0);
+      const valor = Math.max(0, Number(document.getElementById('dom-valor-km').value) || 0);
+      const km = Math.round((radio + 2.4) * 10) / 10;
+      document.getElementById('dom-km-ejemplo').textContent = valor
+        ? `Ejemplo: una dirección a ${MapsDireccion.fmtKm(km)} km → 3 km extra × ${fmtMoneda(valor)} = ${fmtMoneda(3 * valor)} + IVA de recargo.`
+        : 'Sin valor por km: no se cobra recargo por distancia (solo se muestra la distancia).';
+    }
+    async function cargarDistanciaCfg(cfg) {
+      const d = (cfg && cfg.domicilio_km) || {};
+      document.getElementById('dom-maps-key').value = (cfg && cfg.google_maps_key) || '';
+      if (d.radio_km != null) document.getElementById('dom-radio').value = d.radio_km;
+      if (d.valor_km != null) document.getElementById('dom-valor-km').value = d.valor_km;
+      origenTaller = d.lat != null && d.lng != null ? { direccion: d.direccion || '', lat: Number(d.lat), lng: Number(d.lng) } : null;
+      document.getElementById('dom-taller-dir').value = (origenTaller && origenTaller.direccion) || '';
+      pintarEjemploKm();
+      pintarOrigenTaller();
+      if (!cfg || !cfg.google_maps_key) return;
+      const ok = await MapsDireccion.cargar(cfg.google_maps_key);
+      if (!ok) { pintarOrigenTaller('⚠ Google Maps no cargó con esta clave. Revisa que esté bien copiada y que tenga activadas Maps JavaScript API, Places API (New) y Geocoding API.'); return; }
+      MapsDireccion.conectar(document.getElementById('dom-taller-dir'), {
+        onElegir: (u) => { origenTaller = u; pintarOrigenTaller('✓ Ubicación encontrada. Pulsa «Guardar» para usarla.'); },
+      });
+      pintarOrigenTaller();
+    }
+    document.addEventListener('maps-clave-invalida', () => pintarOrigenTaller('⚠ Google rechazó la clave. Revisa que esté bien copiada, que la página del taller esté permitida y que tenga activadas Maps JavaScript API, Places API (New) y Geocoding API.'));
+    document.getElementById('dom-radio').addEventListener('input', pintarEjemploKm);
+    document.getElementById('dom-valor-km').addEventListener('input', pintarEjemploKm);
+    document.getElementById('dom-taller-usar').addEventListener('click', async () => {
+      const dir = document.getElementById('direccion').value.trim();
+      if (!dir) { pintarOrigenTaller('Primero escribe la dirección del taller en «Datos del taller», arriba.'); return; }
+      if (!MapsDireccion.disponible()) { pintarOrigenTaller(); return; }
+      const u = await MapsDireccion.buscarDireccion(dir);
+      if (!u) { pintarOrigenTaller('No encontramos esa dirección en Google Maps: búscala en este campo y elígela de la lista.'); return; }
+      origenTaller = u;
+      document.getElementById('dom-taller-dir').value = u.direccion;
+      pintarOrigenTaller(`✓ Encontrada: ${u.direccion}. Pulsa «Guardar» para usarla.`);
+    });
     document.getElementById('trabajo_domicilio_id').addEventListener('change', mostrarValorDomicilio);
     document.getElementById('trabajo_retiro_id').addEventListener('change', mostrarValorDomicilio);
     document.getElementById('guardar-domicilio-btn').addEventListener('click', async () => {
@@ -1462,11 +1543,26 @@
       errorEl.textContent = ''; okEl.textContent = '';
       const margen = Math.round(Number(document.getElementById('domicilio_margen_min').value));
       if (!(margen >= 0 && margen <= 240)) { errorEl.textContent = 'El traslado debe estar entre 0 y 240 minutos.'; return; }
-      const { error } = await supabaseClient.from('taller_config').update({
+      const radio = Number(document.getElementById('dom-radio').value);
+      const valorKm = Math.round(Number(document.getElementById('dom-valor-km').value));
+      if (!(radio >= 0 && radio <= 200)) { errorEl.textContent = 'El radio sin recargo debe estar entre 0 y 200 km.'; return; }
+      if (!(valorKm >= 0)) { errorEl.textContent = 'El valor por km extra no puede ser negativo.'; return; }
+      const clave = document.getElementById('dom-maps-key').value.trim();
+      if (clave && !/^[A-Za-z0-9_-]{30,60}$/.test(clave)) { errorEl.textContent = 'La clave de Google Maps no se ve bien copiada (suele empezar con «AIza» y no tiene espacios).'; return; }
+      const cambios = {
         trabajo_domicilio_id: document.getElementById('trabajo_domicilio_id').value || null,
         trabajo_retiro_id: document.getElementById('trabajo_retiro_id').value || null,
         domicilio_margen_min: margen,
-      }).eq('id', 1);
+        google_maps_key: clave || null,
+        domicilio_km: { radio_km: radio, valor_km: valorKm, ...(origenTaller ? { lat: origenTaller.lat, lng: origenTaller.lng, direccion: origenTaller.direccion } : {}) },
+      };
+      let { error } = await supabaseClient.from('taller_config').update(cambios).eq('id', 1);
+      if (error && /google_maps_key|domicilio_km/.test(error.message || '')) {
+        errorEl.textContent = 'Para la distancia y el recargo falta ejecutar sql/actualizacion-v80-domicilio-distancia-y-recargo.sql en el SQL Editor de Supabase. Lo demás se guardó.';
+        delete cambios.google_maps_key; delete cambios.domicilio_km;
+        ({ error } = await supabaseClient.from('taller_config').update(cambios).eq('id', 1));
+        if (!error) { tallerConfigCache = null; return; }
+      }
       if (error) {
         errorEl.textContent = /trabajo_retiro_id/.test(error.message || '')
           ? 'Falta ejecutar sql/actualizacion-v72-domicilio-terreno-o-retiro.sql en el SQL Editor de Supabase.'
@@ -1476,7 +1572,9 @@
         return;
       }
       tallerConfigCache = null;
-      okEl.textContent = `Guardado. Las citas a domicilio bloquearán ${margen} min antes y ${margen} min después.`;
+      okEl.textContent = `Guardado. Las citas a domicilio bloquearán ${margen} min antes y ${margen} min después.`
+        + (origenTaller ? ` Distancia: hasta ${MapsDireccion.fmtKm(radio)} km sin recargo, luego ${fmtMoneda(valorKm)} + IVA por km extra.` : ' Falta la ubicación del taller para calcular la distancia.')
+        + (clave && !MapsDireccion.disponible() ? ' Recarga la página para activar la búsqueda con Google Maps.' : '');
     });
 
     // ---------- Club Autonova (referidos), sql/v67 ----------

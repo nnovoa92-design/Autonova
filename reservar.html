@@ -37,6 +37,8 @@
     .domicilio-tipos { margin-top: 0.6rem; padding: 0.65rem 0.75rem; border: 1px dashed #d4a84b; border-radius: var(--radius); background: #fffaf0; }
     .domicilio-tipos .dom-titulo { margin: 0 0 0.45rem; font-weight: 700; font-size: 0.92rem; }
     .domicilio-tipos .dom-nota { margin: 0.45rem 0 0; font-size: 0.78rem; color: var(--color-text-muted); }
+    .dom-distancia { margin: 0.45rem 0 0; padding: 0.5rem 0.7rem; border-radius: var(--radius); background: #eef6ff; border: 1px solid #c7dcf5; color: #1d3f66; font-size: 0.86rem; }
+    .dom-distancia.pendiente { background: #f6f6f7; border-color: var(--color-border); color: var(--color-text-muted); }
     .dom-precio { display: block; font-weight: 700; color: var(--color-primary); font-size: 1rem; margin-top: 0.15rem; }
     /* Reagendar desde el link del correo (v77): sus datos y su vehículo ya están guardados */
     .banner-reagenda { margin: 0 0 0.75rem; padding: 0.7rem 0.9rem; border-radius: var(--radius); background: #eef4ff; border: 1px solid #c9d8f5; font-size: 0.9rem; color: #1f3a68; }
@@ -107,6 +109,8 @@
           <div class="form-group" id="g-direccion" hidden style="margin-top:0.6rem;">
             <label for="r-direccion" id="lab-direccion">Dirección donde atenderemos tu vehículo *</label>
             <input type="text" id="r-direccion" maxlength="200" placeholder="Calle, número y comuna" autocomplete="street-address" />
+            <button type="button" id="r-mi-ubicacion" class="btn-secondary btn-mini" style="margin-top:0.4rem;" hidden>📍 Usar mi ubicación actual</button>
+            <p id="dom-distancia" class="dom-distancia" hidden></p>
           </div>
         </div>
         <p style="margin:0.75rem 0 0.4rem; font-weight:600;">Elige día y hora:</p>
@@ -218,6 +222,7 @@
   <script src="assets/vendor/supabase.min.js"></script>
   <script src="assets/js/supabaseClient.js"></script>
   <script src="assets/js/layout.js"></script>
+  <script src="assets/js/mapsDireccion.js"></script>
   <script>
     const SEMANAS_MAX = 8;   // hasta cuántas semanas hacia adelante se puede reservar
     let INFO = null;
@@ -412,12 +417,84 @@
       const { data, error } = await supabaseClient.rpc('domicilio_opciones');
       if (error || !data) return;   // sin v72: como antes (el valor se informa con la reserva hecha)
       opcionesDomicilio = data;
+      distanciaCfg = data.distancia || null;
       const vals = ['terreno', 'retiro'].map(k => data[k]).filter(o => o && o.valor != null);
       if (vals.length) {
         const min = Math.min(...vals.map(o => Number(o.valor)));
-        document.getElementById('mod-dom-texto').textContent = `Vamos a tu dirección${data.retiro ? ' (en terreno o con retiro y entrega)' : ''}. Desde ${fmtMoneda(min)} + IVA adicional.`;
+        document.getElementById('mod-dom-texto').textContent = `Vamos a tu dirección${data.retiro ? ' (en terreno o con retiro y entrega)' : ''}. Desde ${fmtMoneda(min)} + IVA adicional.`
+          + (textoRadioDistancia() ? ` ${textoRadioDistancia()}` : '');
       }
       renderOpcionesDomicilio();
+      prepararMapsDireccion(data.maps_key);
+    }
+
+    // ---------- Dirección con Google Maps y recargo por distancia (sql/v80) ----------
+    let distanciaCfg = null;   // { radio_km, valor_km, lat, lng } del taller
+    let ubicacionDom = null;   // { direccion, lat, lng } elegida en las sugerencias o con «mi ubicación»
+    const textoRadioDistancia = () => distanciaCfg && Number(distanciaCfg.valor_km) > 0
+      ? `Hasta ${MapsDireccion.fmtKm(distanciaCfg.radio_km)} km del taller sin recargo; más lejos, ${fmtMoneda(distanciaCfg.valor_km)} + IVA por km extra.` : '';
+    const recargoElegido = () => ubicacionDom && distanciaCfg ? MapsDireccion.recargoDistancia(ubicacionDom, distanciaCfg) : null;
+    function pintarDistancia() {
+      const p = document.getElementById('dom-distancia');
+      if (!distanciaCfg) { p.hidden = true; return; }
+      const r = recargoElegido();
+      p.hidden = false;
+      p.classList.toggle('pendiente', !r);
+      p.textContent = r ? MapsDireccion.textoRecargo(r)
+        : MapsDireccion.disponible()
+          ? `Elige tu dirección de la lista (o usa tu ubicación) para calcular la distancia. ${textoRadioDistancia()}`
+          : textoRadioDistancia();
+    }
+    // La calle y el número de la dirección elegida («Av. Siempre Viva 742»): si el texto ya no empieza así, cambió de dirección
+    const calleDe = (dir) => String(dir || '').split(',')[0].trim().toLowerCase();
+    async function prepararMapsDireccion(clave) {
+      if (!distanciaCfg) return;
+      pintarDistancia();
+      if (!clave || !(await MapsDireccion.cargar(clave))) { pintarDistancia(); return; }
+      const input = document.getElementById('r-direccion');
+      MapsDireccion.conectar(input, {
+        origen: distanciaCfg,
+        onElegir: (u) => { ubicacionDom = u; pintarDistancia(); },
+        onCambio: () => {
+          if (ubicacionDom && !input.value.trim().toLowerCase().startsWith(calleDe(ubicacionDom.direccion))) { ubicacionDom = null; pintarDistancia(); }
+        },
+      });
+      const btn = document.getElementById('r-mi-ubicacion');
+      btn.hidden = false;
+      btn.addEventListener('click', async () => {
+        btn.disabled = true; btn.textContent = 'Buscando tu ubicación...';
+        try {
+          const u = await MapsDireccion.miUbicacion();
+          ubicacionDom = { ...u, direccion: u.direccion || input.value.trim() };
+          if (u.direccion) input.value = u.direccion;
+          pintarDistancia();
+          if (!u.direccion) document.getElementById('dom-distancia').textContent += ' Escribe también tu dirección (calle, número y comuna).';
+        } catch (e) {
+          const p = document.getElementById('dom-distancia');
+          p.hidden = false; p.classList.add('pendiente'); p.textContent = e.message;
+        }
+        btn.disabled = false; btn.textContent = '📍 Usar mi ubicación actual';
+      });
+      document.addEventListener('maps-clave-invalida', () => { btn.hidden = true; pintarDistancia(); });
+      pintarDistancia();
+    }
+    // Antes de reservar: si escribió la dirección sin elegirla de la lista, se busca igual para calcular la distancia
+    async function ubicacionParaReservar(direccion) {
+      if (modalidad !== 'domicilio' || !distanciaCfg) return null;
+      if (ubicacionDom) return ubicacionDom;
+      if (!MapsDireccion.disponible() || direccion.length < 5) return null;
+      const u = await MapsDireccion.buscarDireccion(direccion);
+      if (u) { ubicacionDom = { ...u, direccion }; pintarDistancia(); }
+      return ubicacionDom;
+    }
+    // Fila del resumen con el recargo que guardó el servidor
+    function filaRecargo(dist) {
+      if (!dist) return '';
+      const valor = dist.extra_km
+        ? `${dist.extra_km} km extra × ${fmtMoneda(dist.valor_km)} = ${fmtMoneda(dist.recargo)} + IVA`
+        : `Sin recargo (dentro de ${MapsDireccion.fmtKm(dist.radio_km)} km)`;
+      return `
+        <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>Distancia (${MapsDireccion.fmtKm(dist.km)} km)</span><strong style="text-align:right;">${htmlSeguro(valor)}</strong></div>`;
     }
 
     document.getElementById('modalidad-box').addEventListener('change', (e) => {
@@ -823,7 +900,11 @@
         // el código y el «retiro y entrega» viajan en el comentario para no perderlos.
         const notaRetiro = modalidad === 'domicilio' && domicilioTipo === 'retiro' ? 'Pide retiro y entrega' : '';
         {   // siempre v5: valida que el servicio alcance y guarda si el vehículo queda en el taller (v78)
-          ({ data, error } = await supabaseClient.rpc('reservar_cita_v5', { ...intentos[0], p_codigo: codigoReserva || null, p_domicilio_tipo: modalidad === 'domicilio' ? domicilioTipo : null }));
+          const argsV5 = { ...intentos[0], p_codigo: codigoReserva || null, p_domicilio_tipo: modalidad === 'domicilio' ? domicilioTipo : null };
+          // v6 = v5 + ubicación a domicilio: el servidor calcula la distancia y el recargo (v80)
+          const ubic = await ubicacionParaReservar(direccion);
+          ({ data, error } = await supabaseClient.rpc('reservar_cita_v6', { ...argsV5, p_lat: ubic ? ubic.lat : null, p_lng: ubic ? ubic.lng : null }));
+          if (error && error.code === 'PGRST202') ({ data, error } = await supabaseClient.rpc('reservar_cita_v5', argsV5));
           reservado = !(error && error.code === 'PGRST202');
           if (!reservado && codigoReserva) {   // servidor con v67-v71 (sin el tipo de domicilio)
             ({ data, error } = await supabaseClient.rpc('reservar_cita_v5', { ...intentos[0], p_codigo: codigoReserva, p_notas: [intentos[0].p_notas, notaRetiro].filter(Boolean).join(' · ') || null }));
@@ -865,14 +946,17 @@
       const domElegido = (opcionesDomicilio && opcionesDomicilio[domicilioTipo]) || dom;
       const valorDomicilio = domElegido && domElegido.valor != null ? `${domElegido.desde ? 'desde ' : ''}${fmtMoneda(domElegido.valor)} + IVA` : 'te lo informamos al confirmar';
       const etiquetaDom = domicilioTipo === 'retiro' ? 'Retiro y entrega' : 'Atención en terreno';
-      // Total estimado cuando los dos valores son exactos (sin «desde»): servicio + atención a domicilio
+      // Recargo por distancia que calculó y guardó el servidor (v80)
+      const dist = modalidad === 'domicilio' && data ? data.distancia : null;
+      const recargoDist = dist ? Number(dist.recargo) || 0 : 0;
+      // Total estimado cuando los dos valores son exactos (sin «desde»): servicio + atención a domicilio (+ recargo)
       const totalEstimado = modalidad === 'domicilio' && !selOtro && data && data.precio_fijo != null && domElegido && domElegido.valor != null && !domElegido.desde
-        ? Number(data.precio_fijo) + Number(domElegido.valor) : null;
+        ? Number(data.precio_fijo) + Number(domElegido.valor) + recargoDist : null;
       const filaAtencion = modalidad === 'domicilio' ? `
         <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>Atención</span><strong style="text-align:right;">A domicilio (${domicilioTipo === 'retiro' ? 'retiro y entrega' : 'en terreno'}) · ${htmlSeguro(direccion)}</strong></div>
-        <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>${etiquetaDom}</span><strong style="text-align:right;">${htmlSeguro(valorDomicilio)}</strong></div>${totalEstimado != null ? `
+        <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>${etiquetaDom}</span><strong style="text-align:right;">${htmlSeguro(valorDomicilio)}</strong></div>${filaRecargo(dist)}${totalEstimado != null ? `
         <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.35rem 0; border-top:1px solid var(--color-border); margin-top:0.2rem;"><span><strong>Total estimado</strong></span><strong style="text-align:right;">${fmtMoneda(totalEstimado)} + IVA</strong></div>
-        <p style="font-size:0.78rem; color:var(--color-text-muted); margin:0;">Mano de obra del servicio + ${etiquetaDom.toLowerCase()}. Repuestos o insumos, si se necesitan, se cotizan aparte.</p>` : ''}` : `
+        <p style="font-size:0.78rem; color:var(--color-text-muted); margin:0;">Mano de obra del servicio + ${etiquetaDom.toLowerCase()}${recargoDist ? ' + recargo por distancia' : ''}. Repuestos o insumos, si se necesitan, se cotizan aparte.</p>` : ''}` : `
         <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>Atención</span><strong style="text-align:right;">En el taller</strong></div>`;
       document.getElementById('confirm-detalle').innerHTML = `
         <div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>Servicio</span><strong style="text-align:right;">${htmlSeguro(selOtro ? `Otro: ${otroTexto}` : selTrabajo.nombre)}</strong></div>${filaValor}${filaDescripcion}
@@ -1018,12 +1102,20 @@
         p_trabajo_id: selTrabajo ? selTrabajo.id : null, p_servicio_otro: selOtro ? otroTexto : null,
         p_modalidad: modalidad, p_domicilio_tipo: modalidad === 'domicilio' ? domicilioTipo : null, p_direccion: direccion || null,
       });
-      btn.disabled = false; btn.textContent = 'Confirmar cambio de hora';
       if (error || !data || data.ok === false) {
+        btn.disabled = false; btn.textContent = 'Confirmar cambio de hora';
         errorEl.textContent = (data && data.error) || 'No se pudo cambiar tu hora. Intenta de nuevo o escríbenos.';
         if (data && data.error && /disponible|tomado/.test(data.error)) { selYmd = null; selSlot = null; cargarSemana(); }
         return;
       }
+      // A domicilio: la ubicación y el recargo por distancia se recalculan con la dirección de esta hora (v80)
+      let dist = null;
+      if (data.modalidad === 'terreno' || data.modalidad === 'retiro') {
+        const ubic = await ubicacionParaReservar(direccion);
+        const r = await supabaseClient.rpc('cita_cliente_ubicacion', { p_token: tokenReagenda, p_lat: ubic ? ubic.lat : null, p_lng: ubic ? ubic.lng : null });
+        dist = !r.error && r.data && r.data.ok ? r.data.distancia : null;
+      }
+      btn.disabled = false; btn.textContent = 'Confirmar cambio de hora';
       const fila = (k, v) => `<div class="fila" style="display:flex; justify-content:space-between; gap:1rem; padding:0.25rem 0;"><span>${k}</span><strong style="text-align:right;">${v}</strong></div>`;
       const valor = selOtro ? '' : textoValorServicio(data, selTrabajo);
       const dom = data.domicilio;
@@ -1039,6 +1131,7 @@
         fila('Atención', atencion) +
         (data.queda && data.devolucion ? fila('🌙 Tu vehículo', `Queda en el taller · devolución estimada ${htmlSeguro(textoDevolucion(data.devolucion))}`) : '') +
         (data.modalidad !== 'taller' && dom && dom.valor != null ? fila(data.modalidad === 'retiro' ? 'Retiro y entrega' : 'Atención en terreno', `${dom.desde ? 'desde ' : ''}${fmtMoneda(dom.valor)} + IVA`) : '') +
+        filaRecargo(dist) +
         fila('A nombre de', htmlSeguro(reagenda.nombre)) +
         `<p style="font-size:0.8rem; color:var(--color-text-muted); margin:0.4rem 0 0;">Es un valor referencial: según la revisión del vehículo puede variar, y si encontramos algo adicional te lo avisamos antes de hacerlo.</p>`;
       document.getElementById('wizard').style.display = 'none';

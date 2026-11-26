@@ -229,6 +229,7 @@
             <div class="form-group" id="grupo-direccion" style="flex:2; display:none;">
               <label for="direccion">Dirección de retiro/atención</label>
               <input type="text" id="direccion" placeholder="Se prellena con la dirección del cliente, si tiene" />
+              <small id="direccion-distancia" style="display:block; margin-top:0.25rem; color:var(--color-text-muted);"></small>
             </div>
           </div>
           <div class="form-group">
@@ -289,6 +290,7 @@
   <script src="../assets/vendor/supabase.min.js"></script>
   <script src="../assets/js/supabaseClient.js"></script>
   <script src="../assets/js/layout.js"></script>
+  <script src="../assets/js/mapsDireccion.js"></script>
   <script>
     let clientesCache = [], vehiculosCache = [], trabajosCache = [], personalCache = [], cotizacionesCache = [];
     let tallerHorarios = null;
@@ -339,6 +341,43 @@
       return monto != null ? { monto, desde: opcionesDeTrabajo(t).length > 0, nombre: t.nombre } : null;
     }
     const textoValorDomicilio = (v) => v ? `${v.desde ? 'desde ' : ''}${fmtMoneda(v.monto)} + IVA` : 'sin valor en el catálogo';
+
+    // ---------- Distancia y recargo a domicilio (Configuración → Atención a domicilio, sql/v80) ----------
+    function distanciaAgenda() {
+      const d = tallerHorarios && tallerHorarios.domicilio_km;
+      return d && d.lat != null && d.lng != null ? { radio_km: 6, valor_km: 3000, ...d } : null;
+    }
+    // Texto corto de la distancia guardada en la cita: «8,4 km · recargo $9.000 + IVA (3 km extra)»
+    function textoDistanciaCita(c) {
+      if (c.dom_km == null) return '';
+      const km = MapsDireccion.fmtKm(c.dom_km);
+      return Number(c.dom_recargo) > 0
+        ? `${km} km · recargo por distancia ${fmtMoneda(c.dom_recargo)} + IVA`
+        : `${km} km · sin recargo por distancia`;
+    }
+    const linkComoLlegarCita = (c) => MapsDireccion.linkComoLlegar(c.dom_lat, c.dom_lng, c.direccion);
+    // Formulario de cita: ubicación elegida con Google Maps (o la que ya tenía la cita)
+    let ubicForm = null;
+    function pintarDistanciaForm() {
+      const el = document.getElementById('direccion-distancia');
+      const cfg = distanciaAgenda();
+      const r = ubicForm && cfg ? MapsDireccion.recargoDistancia(ubicForm, cfg) : null;
+      el.textContent = !cfg ? '' : r ? MapsDireccion.textoRecargo(r)
+        : MapsDireccion.disponible() ? 'Elige la dirección de la lista para calcular la distancia y el recargo.' : '';
+    }
+    async function prepararMapsAgenda() {
+      const cfg = distanciaAgenda();
+      if (!cfg || !(await MapsDireccion.cargar(tallerHorarios.google_maps_key))) return;
+      const input = document.getElementById('direccion');
+      MapsDireccion.conectar(input, {
+        origen: cfg,
+        onElegir: (u) => { ubicForm = u; pintarDistanciaForm(); },
+        onCambio: () => {
+          if (ubicForm && !input.value.trim().toLowerCase().startsWith(String(ubicForm.direccion || '').split(',')[0].trim().toLowerCase())) { ubicForm = null; pintarDistanciaForm(); }
+        },
+      });
+      pintarDistanciaForm();
+    }
 
     // ---------- Horario semanal y bloqueos (Configuración → Horario de atención) ----------
     const NOMBRE_DIA = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -450,6 +489,7 @@
     let direccionAutoprellenada = null;
     function prellenarDireccion() {
       const input = document.getElementById('direccion');
+      const antes = input.value;
       if (direccionAutoprellenada !== null && input.value === direccionAutoprellenada) input.value = '';
       direccionAutoprellenada = null;
       const clienteId = document.getElementById('cliente_id').value;
@@ -458,6 +498,7 @@
         input.value = cliente.direccion;
         direccionAutoprellenada = cliente.direccion;
       }
+      if (input.value !== antes) { ubicForm = null; pintarDistanciaForm(); }   // otra dirección: la distancia se vuelve a calcular
     }
 
     // ---------- Formulario ----------
@@ -480,6 +521,7 @@
         document.getElementById('duracion').value = cita.duracion_min ?? 60;
         document.getElementById('modalidad').value = cita.modalidad || 'taller';
         document.getElementById('direccion').value = cita.direccion ?? '';
+        ubicForm = cita.dom_lat != null && cita.dom_lng != null ? { direccion: cita.direccion || '', lat: cita.dom_lat, lng: cita.dom_lng } : null;
         document.getElementById('notas').value = cita.notas ?? '';
       } else {
         document.getElementById('form-title').textContent = 'Nueva cita';
@@ -494,8 +536,10 @@
         document.getElementById('duracion').value = String((tallerHorarios && tallerHorarios.slot_min) || 60);
         document.getElementById('modalidad').value = 'taller';
         document.getElementById('direccion').value = '';
+        ubicForm = null;
         document.getElementById('notas').value = '';
       }
+      pintarDistanciaForm();
       sincronizarReconocimiento();
       actualizarVisibilidadDireccion();
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -914,10 +958,30 @@
         margen_antes_min: document.getElementById('modalidad').value === 'terreno' ? margenDomicilio() : 0,
         margen_despues_min: document.getElementById('modalidad').value === 'terreno' ? margenDomicilio() : 0,
       };
+      // A domicilio: distancia «a la redonda» desde el taller y su recargo (v80). Si escribieron la dirección
+      // sin elegirla de la lista, se busca igual en Google Maps.
+      const cfgDist = distanciaAgenda();
+      if (cfgDist) {
+        let r = null;
+        if (payload.modalidad !== 'taller') {
+          if (!ubicForm && payload.direccion && MapsDireccion.disponible()) {
+            const u = await MapsDireccion.buscarDireccion(payload.direccion);
+            if (u) ubicForm = { ...u, direccion: payload.direccion };
+          }
+          r = ubicForm ? MapsDireccion.recargoDistancia(ubicForm, cfgDist) : null;
+        }
+        Object.assign(payload, { dom_lat: r ? ubicForm.lat : null, dom_lng: r ? ubicForm.lng : null, dom_km: r ? r.km : null, dom_recargo: r ? r.recargo : null });
+      }
       const id = document.getElementById('cita-id').value;
       let error;
       if (id) ({ error } = await supabaseClient.from('citas').update(payload).eq('id', id));
       else     ({ error } = await supabaseClient.from('citas').insert({ ...payload, estado: 'confirmado', origen: 'interno' }));
+      if (error && /dom_(lat|lng|km|recargo)/.test(error.message || '')) {
+        // Aún no se ejecutó v80: se guarda sin la distancia
+        ['dom_lat', 'dom_lng', 'dom_km', 'dom_recargo'].forEach(k => delete payload[k]);
+        if (id) ({ error } = await supabaseClient.from('citas').update(payload).eq('id', id));
+        else     ({ error } = await supabaseClient.from('citas').insert({ ...payload, estado: 'confirmado', origen: 'interno' }));
+      }
       if (error && /margen_/.test(error.message || '')) {
         // Aún no se ejecutó v57: se guarda sin el traslado
         delete payload.margen_antes_min; delete payload.margen_despues_min;
@@ -987,6 +1051,10 @@
       if (c.modalidad === 'terreno' || c.modalidad === 'retiro') {
         const v = valorDomicilio(c.modalidad);
         if (v) texto += `\n• ${c.modalidad === 'retiro' ? 'Retiro y entrega' : 'Atención a domicilio'}: ${textoValorDomicilio(v)}.`;
+        if (Number(c.dom_recargo) > 0) {
+          const radio = (distanciaAgenda() || {}).radio_km ?? 6;
+          texto += `\n• Recargo por distancia: ${fmtMoneda(c.dom_recargo)} + IVA (su dirección está a ${MapsDireccion.fmtKm(c.dom_km)} km del taller; los primeros ${MapsDireccion.fmtKm(radio)} km no tienen recargo).`;
+        }
       }
       return texto;
     }
@@ -1180,6 +1248,8 @@
           ${veh  ? `<span style="color:var(--color-text-muted);">· ${escapar(veh)}</span>`        : ''}
           ${trab ? `<span style="color:var(--color-text-muted);">· ${escapar(trab)}</span>`       : ''}
           ${c.modalidad === 'terreno' && c.direccion ? `<span style="color:var(--color-text-muted);">· 📍 ${escapar(c.direccion)}</span>` : ''}
+          ${(c.modalidad === 'terreno' || c.modalidad === 'retiro') && c.dom_km != null ? `<span style="color:var(--color-text-muted); font-size:0.82rem;">· 📏 ${escapar(textoDistanciaCita(c))}</span>` : ''}
+          ${(c.modalidad === 'terreno' || c.modalidad === 'retiro') && linkComoLlegarCita(c) ? `<a href="${escapar(linkComoLlegarCita(c))}" target="_blank" rel="noopener" style="font-size:0.82rem;">🗺️ Cómo llegar</a>` : ''}
           ${mec  ? `<span style="color:var(--color-text-muted);">· ${escapar(mec.nombre)}</span>` : ''}
           ${c.telefono_contacto ? `<span style="color:var(--color-text-muted); font-size:0.82rem;">${escapar(c.telefono_contacto)}</span>` : ''}
         </div>
@@ -1786,7 +1856,10 @@
           <div class="ficha-datos"><span>🔧 Pidió: ${escapar(servicioCita(c) || 'Servicio por definir')}${horasCatalogo ? ` (referencia del catálogo: ${fmtDuracion(horasCatalogo)})` : ''}</span></div>
           ${c.modalidad === 'terreno' || c.modalidad === 'retiro' ? `<div class="ficha-datos"><span>🚗 <strong>${c.modalidad === 'retiro' ? 'Retiro y entrega a domicilio' : 'A domicilio (en terreno)'}</strong>${c.direccion ? ' · ' + escapar(c.direccion) : ''}</span></div>
           ${(margenesCita(c).antes || margenesCita(c).despues) ? `<div class="ficha-datos"><span>⏱ Se bloquea también el traslado: ${margenesCita(c).antes} min antes y ${margenesCita(c).despues} min después</span></div>` : ''}
-          <div class="ficha-datos"><span>💲 ${c.modalidad === 'retiro' ? 'Retiro y entrega' : 'Atención a domicilio'} (catálogo${trabajoDomicilio(c.modalidad) ? ': ' + escapar(trabajoDomicilio(c.modalidad).nombre) : ''}): ${escapar(textoValorDomicilio(valorDomicilio(c.modalidad)))}</span></div>` : ''}
+          <div class="ficha-datos"><span>💲 ${c.modalidad === 'retiro' ? 'Retiro y entrega' : 'Atención a domicilio'} (catálogo${trabajoDomicilio(c.modalidad) ? ': ' + escapar(trabajoDomicilio(c.modalidad).nombre) : ''}): ${escapar(textoValorDomicilio(valorDomicilio(c.modalidad)))}</span></div>
+          ${c.dom_km != null ? `<div class="ficha-datos"><span>📏 ${escapar(textoDistanciaCita(c))} (en línea recta desde el taller)</span></div>`
+            : distanciaAgenda() ? '<div class="ficha-datos"><span>📏 Distancia sin calcular: la dirección no se encontró en Google Maps. Revisa el recargo al confirmar.</span></div>' : ''}
+          ${linkComoLlegarCita(c) ? `<div class="ficha-datos"><a href="${escapar(linkComoLlegarCita(c))}" target="_blank" rel="noopener">🗺️ Ver en Google Maps / cómo llegar</a></div>` : ''}` : ''}
           ${c.notas ? `<div class="ficha-datos"><span>💬 ${escapar(c.notas)}</span></div>` : ''}
           ${c.codigo_descuento ? (c.codigo_nota
             ? `<div class="ficha-datos" style="color:var(--color-danger);"><span>🎁 Viene con el código <strong>${escapar(c.codigo_descuento)}</strong>, pero ${escapar(String(c.codigo_nota).replace(/^No aplica:s*/i, "no aplica: "))} No se le hará el descuento: avísale al confirmar.</span></div>`
@@ -2528,6 +2601,16 @@
           const nombreLinea = opcion ? `${td.nombre} — ${opcion.nombre}` : td.nombre;
           await insertarItems('orden_items', [{ orden_id: orden.id, tipo: 'mano_obra', trabajo_id: td.id, descripcion: nombreLinea, ...datosManoObra(td, 1, config.valor_hora, { opcion }), orden: 2 }]);
         }
+        // Recargo por distancia (v80): km extra × valor por km. Va como «Otro» para que el descuento del Club no lo toque
+        if (Number(c.dom_recargo) > 0) {
+          const cfgDist = distanciaAgenda() || {};
+          const radio = cfgDist.radio_km ?? 6;
+          const extra = Math.max(1, Math.ceil(Math.round((Number(c.dom_km) - radio) * 10) / 10));
+          // Si la configuración cambió desde la reserva y no calza exacto, va como una sola línea con el total guardado
+          const exacto = Number(c.dom_recargo) % extra === 0;
+          await insertarItems('orden_items', [{ orden_id: orden.id, tipo: 'otro', descripcion: `Recargo por distancia: ${extra} km sobre los ${MapsDireccion.fmtKm(radio)} km sin recargo (dirección a ${MapsDireccion.fmtKm(c.dom_km)} km)`,
+            cantidad: exacto ? extra : 1, precio_unitario: exacto ? Number(c.dom_recargo) / extra : Number(c.dom_recargo), orden: 3 }]);
+        }
       }
       await supabaseClient.from('citas').update({ estado: 'completado', orden_id: orden.id }).eq('id', citaId);
       // Código del Club que trajo la reserva: se aplica a la OT (descuento de referido o cupón de premio)
@@ -2816,6 +2899,7 @@
       personalCache  = personal.data  || [];
       cotizacionesCache = cotizaciones.data || [];
       tallerHorarios = config;
+      prepararMapsAgenda();   // sugerencias de Google Maps en la dirección (si hay clave y ubicación del taller)
 
       poblarClientes();
       poblarTrabajosCita();
