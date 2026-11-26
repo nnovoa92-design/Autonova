@@ -362,12 +362,13 @@
       const el = document.getElementById('direccion-distancia');
       const cfg = distanciaAgenda();
       const r = ubicForm && cfg ? MapsDireccion.recargoDistancia(ubicForm, cfg) : null;
-      el.textContent = !cfg ? '' : r ? MapsDireccion.textoRecargo(r)
+      el.textContent = !cfg ? '' : r ? MapsDireccion.textoRecargo(r, ubicForm.aproximada)
         : MapsDireccion.disponible() ? 'Elige la dirección de la lista para calcular la distancia y el recargo.' : '';
     }
     async function prepararMapsAgenda() {
       const cfg = distanciaAgenda();
-      if (!cfg || !(await MapsDireccion.cargar(tallerHorarios.google_maps_key))) return;
+      if (!cfg) return;
+      await MapsDireccion.cargar(tallerHorarios.google_maps_key);   // sin clave de Google: OpenStreetMap (gratis)
       const input = document.getElementById('direccion');
       MapsDireccion.conectar(input, {
         origen: cfg,
@@ -965,7 +966,7 @@
         let r = null;
         if (payload.modalidad !== 'taller') {
           if (!ubicForm && payload.direccion && MapsDireccion.disponible()) {
-            const u = await MapsDireccion.buscarDireccion(payload.direccion);
+            const u = await MapsDireccion.buscarDireccion(payload.direccion, cfgDist);
             if (u) ubicForm = { ...u, direccion: payload.direccion };
           }
           r = ubicForm ? MapsDireccion.recargoDistancia(ubicForm, cfgDist) : null;
@@ -1858,7 +1859,7 @@
           ${(margenesCita(c).antes || margenesCita(c).despues) ? `<div class="ficha-datos"><span>⏱ Se bloquea también el traslado: ${margenesCita(c).antes} min antes y ${margenesCita(c).despues} min después</span></div>` : ''}
           <div class="ficha-datos"><span>💲 ${c.modalidad === 'retiro' ? 'Retiro y entrega' : 'Atención a domicilio'} (catálogo${trabajoDomicilio(c.modalidad) ? ': ' + escapar(trabajoDomicilio(c.modalidad).nombre) : ''}): ${escapar(textoValorDomicilio(valorDomicilio(c.modalidad)))}</span></div>
           ${c.dom_km != null ? `<div class="ficha-datos"><span>📏 ${escapar(textoDistanciaCita(c))} (en línea recta desde el taller)</span></div>`
-            : distanciaAgenda() ? '<div class="ficha-datos"><span>📏 Distancia sin calcular: la dirección no se encontró en Google Maps. Revisa el recargo al confirmar.</span></div>' : ''}
+            : distanciaAgenda() ? '<div class="ficha-datos"><span>📏 Distancia sin calcular: la dirección no se encontró en el mapa. Revisa el recargo al confirmar.</span></div>' : ''}
           ${linkComoLlegarCita(c) ? `<div class="ficha-datos"><a href="${escapar(linkComoLlegarCita(c))}" target="_blank" rel="noopener">🗺️ Ver en Google Maps / cómo llegar</a></div>` : ''}` : ''}
           ${c.notas ? `<div class="ficha-datos"><span>💬 ${escapar(c.notas)}</span></div>` : ''}
           ${c.codigo_descuento ? (c.codigo_nota

@@ -440,7 +440,7 @@
       const r = recargoElegido();
       p.hidden = false;
       p.classList.toggle('pendiente', !r);
-      p.textContent = r ? MapsDireccion.textoRecargo(r)
+      p.textContent = r ? MapsDireccion.textoRecargo(r, ubicacionDom.aproximada)
         : MapsDireccion.disponible()
           ? `Elige tu dirección de la lista (o usa tu ubicación) para calcular la distancia. ${textoRadioDistancia()}`
           : textoRadioDistancia();
@@ -450,7 +450,7 @@
     async function prepararMapsDireccion(clave) {
       if (!distanciaCfg) return;
       pintarDistancia();
-      if (!clave || !(await MapsDireccion.cargar(clave))) { pintarDistancia(); return; }
+      await MapsDireccion.cargar(clave);   // con clave de Google: Google; sin clave: OpenStreetMap (gratis)
       const input = document.getElementById('r-direccion');
       MapsDireccion.conectar(input, {
         origen: distanciaCfg,
@@ -468,14 +468,19 @@
           ubicacionDom = { ...u, direccion: u.direccion || input.value.trim() };
           if (u.direccion) input.value = u.direccion;
           pintarDistancia();
-          if (!u.direccion) document.getElementById('dom-distancia').textContent += ' Escribe también tu dirección (calle, número y comuna).';
+          if (!u.direccion || u.sinNumero) {
+            document.getElementById('dom-distancia').textContent += u.direccion
+              ? ' Revisa la dirección y agrega el número de tu casa.'
+              : ' Escribe también tu dirección (calle, número y comuna).';
+            input.focus();
+          }
         } catch (e) {
           const p = document.getElementById('dom-distancia');
           p.hidden = false; p.classList.add('pendiente'); p.textContent = e.message;
         }
         btn.disabled = false; btn.textContent = '📍 Usar mi ubicación actual';
       });
-      document.addEventListener('maps-clave-invalida', () => { btn.hidden = true; pintarDistancia(); });
+      document.addEventListener('maps-clave-invalida', pintarDistancia);   // sigue con OpenStreetMap
       pintarDistancia();
     }
     // Antes de reservar: si escribió la dirección sin elegirla de la lista, se busca igual para calcular la distancia
@@ -483,7 +488,7 @@
       if (modalidad !== 'domicilio' || !distanciaCfg) return null;
       if (ubicacionDom) return ubicacionDom;
       if (!MapsDireccion.disponible() || direccion.length < 5) return null;
-      const u = await MapsDireccion.buscarDireccion(direccion);
+      const u = await MapsDireccion.buscarDireccion(direccion, distanciaCfg);
       if (u) { ubicacionDom = { ...u, direccion }; pintarDistancia(); }
       return ubicacionDom;
     }

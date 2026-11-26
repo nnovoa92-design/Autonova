@@ -1,34 +1,45 @@
 // ============================================================
-// Dirección con Google Maps (sql/v80): sugerencias al escribir, «usar mi ubicación»
+// Dirección a domicilio (sql/v80): sugerencias al escribir, «usar mi ubicación»
 // y distancia «a la redonda» desde el taller con su recargo por km extra.
 //
-// Usa Maps JavaScript API + Places API (New) + Geocoding API con la clave de navegador
-// guardada en Configuración → Atención a domicilio. Si la clave falta o Google no carga,
-// el campo sigue funcionando como texto normal (el recargo se confirma a mano).
+// Dos proveedores:
+//  · OpenStreetMap (Photon, photon.komoot.io): gratis, sin cuenta ni clave. Es el que se usa por defecto.
+//    Muchas direcciones salen solo con la calle (sin el número): se mantiene el número que escribió
+//    la persona y la ubicación queda aproximada a la calle.
+//  · Google Maps: solo si en Configuración → Atención a domicilio hay una clave de Google
+//    (Maps JavaScript API + Places API (New) + Geocoding API). Si Google falla, se usa OpenStreetMap.
 // ============================================================
 (function () {
-  let cargando = null;      // promesa de carga del script de Google
-  let falloClave = false;   // Google rechazó la clave (gm_authFailure)
+  let proveedor = null;     // 'google' | 'osm'
+  let cargando = null;
+  const PHOTON = 'https://photon.komoot.io';
+  const BBOX_CHILE = '-76,-56,-66,-17';
 
-  // Carga el script de Google Maps una sola vez. Resuelve true si quedó listo.
-  function cargar(clave) {
-    if (!clave) return Promise.resolve(false);
-    if (window.google && google.maps && google.maps.importLibrary) return Promise.resolve(!falloClave);
-    if (cargando) return cargando;
-    cargando = new Promise((resolve) => {
+  function cargarGoogle(clave) {
+    return new Promise((resolve) => {
       const listo = '__autonovaMapsListo';
       const t = setTimeout(() => resolve(false), 12000);
-      window[listo] = () => { clearTimeout(t); resolve(!falloClave); };
-      window.gm_authFailure = () => { falloClave = true; document.dispatchEvent(new CustomEvent('maps-clave-invalida')); };
+      window[listo] = () => { clearTimeout(t); resolve(true); };
+      window.gm_authFailure = () => { proveedor = 'osm'; document.dispatchEvent(new CustomEvent('maps-clave-invalida')); };
       const s = document.createElement('script');
       s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(clave)}&v=weekly&loading=async&language=es&region=CL&callback=${listo}`;
       s.async = true;
       s.onerror = () => { clearTimeout(t); resolve(false); };
       document.head.appendChild(s);
     });
+  }
+  // Deja listo el buscador (Google si hay clave y carga; si no, OpenStreetMap). Siempre resuelve true.
+  function cargar(clave) {
+    if (cargando) return cargando;
+    cargando = (async () => {
+      const ya = window.google && google.maps && google.maps.importLibrary;
+      proveedor = clave && (ya || await cargarGoogle(clave)) && proveedor !== 'osm' ? 'google' : 'osm';
+      return true;
+    })();
     return cargando;
   }
-  const disponible = () => !!(window.google && google.maps && google.maps.importLibrary) && !falloClave;
+  const disponible = () => !!proveedor;
+  const usaGoogle = () => proveedor === 'google';
 
   // Distancia en línea recta en km, con 1 decimal (igual que _recargo_distancia en SQL)
   function distanciaKm(a, b) {
@@ -50,10 +61,11 @@
   const pesos = (n) => '$' + Math.round(Number(n) || 0).toLocaleString('es-CL');
 
   // Texto para el cliente: «A 8,4 km del taller: los primeros 6 km sin recargo; 3 km extra × $3.000 = $9.000 + IVA.»
-  function textoRecargo(r) {
+  function textoRecargo(r, aproximada) {
     if (!r) return '';
-    if (!r.extra_km) return `📍 A ${fmtKm(r.km)} km del taller: dentro de los ${fmtKm(r.radio_km)} km sin recargo por distancia.`;
-    return `📍 A ${fmtKm(r.km)} km del taller. Los primeros ${fmtKm(r.radio_km)} km no tienen recargo; `
+    const aprox = aproximada ? ' (aprox.)' : '';
+    if (!r.extra_km) return `📍 A ${fmtKm(r.km)} km${aprox} del taller: dentro de los ${fmtKm(r.radio_km)} km sin recargo por distancia.`;
+    return `📍 A ${fmtKm(r.km)} km${aprox} del taller. Los primeros ${fmtKm(r.radio_km)} km no tienen recargo; `
       + `${r.extra_km} km extra × ${pesos(r.valor_km)} = ${pesos(r.recargo)} + IVA de recargo por distancia.`;
   }
 
@@ -63,18 +75,87 @@
     return destino ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destino)}` : '';
   }
 
-  async function geocodificar(peticion) {
-    if (!disponible()) return null;
+  // ---------- OpenStreetMap (Photon) ----------
+  const numeroEscrito = (texto) => { const m = String(texto || '').match(/\b(\d{1,5})\b/); return m ? m[1] : ''; };
+  // Una sugerencia de Photon → { principal, secundario, direccion, lat, lng, aproximada }
+  function desdePhoton(f, texto) {
+    const p = f.properties || {};
+    const calle = p.street || (p.type === 'street' ? p.name : '');
+    const num = p.housenumber || (calle ? numeroEscrito(texto) : '');
+    const calleNum = calle ? `${calle}${num ? ' ' + num : ''}` : '';
+    const lugar = p.name && p.name !== calle && p.type !== 'street' ? p.name : '';
+    const comuna = p.city || p.county || '';
+    const principal = lugar || calleNum || p.name || '';
+    const sector = p.locality || p.district || '';
+    const secundario = [lugar ? calleNum : '', sector, comuna, p.state].filter(Boolean)
+      .filter((x, i, a) => a.indexOf(x) === i && x !== principal).join(', ');
+    return {
+      principal, secundario,
+      direccion: [calleNum || principal, comuna].filter(Boolean).join(', '),
+      lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0],
+      aproximada: !p.housenumber,
+    };
+  }
+  async function photon(ruta) {
+    const r = await fetch(PHOTON + ruta);
+    if (!r.ok) throw new Error('photon ' + r.status);
+    const j = await r.json();
+    return (j.features || []).filter(f => (f.properties || {}).countrycode === 'CL');
+  }
+  async function sugerenciasOSM(texto, origen) {
+    let q = `/api/?q=${encodeURIComponent(texto)}&limit=8&bbox=${BBOX_CHILE}`;
+    if (origen && origen.lat != null) q += `&lat=${Number(origen.lat)}&lon=${Number(origen.lng)}`;
+    const vistas = new Set();
+    return (await photon(q)).map(f => desdePhoton(f, texto))
+      .filter(s => s.principal && !vistas.has(s.principal + '|' + s.secundario) && vistas.add(s.principal + '|' + s.secundario))
+      .slice(0, 5)
+      .map(s => ({ principal: s.principal, secundario: s.secundario, elegir: async () => s }));
+  }
+
+  // ---------- Google ----------
+  async function sugerenciasGoogle(texto, origen, sesion) {
+    const { AutocompleteSuggestion, AutocompleteSessionToken } = await google.maps.importLibrary('places');
+    if (!sesion.token) sesion.token = new AutocompleteSessionToken();
+    const pet = { input: texto, sessionToken: sesion.token, includedRegionCodes: ['cl'], language: 'es', region: 'cl' };
+    if (origen && origen.lat != null) {
+      pet.origin = { lat: Number(origen.lat), lng: Number(origen.lng) };
+      pet.locationBias = { center: pet.origin, radius: 40000 };
+    }
+    const { suggestions } = await AutocompleteSuggestion.fetchAutocompleteSuggestions(pet);
+    return (suggestions || []).map(s => s.placePrediction).filter(Boolean).slice(0, 5).map(p => ({
+      principal: p.mainText ? p.mainText.toString() : p.text.toString(),
+      secundario: p.secondaryText ? p.secondaryText.toString().replace(/, Chile$/, '') : '',
+      elegir: async () => {
+        const place = p.toPlace();
+        await place.fetchFields({ fields: ['formattedAddress', 'location'] });
+        sesion.token = null;   // la sesión termina al elegir
+        return { direccion: String(place.formattedAddress || p.text.toString()).replace(/, Chile$/, ''),
+                 lat: place.location.lat(), lng: place.location.lng(), aproximada: false };
+      },
+    }));
+  }
+  async function geocodificarGoogle(peticion) {
+    const { Geocoder } = await google.maps.importLibrary('geocoding');
+    const { results } = await new Geocoder().geocode(peticion);
+    const r = results && results[0];
+    return r ? { direccion: r.formatted_address.replace(/, Chile$/, ''), lat: r.geometry.location.lat(), lng: r.geometry.location.lng(), aproximada: false } : null;
+  }
+
+  // Texto → { direccion, lat, lng, aproximada } (para cuando escribieron sin elegir una sugerencia)
+  async function buscarDireccion(texto, origen) {
     try {
-      const { Geocoder } = await google.maps.importLibrary('geocoding');
-      const { results } = await new Geocoder().geocode(peticion);
-      const r = results && results[0];
-      if (!r) return null;
-      return { direccion: r.formatted_address.replace(/, Chile$/, ''), lat: r.geometry.location.lat(), lng: r.geometry.location.lng() };
+      if (usaGoogle()) return await geocodificarGoogle({ address: texto, componentRestrictions: { country: 'CL' } });
+      if (proveedor === 'osm') { const s = await sugerenciasOSM(texto, origen); return s.length ? await s[0].elegir() : null; }
+    } catch (e) { /* sin resultado */ }
+    return null;
+  }
+  async function direccionDePunto(punto) {
+    try {
+      if (usaGoogle()) return await geocodificarGoogle({ location: punto });
+      const f = (await photon(`/reverse?lat=${punto.lat}&lon=${punto.lng}`))[0];
+      return f ? desdePhoton(f, '') : null;
     } catch (e) { return null; }
   }
-  // Texto → { direccion, lat, lng } (para cuando escribieron sin elegir una sugerencia)
-  const buscarDireccion = (texto) => geocodificar({ address: texto, componentRestrictions: { country: 'CL' } });
 
   // Ubicación actual del celular → { direccion, lat, lng }. Lanza Error con un texto claro si no se puede.
   function miUbicacion() {
@@ -82,8 +163,9 @@
       if (!navigator.geolocation) return reject(new Error('Tu navegador no permite compartir la ubicación. Escribe la dirección.'));
       navigator.geolocation.getCurrentPosition(async (pos) => {
         const punto = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        const r = await geocodificar({ location: punto });
-        resolve({ direccion: r ? r.direccion : '', ...punto });
+        const r = await direccionDePunto(punto);
+        // Con el GPS la ubicación es exacta aunque la dirección encontrada sea solo la calle
+        resolve({ direccion: r ? r.direccion : '', ...punto, aproximada: false, sinNumero: !!(r && r.aproximada) });
       }, (err) => reject(new Error(err && err.code === 1
         ? 'No diste permiso para usar tu ubicación. Puedes escribir la dirección.'
         : 'No pudimos obtener tu ubicación. Escribe la dirección.')),
@@ -109,8 +191,8 @@
     document.head.appendChild(st);
   }
 
-  // Conecta un <input> con sugerencias de Google. opciones:
-  //   origen: { lat, lng } para ordenar por cercanía · onElegir({ direccion, lat, lng }) · onCambio() al editar a mano
+  // Conecta un <input> con sugerencias. opciones:
+  //   origen: { lat, lng } para ordenar por cercanía · onElegir({ direccion, lat, lng, aproximada }) · onCambio() al editar a mano
   function conectar(input, { origen = null, onElegir = () => {}, onCambio = () => {} } = {}) {
     if (!input || input.dataset.mapsConectado) return;
     input.dataset.mapsConectado = '1';
@@ -125,46 +207,34 @@
     wrap.appendChild(lista);
     input.setAttribute('autocomplete', 'off');
 
-    let token = null, timer = null, pedido = 0, sugerencias = [], activo = -1;
+    const sesion = { token: null };
+    let timer = null, pedido = 0, sugerencias = [], activo = -1;
     const cerrar = () => { lista.hidden = true; activo = -1; };
+    const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
     async function pedir(texto) {
       if (!disponible() || texto.length < 3) { cerrar(); return; }
       const n = ++pedido;
       try {
-        const { AutocompleteSuggestion, AutocompleteSessionToken } = await google.maps.importLibrary('places');
-        if (!token) token = new AutocompleteSessionToken();
-        const pet = { input: texto, sessionToken: token, includedRegionCodes: ['cl'], language: 'es', region: 'cl' };
-        if (origen && origen.lat != null) {
-          pet.origin = { lat: Number(origen.lat), lng: Number(origen.lng) };
-          pet.locationBias = { center: pet.origin, radius: 40000 };
-        }
-        const { suggestions } = await AutocompleteSuggestion.fetchAutocompleteSuggestions(pet);
+        const lst = usaGoogle() ? await sugerenciasGoogle(texto, origen, sesion) : await sugerenciasOSM(texto, origen);
         if (n !== pedido) return;
-        sugerencias = (suggestions || []).map(s => s.placePrediction).filter(Boolean).slice(0, 5);
+        sugerencias = lst;
         if (!sugerencias.length) { cerrar(); return; }
-        const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
-        lista.innerHTML = sugerencias.map((p, i) => {
-          const principal = p.mainText ? p.mainText.toString() : p.text.toString();
-          const secundario = p.secondaryText ? p.secondaryText.toString().replace(/, Chile$/, '') : '';
-          return `<li data-i="${i}">${esc(principal)}${secundario ? `<small>${esc(secundario)}</small>` : ''}</li>`;
-        }).join('') + '<li class="maps-dir-pie">con Google</li>';
+        lista.innerHTML = sugerencias.map((s, i) => `<li data-i="${i}">${esc(s.principal)}${s.secundario ? `<small>${esc(s.secundario)}</small>` : ''}</li>`).join('')
+          + `<li class="maps-dir-pie">${usaGoogle() ? 'con Google' : '© OpenStreetMap'}</li>`;
         activo = -1;
         lista.hidden = false;
       } catch (e) { cerrar(); }
     }
 
     async function elegir(i) {
-      const p = sugerencias[i];
+      const s = sugerencias[i];
       cerrar();
-      if (!p) return;
+      if (!s) return;
       try {
-        const place = p.toPlace();
-        await place.fetchFields({ fields: ['formattedAddress', 'location'] });
-        token = null;   // la sesión termina al elegir
-        const direccion = String(place.formattedAddress || p.text.toString()).replace(/, Chile$/, '');
-        input.value = direccion;
-        onElegir({ direccion, lat: place.location.lat(), lng: place.location.lng() });
+        const u = await s.elegir();
+        input.value = u.direccion;
+        onElegir(u);
       } catch (e) { /* sin detalle: queda como texto escrito */ }
     }
 
@@ -172,7 +242,7 @@
       onCambio();
       clearTimeout(timer);
       const texto = input.value.trim();
-      timer = setTimeout(() => pedir(texto), 280);
+      timer = setTimeout(() => pedir(texto), usaGoogle() ? 280 : 450);
     });
     input.addEventListener('keydown', (e) => {
       if (lista.hidden) return;
@@ -194,5 +264,5 @@
     input.addEventListener('blur', () => setTimeout(cerrar, 300));
   }
 
-  window.MapsDireccion = { cargar, disponible, conectar, miUbicacion, buscarDireccion, distanciaKm, recargoDistancia, textoRecargo, linkComoLlegar, fmtKm };
+  window.MapsDireccion = { cargar, disponible, usaGoogle, conectar, miUbicacion, buscarDireccion, distanciaKm, recargoDistancia, textoRecargo, linkComoLlegar, fmtKm };
 })();
