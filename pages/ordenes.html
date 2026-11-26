@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Órdenes de trabajo · Autonova</title>
-  <link rel="stylesheet" href="../assets/css/style.css" />
+  <link rel="stylesheet" href="../assets/css/style.css?v=82" />
 </head>
 <body>
   <div class="app-shell">
@@ -114,7 +114,7 @@
 
           <h3 style="margin-top:1.25rem;">📊 Avance del trabajo</h3>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.5rem;">
-            Toca cada tarea cuando esté hecha: puedes dejar un comentario y fotos (aparecen también en «Trabajos realizados / avances»).
+            Toca cada tarea cuando esté hecha: puedes dejar un comentario y fotos, que el cliente ve en su informe.
             El % se pondera con las horas de cada trabajo. Los repuestos se marcan pedido / recibido / instalado y no suman al avance.
           </p>
           <div id="avance-ot"></div>
@@ -214,6 +214,8 @@
             <tbody id="abonos-body"></tbody>
           </table>
 
+          <!-- Solo en las OT anteriores al avance por categoría (ordenes.avances_libres, sql/v82) -->
+          <div id="avances-seccion">
           <h3 style="margin-top:1.5rem;">Trabajos realizados / avances</h3>
           <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.5rem;">
             Registra cada "qué se hizo" con su foto. Cada avance se muestra por separado en el informe del cliente.
@@ -238,6 +240,7 @@
           </div>
           <p class="error-message" id="avance-error"></p>
           <div id="avances-lista"></div>
+          </div>
 
           <h3 style="margin-top:1.5rem;">Horas de taller registradas</h3>
           <div class="form-row" style="align-items:end;">
@@ -278,6 +281,16 @@
             </div>
           </div>
           <p id="mant-estado" style="color:var(--color-text-muted); font-size:0.85rem;"></p>
+
+          <h3 style="margin-top:1.5rem;">📝 Observación general</h3>
+          <p style="color:var(--color-text-muted); font-size:0.85rem; margin:0 0 0.4rem;">
+            Lo que el cliente debe saber al cierre (recomendaciones, algo a revisar más adelante…). Aparece en el informe y el PDF de la OT.
+          </p>
+          <textarea id="detalle-observacion" rows="3" placeholder="Ej: Se recomienda cambiar neumáticos traseros en los próximos 5.000 km."></textarea>
+          <div style="display:flex; gap:0.5rem; align-items:center; margin-top:0.5rem;">
+            <button type="button" id="guardar-observacion-btn" class="btn-secondary">Guardar observación</button>
+            <span id="observacion-estado" style="font-size:0.8rem; color:var(--color-text-muted);"></span>
+          </div>
         </div>
 
         <!-- Listado -->
@@ -784,6 +797,10 @@
       avEdit = null; avEnvio = null;
       await cargarChecksOT();
       renderAvanceOT();
+      // OT nuevas (v82): sin «Trabajos realizados / avances»; todo va en el avance por categoría + observación general
+      document.getElementById('avances-seccion').hidden = o.avances_libres === false;
+      document.getElementById('detalle-observacion').value = o.observacion_general || '';
+      document.getElementById('observacion-estado').textContent = '';
       cargarEstadoMantencion();
       await cargarAbonos();
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1136,6 +1153,23 @@
       renderAvanceOT();
     }
 
+    // ---------- 📝 Observación general (al final de la OT, sql/v82) ----------
+    document.getElementById('guardar-observacion-btn').addEventListener('click', async () => {
+      if (!ordenActual) return;
+      const estado = document.getElementById('observacion-estado');
+      const texto = document.getElementById('detalle-observacion').value.trim() || null;
+      const { error } = await supabaseClient.from('ordenes').update({ observacion_general: texto }).eq('id', ordenActual.id);
+      if (error) {
+        estado.style.color = 'var(--color-danger)';
+        estado.textContent = /observacion_general/.test(error.message || '')
+          ? 'Falta ejecutar sql/actualizacion-v82-items-por-categoria.sql en el SQL Editor de Supabase.' : 'Error: ' + error.message;
+        return;
+      }
+      ordenActual.observacion_general = texto;
+      estado.style.color = '#1b6e3c';
+      estado.textContent = '✓ Guardada';
+    });
+
     (function wireAvanceOT() {
       const cont = document.getElementById('avance-ot');
       const abrir = (el) => {
@@ -1458,19 +1492,49 @@
     }
 
     // Líneas de la OT: se pueden corregir igual que en cotizaciones y diagnósticos (se guardan al salir de la casilla)
+    // Agrupadas por categoría, en el orden del Catálogo (sql/v82)
+    const ctxCategoriasOT = () => ({ trabajos: trabajosCache, categorias: categoriasCache });
+    function selectCategoriaLineaOT(i, idx) {
+      const actual = (categoriaDeLinea(i, ctxCategoriasOT()) || {}).key || '';
+      const cats = categoriasCache.slice().sort((a, b) => (Number(a.orden) || 0) - (Number(b.orden) || 0) || String(a.nombre).localeCompare(String(b.nombre), 'es'));
+      return `<select class="sel-cat-linea" data-idx="${idx}" title="Categoría de esta línea">
+        <option value="">Sin categoría</option>
+        ${cats.map(c => `<option value="${c.id}"${c.id === actual ? ' selected' : ''}>${htmlSeguro(iconoCategoriaServicio(c.nombre) + ' ' + c.nombre)}</option>`).join('')}
+      </select>`;
+    }
     function renderItemsDetalle() {
+      const ordenadas = ordenarLineasPorCategoria((ordenActual.orden_items || []).slice().sort((a, b) => (Number(a.orden) || 0) - (Number(b.orden) || 0)), ctxCategoriasOT());
+      if (ordenActual.orden_items) ordenActual.orden_items.splice(0, ordenActual.orden_items.length, ...ordenadas);
       const items = ordenActual.orden_items || [];
+      const grupos = agruparLineasPorCategoria(items, ctxCategoriasOT());
       const tbody = document.getElementById('items-body');
-      tbody.innerHTML = items.length ? items.map((i, idx) => `
+      const fila = (i, idx) => `
         <tr>
-          <td>${badgeItemDe(i)}</td>
+          <td>${badgeItemDe(i)}${selectCategoriaLineaOT(i, idx)}</td>
           <td><input type="text" class="cell-desc" data-idx="${idx}" value="${htmlSeguro(i.descripcion || '')}" style="min-width:150px;" /></td>
           ${celdasHorasCantidadEditor(i, idx)}
           <td><input type="number" class="cell-precio" data-idx="${idx}" value="${i.precio_unitario}" min="0" step="1" />${lineaVista(i).porHora ? '<small style="color:var(--color-text-muted);">por hora</small>' : ''}</td>
           <td class="cell-total" data-idx="${idx}">${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td>
           <td><button type="button" class="btn-danger quitar-item-btn" data-id="${i.id}" style="padding:0.2rem 0.5rem;">✕</button></td>
-        </tr>`).join('')
+        </tr>`;
+      tbody.innerHTML = items.length
+        ? grupos.map(g => (variasCategorias(grupos) ? `<tr class="fila-categoria"><td colspan="7">${g.icono} ${htmlSeguro(g.nombre)}<span class="cat-subtotal">${fmtMoneda(g.subtotal)}</span></td></tr>` : '')
+            + g.lineas.map(l => fila(l.item, l.idx)).join('')).join('')
         : '<tr><td colspan="7">Sin ítems.</td></tr>';
+
+      // Cambiar una línea de categoría: se guarda al tiro y se reordena (también el avance)
+      tbody.querySelectorAll('.sel-cat-linea').forEach(sel => sel.addEventListener('change', async () => {
+        const i = items[sel.dataset.idx];
+        const { error } = await supabaseClient.from('orden_items').update({ categoria_id: sel.value || null }).eq('id', i.id);
+        if (error) {
+          mostrarToast(/categoria_id/.test(error.message || '') ? 'Falta ejecutar sql/actualizacion-v82-items-por-categoria.sql en Supabase.' : 'No se pudo cambiar: ' + error.message, 'error', 9000);
+          renderItemsDetalle();
+          return;
+        }
+        i.categoria_id = sel.value || null;
+        renderItemsDetalle();
+        if (!avEdit) renderAvanceOT();
+      }));
 
       tbody.querySelectorAll('.quitar-item-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -1758,7 +1822,7 @@
     // Líneas que entrega el editor de ítems: se guardan en la OT; un repuesto del inventario descuenta su stock
     async function agregarLineasOT(lineas, { repuesto, cantidad } = {}) {
       const base = (ordenActual.orden_items || []).length;
-      const filas = lineas.map((l, k) => ({ ...l, orden_id: ordenActual.id, orden: base + 1 + k }));
+      const filas = lineas.map((l, k) => ({ ...l, orden_id: ordenActual.id, orden: base + 1 + k }));   // traen su categoria_id (v82)
       const { error } = await insertarItems('orden_items', filas);
       if (error) { document.getElementById('item-error').textContent = `Error: ${error.message}`; return false; }
       if (repuesto) {
@@ -2040,7 +2104,12 @@
         ${o.pertenencias_declaradas ? `<p style="font-size:0.85rem;"><strong>Pertenencias declaradas:</strong> ${o.pertenencias_declaradas}</p>` : ''}
         <table style="width:100%; border-collapse:collapse;">
           <thead><tr style="border-bottom:1px solid #000;"><th style="text-align:left;padding:4px;">Descripción</th><th style="text-align:center;padding:4px;">Horas de trabajo</th><th style="text-align:center;padding:4px;">Cant.</th><th style="text-align:right;padding:4px;">P. unit.</th><th style="text-align:right;padding:4px;">Total</th></tr></thead>
-          <tbody>${items.map(i => `<tr style="border-bottom:1px solid #ccc;"><td style="padding:4px;">${badgeItemDe(i)}<div style="margin-top:2px;">${htmlSeguro(i.descripcion)}</div></td>${celdasLinea(i, 'padding:4px; ')}</tr>`).join('')}</tbody>
+          <tbody>${(() => {   // agrupadas por categoría (sql/v82)
+            const grupos = agruparLineasPorCategoria(items, ctxCategoriasOT());
+            return grupos.map(g => (variasCategorias(grupos)
+              ? `<tr style="background:#f1f3f6; border-top:2px solid #999;"><td colspan="4" style="padding:5px 4px; font-weight:bold;">${g.icono} ${htmlSeguro(g.nombre)}</td><td style="padding:5px 4px; text-align:right; font-weight:bold;">${fmtMoneda(g.subtotal)}</td></tr>` : '')
+              + g.lineas.map(({ item: i }) => `<tr style="border-bottom:1px solid #ccc;"><td style="padding:4px;">${badgeItemDe(i)}<div style="margin-top:2px;">${htmlSeguro(i.descripcion)}</div></td>${celdasLinea(i, 'padding:4px; ')}</tr>`).join('')).join('');
+          })()}</tbody>
         </table>
         <div style="margin-top:1rem; margin-left:auto; max-width:300px;">
           ${t.descuento > 0 ? `<div style="display:flex;justify-content:space-between;color:#666;"><span>Subtotal</span><span>${fmtMoneda(t.subtotal)}</span></div>
@@ -2065,6 +2134,8 @@
           <div style="margin:0.2rem 0; white-space:pre-wrap;">${(a.texto || '').includes('\n') ? '' : '• '}${htmlSeguro(a.texto || '')}${(a.texto || '').includes('\n') ? '\n' : ' '}<span style="color:#666;">(${fmtFecha(a.fecha)})</span></div>
           ${(a.fotos && a.fotos.length) ? `<div style="display:flex; flex-wrap:wrap; gap:0.4rem; margin:0.3rem 0 0.6rem;">${a.fotos.map(u => `<img src="${u}" style="width:110px; height:80px; object-fit:cover; border:1px solid #ccc; border-radius:4px;" />`).join('')}</div>` : ''}
         </div>`).join('')}` : ''}
+        ${o.observacion_general ? `
+        <div style="margin-top:1.25rem; padding:0.75rem 1rem; border-left:3px solid #000; background:#f6f6f6; white-space:pre-wrap;"><strong>Observación general:</strong>\n${htmlSeguro(o.observacion_general)}</div>` : ''}
         ${o.firma_cliente_url ? `
         <div style="margin-top:1.5rem;">
           <p style="font-size:0.85rem; margin:0 0 0.25rem;"><strong>Firma del cliente</strong> (recepción del vehículo, ${fmtFecha(o.firma_fecha)}):</p>
@@ -2119,6 +2190,7 @@
 
         ${o.diagnostico ? `<h3>Motivo de trabajo</h3><p>${o.diagnostico}</p>` : ''}
         ${o.garantia_especial ? `<h3>Garantía especial</h3><p>${o.garantia_especial}</p>` : ''}
+        ${o.observacion_general ? `<h3>Observación general</h3><p style="white-space:pre-wrap;">${htmlSeguro(o.observacion_general)}</p>` : ''}
 
         <h3>Checklist de recepción (inspección de ingreso)</h3>
         ${(o.checklist_recepcion && o.checklist_recepcion.length) ? `
@@ -2135,7 +2207,12 @@
         <h3>Ítems de la orden</h3>
         <table style="width:100%; border-collapse:collapse;">
           <thead><tr style="border-bottom:1px solid #000;"><th style="text-align:left;padding:4px;">Descripción</th><th style="text-align:center;padding:4px;">Horas de trabajo</th><th style="text-align:center;padding:4px;">Cant.</th><th style="text-align:right;padding:4px;">P. unit.</th><th style="text-align:right;padding:4px;">Total</th></tr></thead>
-          <tbody>${items.map(i => `<tr style="border-bottom:1px solid #ccc;"><td style="padding:4px;">${badgeItemDe(i)}<div style="margin-top:2px;">${htmlSeguro(i.descripcion)}</div></td>${celdasLinea(i, 'padding:4px; ')}</tr>`).join('')}</tbody>
+          <tbody>${(() => {   // agrupadas por categoría (sql/v82)
+            const grupos = agruparLineasPorCategoria(items, ctxCategoriasOT());
+            return grupos.map(g => (variasCategorias(grupos)
+              ? `<tr style="background:#f1f3f6; border-top:2px solid #999;"><td colspan="4" style="padding:5px 4px; font-weight:bold;">${g.icono} ${htmlSeguro(g.nombre)}</td><td style="padding:5px 4px; text-align:right; font-weight:bold;">${fmtMoneda(g.subtotal)}</td></tr>` : '')
+              + g.lineas.map(({ item: i }) => `<tr style="border-bottom:1px solid #ccc;"><td style="padding:4px;">${badgeItemDe(i)}<div style="margin-top:2px;">${htmlSeguro(i.descripcion)}</div></td>${celdasLinea(i, 'padding:4px; ')}</tr>`).join('')).join('');
+          })()}</tbody>
         </table>
         <p style="text-align:right; margin-top:0.5rem;">
           ${t.descuento > 0 ? `Subtotal: ${fmtMoneda(t.subtotal)} · ${etiquetaDescuentoOT(o, t)}: -${fmtMoneda(t.descuento)} · ` : ''}Neto: ${fmtMoneda(t.neto)} · IVA: ${fmtMoneda(t.iva)} · Total: ${fmtMoneda(t.total)}
@@ -2358,7 +2435,7 @@
       });
       editorItems = crearEditorItems({
         contenedor: document.getElementById('editor-items'),
-        trabajos: trabajosCache, repuestos: repuestosCache,
+        trabajos: trabajosCache, repuestos: repuestosCache, categorias: categoriasCache,
         valorHora: () => config.valor_hora,
         conStock: true,   // la OT descuenta del inventario lo que usa
         onAgregar: agregarLineasOT,

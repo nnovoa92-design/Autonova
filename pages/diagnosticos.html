@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Diagnósticos · Autonova</title>
-  <link rel="stylesheet" href="../assets/css/style.css" />
+  <link rel="stylesheet" href="../assets/css/style.css?v=82" />
   <style>
     .h-card { border-bottom: 1px solid var(--color-border); padding-bottom: 0.6rem; margin-bottom: 0.6rem; }
     .h-fotos { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.4rem; }
@@ -201,7 +201,7 @@
   <script src="../assets/js/layout.js"></script>
   <script src="../assets/js/documentos.js"></script>
   <script>
-    let clientesCache = [], vehiculosCache = [], trabajosCache = [], repuestosCache = [];
+    let clientesCache = [], vehiculosCache = [], trabajosCache = [], repuestosCache = [], categoriasCache = [];
     let diagnosticosCache = [];
     let diagActual = null;          // { id, numero, esNuevo, cotizacion }
     let pruebasActuales = [];       // [{ item (nombre), nota (resultado), fotos }] -> columna diagnosticos.hallazgos
@@ -1426,16 +1426,18 @@
       if (!session) return;
       config = await getTallerConfig();
 
-      const [clientes, vehiculos, trabajos, repuestos] = await Promise.all([
+      const [clientes, vehiculos, trabajos, repuestos, categorias] = await Promise.all([
         supabaseClient.from('clientes').select('id, nombre, rut, telefono, email').eq('activo', true).order('nombre'),
         supabaseClient.from('vehiculos').select('*').eq('activo', true).order('patente'),
         supabaseClient.from('trabajos').select('*').eq('activo', true).order('nombre'),
         supabaseClient.from('repuestos').select('*').eq('activo', true).order('nombre'),
+        supabaseClient.from('categorias_trabajos').select('*'),
       ]);
       clientesCache = clientes.data || [];
       vehiculosCache = vehiculos.data || [];
       trabajosCache = trabajos.data || [];
       repuestosCache = repuestos.data || [];
+      categoriasCache = categorias.data || [];   // el buscador de trabajos sale agrupado por categoría (v82)
 
       selectorCliente = crearSelectorCliente({
         contenedor: document.getElementById('selector-cliente'), clientes: clientesCache, vehiculos: vehiculosCache,
@@ -1443,7 +1445,7 @@
       });
       editorItems = crearEditorItems({
         contenedor: document.getElementById('editor-items'),
-        trabajos: trabajosCache, repuestos: repuestosCache,
+        trabajos: trabajosCache, repuestos: repuestosCache, categorias: categoriasCache,
         valorHora: () => config.valor_hora,
         onAgregar: agregarLineas,
       });

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Catálogo de trabajos · Autonova</title>
-  <link rel="stylesheet" href="../assets/css/style.css" />
+  <link rel="stylesheet" href="../assets/css/style.css?v=82" />
 </head>
 <body>
   <div class="app-shell">
@@ -238,12 +238,37 @@
       document.getElementById('filter-categoria').innerHTML = `<option value="">Todas las categorías</option>${opts}`;
     }
 
+    // Categorías en su orden: así salen en cotizaciones, OT y el buscador de trabajos (sql/v82). Se reordenan con ↑ ↓.
     function renderCategorias() {
       const list = document.getElementById('categorias-list');
-      list.innerHTML = categoriasCache.length
-        ? categoriasCache.map(c => `<span class="badge" style="margin:0.15rem;">${c.nombre}</span>`).join('')
-        : '<p style="color: var(--color-text-muted); margin:0.5rem 0 0;">No hay categorías cargadas.</p>';
+      if (!categoriasCache.length) {
+        list.innerHTML = '<p style="color: var(--color-text-muted); margin:0.5rem 0 0;">No hay categorías cargadas.</p>';
+        return;
+      }
+      list.innerHTML = `<p style="color:var(--color-text-muted); font-size:0.8rem; margin:0.25rem 0 0.4rem;">Orden en que salen en cotizaciones, OT y el buscador de trabajos. Usa ↑ ↓ para cambiarlo.</p>
+        <div style="display:flex; flex-wrap:wrap; gap:0.35rem;">${categoriasCache.map((c, k) => `
+          <span class="badge" style="display:inline-flex; align-items:center; gap:0.25rem; padding:0.25rem 0.4rem; font-size:0.8rem;">
+            <span style="color:var(--color-text-muted);">${k + 1}.</span> ${iconoCategoriaServicio(c.nombre)} ${htmlSeguro(c.nombre)}
+            <small style="color:var(--color-text-muted);">(${trabajosCache.filter(t => t.categoria_id === c.id).length})</small>
+            <button type="button" class="btn-secondary btn-mini cat-mover" data-k="${k}" data-d="-1" title="Subir"${k === 0 ? ' disabled' : ''} style="padding:0 0.35rem;">↑</button>
+            <button type="button" class="btn-secondary btn-mini cat-mover" data-k="${k}" data-d="1" title="Bajar"${k === categoriasCache.length - 1 ? ' disabled' : ''} style="padding:0 0.35rem;">↓</button>
+          </span>`).join('')}</div>`;
     }
+    document.getElementById('categorias-list').addEventListener('click', async (e) => {
+      const b = e.target.closest('.cat-mover');
+      if (!b) return;
+      const k = Number(b.dataset.k), j = k + Number(b.dataset.d);
+      if (j < 0 || j >= categoriasCache.length) return;
+      [categoriasCache[k], categoriasCache[j]] = [categoriasCache[j], categoriasCache[k]];
+      // Se guarda el orden completo (1, 2, 3…), así no quedan empates
+      const cambios = categoriasCache.map((c, n) => ({ c, n: n + 1 })).filter(x => Number(x.c.orden) !== x.n);
+      cambios.forEach(x => { x.c.orden = x.n; });
+      renderCategorias();
+      applyFilter();
+      const res = await Promise.all(cambios.map(x => supabaseClient.from('categorias_trabajos').update({ orden: x.n }).eq('id', x.c.id)));
+      const err = res.find(r => r.error);
+      if (err) { mostrarToast('No se pudo guardar el orden: ' + err.error.message, 'error', 9000); await loadCategorias(); }
+    });
 
     async function loadCategorias() {
       const { data } = await supabaseClient.from('categorias_trabajos').select('*').order('orden');
@@ -317,15 +342,30 @@
         tbody.innerHTML = '<tr><td colspan="5">No se encontraron trabajos.</td></tr>';
         return;
       }
+      // Agrupados por categoría (en el orden del Catálogo); con texto buscado, por parecido
+      const buscando = !!document.getElementById('buscar-trabajo').value.trim() && !modoRevision;
+      const posCat = (t) => { const k = categoriasCache.findIndex(c => c.id === t.categoria_id); return k < 0 ? 1e6 : k; };
+      if (!buscando) trabajos = trabajos.slice().sort((a, b) => posCat(a) - posCat(b) || String(a.nombre).localeCompare(String(b.nombre), 'es'));
+      let catAnterior;
       tbody.innerHTML = trabajos.map(t0 => {
         const t = valorEnRevision(t0);
         const categoria = categoriasCache.find(c => c.id === t.categoria_id);
+        let cab = '';
+        if (!buscando && (t.categoria_id || '') !== catAnterior) {
+          catAnterior = t.categoria_id || '';
+          const n = trabajos.filter(x => (x.categoria_id || '') === catAnterior).length;
+          cab = `<tr class="fila-categoria"><td colspan="5">${categoria ? `${iconoCategoriaServicio(categoria.nombre)} ${htmlSeguro(categoria.nombre)}` : 'Sin categoría'} <span style="font-weight:400; color:var(--color-text-muted);">· ${n} trabajo${n === 1 ? '' : 's'}</span></td></tr>`;
+        }
         const ops = opcionesDeTrabajo(t);
         const fijo = (t.precio_fijo != null || ops.length) ? '' : ' <span class="badge">calculado</span>';
         const avisos = alertasTrabajo(t).map(a => `<br><small style="color:#b45309;">⚠ ${a}</small>`).join('');
         const listaOps = ops.length
           ? `<br><small style="color:var(--color-text-muted);">Opciones: ${ops.map(o => `${htmlSeguro(o.nombre)} (${fmtMoneda(o.precio)})`).join(' · ')}</small>` : '';
-        const nombre = `${t.nombre}${t.descripcion ? `<br><small style="color:var(--color-text-muted);">${t.descripcion}</small>` : ''}${listaOps}${avisos}`;
+        const nTareas = Array.isArray(t.tareas) ? t.tareas.length : 0;
+        const nombre = `${t.nombre}${nTareas ? ` <span class="badge badge-gray" title="Tareas para el avance de la OT">${nTareas} tareas</span>` : ''}${t.descripcion ? `<br><small style="color:var(--color-text-muted);">${t.descripcion}</small>` : ''}${listaOps}${avisos}`;
+        return cab + filaTrabajo(t, categoria, ops, fijo, nombre);
+      }).join('');
+      function filaTrabajo(t, categoria, ops, fijo, nombre) {
         if (modoRevision && ops.length) {
           return `
           <tr data-id="${t.id}">
@@ -361,7 +401,7 @@
             <button type="button" class="btn-danger delete-btn" data-id="${t.id}">Desactivar</button>
           </td>
         </tr>`;
-      }).join('');
+      }
 
       if (modoRevision) {
         const base = (id) => trabajosCache.find(x => x.id === id);
@@ -463,6 +503,7 @@
         return;
       }
       trabajosCache = data;
+      renderCategorias();   // con cuántos trabajos tiene cada categoría
       applyFilter();
     }
 

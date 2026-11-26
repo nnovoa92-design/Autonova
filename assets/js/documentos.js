@@ -55,7 +55,7 @@ const etiquetaRepuestoInventario = (r) => `${r.sku ? r.sku + ' · ' : ''}${r.nom
 //   onAgregar(lineas, info): la pantalla agrega las líneas a su lista o las guarda. info = { trabajo } o
 //     { repuesto, cantidad }. Si devuelve false, el formulario no se limpia.
 // Devuelve { recargar() } para volver a llenar las listas cuando cambia el catálogo.
-function crearEditorItems({ contenedor, trabajos, repuestos, valorHora, conStock = false, onAgregar }) {
+function crearEditorItems({ contenedor, trabajos, repuestos, valorHora, conStock = false, onAgregar, categorias = null }) {
   contenedor.innerHTML = `
     <div class="form-row editor-items" style="align-items:end;">
       <div class="form-group">
@@ -104,6 +104,10 @@ function crearEditorItems({ contenedor, trabajos, repuestos, valorHora, conStock
           <option value="insumo">Insumo</option>
         </select>
       </div>
+      <div class="form-group" id="grupo-categoria-linea" style="display:none; max-width:200px;">
+        <label for="item-categoria">Categoría</label>
+        <select id="item-categoria"></select>
+      </div>
       <div class="form-group" style="max-width:110px;">
         <label for="item-cantidad" id="item-cantidad-label">Cantidad</label>
         <input type="number" id="item-cantidad" value="1" min="0" step="0.25" />
@@ -139,7 +143,20 @@ function crearEditorItems({ contenedor, trabajos, repuestos, valorHora, conStock
     selT.innerHTML = trabajos.map(t => `<option value="${t.id}">${htmlSeguro(etiquetaTrabajoCatalogo(t))}</option>`).join('');
     selR.innerHTML = repuestos.map(r => `<option value="${r.id}">${htmlSeguro(etiquetaRepuestoInventario(r))}</option>`).join('');
     selT.value = vT; selR.value = vR;
+    // Categoría para repuestos y líneas libres (los trabajos del catálogo traen la suya)
+    if (categorias) {
+      const selC = $('item-categoria'), vC = selC.value;
+      selC.innerHTML = '<option value="">Sin categoría (Repuestos e insumos / Otros)</option>'
+        + categoriasOrdenadas().map(c => `<option value="${c.id}">${htmlSeguro(iconoCategoriaServicio(c.nombre) + ' ' + c.nombre)}</option>`).join('');
+      selC.value = vC;
+    }
   }
+  const categoriasOrdenadas = () => (categorias || []).slice().sort((a, b) => (Number(a.orden) || 0) - (Number(b.orden) || 0) || String(a.nombre).localeCompare(String(b.nombre), 'es'));
+  // Grupo (categoría) de un trabajo para la lista de búsqueda
+  const grupoTrabajo = (t) => {
+    const c = t && t.categoria_id && categorias ? categorias.find(x => x.id === t.categoria_id) : null;
+    return c ? { key: c.id, nombre: `${iconoCategoriaServicio(c.nombre)} ${c.nombre}`, orden: Number(c.orden) || 0 } : { key: '_', nombre: 'Sin categoría', orden: 1e6 };
+  };
   function elegir(tipo, id) {
     if (tipo === 'trabajo') {
       $('item-trabajo').value = id;
@@ -162,6 +179,7 @@ function crearEditorItems({ contenedor, trabajos, repuestos, valorHora, conStock
     $('grupo-pct').style.display = tipo === 'repuesto' ? 'block' : 'none';
     $('grupo-descripcion').style.display = libre ? 'block' : 'none';
     $('grupo-tipo-otro').style.display = tipo === 'otro' ? 'block' : 'none';
+    $('grupo-categoria-linea').style.display = categorias && tipo !== 'mano_obra' ? 'block' : 'none';
     // Un trabajo del catálogo calcula su precio solo: la cantidad es el N° de veces
     $('grupo-precio').style.display = tipo === 'mano_obra' ? 'none' : 'block';
     $('item-cantidad-label').textContent = tipo === 'mano_obra' ? 'Veces' : 'Cantidad';
@@ -232,11 +250,15 @@ function crearEditorItems({ contenedor, trabajos, repuestos, valorHora, conStock
       const horasPorTrabajo = (opcion || t.precio_fijo != null) ? null : Math.max(0, Number($('item-horas').value) || 0);
       const nombre = (opcion ? `${t.nombre} — ${opcion.nombre}` : t.nombre) + (n > 1 ? ` (x${n})` : '');
       // cantidad × precio_unitario = total; horas / por_hora detallan la mano de obra para el cliente
-      lineas = [{ tipo: 'mano_obra', trabajo_id: t.id, repuesto_id: null, tipo_otro: null, descripcion: nombre, ...datosManoObra(t, n, vh(), { opcion, horasPorTrabajo }) }];
+      // La línea y sus insumos quedan en la categoría del trabajo (v82)
+      const cat = t.categoria_id || null;
+      lineas = [{ tipo: 'mano_obra', trabajo_id: t.id, repuesto_id: null, tipo_otro: null, descripcion: nombre, categoria_id: cat, ...datosManoObra(t, n, vh(), { opcion, horasPorTrabajo }) }];
       (t.insumos || []).forEach(ins => {
         const m = buscarEnInventario(repuestos, ins.descripcion);
-        lineas.push({ tipo: ins.categoria || 'otro', trabajo_id: null, repuesto_id: m.repuesto_id, tipo_otro: null, descripcion: ins.descripcion, cantidad: n, precio_unitario: m.precio });
+        lineas.push({ tipo: ins.categoria || 'otro', trabajo_id: null, repuesto_id: m.repuesto_id, tipo_otro: null, descripcion: ins.descripcion, cantidad: n, precio_unitario: m.precio, categoria_id: cat });
       });
+      // El repuesto que se agregue después se sugiere en esta misma categoría
+      if (categorias && cat) $('item-categoria').value = cat;
       info = { trabajo: t };
     } else if (tipo === 'repuesto') {
       const r = repuestoElegido();
@@ -248,7 +270,7 @@ function crearEditorItems({ contenedor, trabajos, repuestos, valorHora, conStock
         error(`Stock insuficiente de «${r.nombre}» (disponible: ${fmtNumItem(r.stock_actual || 0)}).`);
         return;
       }
-      lineas = [{ tipo: 'repuesto', trabajo_id: null, repuesto_id: r.id, tipo_otro: null, descripcion: r.nombre + (pct < 100 ? ` (${pct}% usado)` : ''), cantidad, precio_unitario: Number($('item-precio').value) || 0 }];
+      lineas = [{ tipo: 'repuesto', trabajo_id: null, repuesto_id: r.id, tipo_otro: null, descripcion: r.nombre + (pct < 100 ? ` (${pct}% usado)` : ''), cantidad, precio_unitario: Number($('item-precio').value) || 0, categoria_id: (categorias && $('item-categoria').value) || null }];
       info = { repuesto: r, cantidad };
     } else {
       const descripcion = $('item-descripcion').value.trim();
@@ -258,6 +280,7 @@ function crearEditorItems({ contenedor, trabajos, repuestos, valorHora, conStock
         tipo_otro: tipo === 'otro' ? ($('item-tipo-otro').value || 'otro') : null,
         cantidad: Number($('item-cantidad').value) || 0,
         precio_unitario: Number($('item-precio').value) || 0,
+        categoria_id: (categorias && $('item-categoria').value) || null,
       }];
     }
     const boton = $('agregar-item-btn');
@@ -334,7 +357,8 @@ function crearEditorItems({ contenedor, trabajos, repuestos, valorHora, conStock
   $('item-descripcion').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); agregar(); } });
 
   poblar();
-  setupCombobox('trabajo-buscar', 'item-trabajo', 'trabajo-lista', trabajos, etiquetaTrabajoCatalogo);
+  // Lista de trabajos agrupada por categoría, en el orden del Catálogo (sql/v82)
+  setupCombobox('trabajo-buscar', 'item-trabajo', 'trabajo-lista', trabajos, etiquetaTrabajoCatalogo, categorias ? { grupo: grupoTrabajo, limite: 60 } : {});
   setupCombobox('repuesto-buscar', 'item-repuesto', 'repuesto-lista', repuestos, etiquetaRepuestoInventario);
   enlazarCamposHoras(contenedor);
   onTipoChange();

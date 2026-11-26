@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Cotizaciones · Autonova</title>
-  <link rel="stylesheet" href="../assets/css/style.css" />
+  <link rel="stylesheet" href="../assets/css/style.css?v=82" />
 </head>
 <body>
   <div class="app-shell">
@@ -334,20 +334,30 @@
         renderTotales();
         return;
       }
-      tbody.innerHTML = itemsActuales.map((i, idx) => `
+      // Agrupadas por categoría y en el orden del Catálogo (así también se guardan, sql/v82)
+      itemsActuales = ordenarLineasPorCategoria(itemsActuales, ctxCategorias());
+      const grupos = agruparLineasPorCategoria(itemsActuales, ctxCategorias());
+      const fila = (i, idx) => `
         <tr>
-          <td>${badgeItemDe(i)}</td>
+          <td>${badgeItemDe(i)}${selectCategoriaLinea(i, idx)}</td>
           <td><input type="text" class="cell-desc" data-idx="${idx}" value="${(i.descripcion || '').replace(/"/g, '&quot;')}" style="min-width:150px;" /></td>
           ${celdasHorasCantidadEditor(i, idx)}
           <td><input type="number" class="cell-precio" data-idx="${idx}" value="${i.precio_unitario}" min="0" step="1" />${lineaVista(i).porHora ? '<small style="color:var(--color-text-muted);">por hora</small>' : ''}</td>
           <td class="cell-total" data-idx="${idx}">${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}</td>
           <td><button type="button" class="btn-danger quitar-btn" data-idx="${idx}" style="padding:0.2rem 0.5rem;">✕</button></td>
-        </tr>`).join('');
+        </tr>`;
+      tbody.innerHTML = grupos.map(g => (variasCategorias(grupos)
+        ? `<tr class="fila-categoria"><td colspan="7">${g.icono} ${htmlSeguro(g.nombre)}<span class="cat-subtotal" data-cat="${htmlSeguro(g.key)}">${fmtMoneda(g.subtotal)}</span></td></tr>` : '')
+        + g.lineas.map(l => fila(l.item, l.idx)).join('')).join('');
 
       const recalcRow = (idx) => {
         const i = itemsActuales[idx];
         const cell = tbody.querySelector(`.cell-total[data-idx="${idx}"]`);
         if (cell) cell.textContent = fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario));
+        agruparLineasPorCategoria(itemsActuales, ctxCategorias()).forEach(g => {
+          const s = [...tbody.querySelectorAll('.cat-subtotal')].find(x => x.dataset.cat === g.key);
+          if (s) s.textContent = fmtMoneda(g.subtotal);
+        });
         renderTotales();
       };
 
@@ -361,8 +371,22 @@
         inp.addEventListener('input', () => { itemsActuales[inp.dataset.idx].precio_unitario = Number(inp.value) || 0; recalcRow(inp.dataset.idx); }));
       tbody.querySelectorAll('.quitar-btn').forEach(btn =>
         btn.addEventListener('click', () => { itemsActuales.splice(Number(btn.dataset.idx), 1); renderItems(); }));
+      tbody.querySelectorAll('.sel-cat-linea').forEach(sel =>
+        sel.addEventListener('change', () => { itemsActuales[sel.dataset.idx].categoria_id = sel.value || null; renderItems(); }));
 
       renderTotales();
+    }
+
+    // ---------- Categorías de las líneas (sql/v82) ----------
+    const ctxCategorias = () => ({ trabajos: trabajosCache, categorias: categoriasCache });
+    const categoriasEnOrden = () => categoriasCache.slice().sort((a, b) => (Number(a.orden) || 0) - (Number(b.orden) || 0) || String(a.nombre).localeCompare(String(b.nombre), 'es'));
+    // Selector chico bajo el tipo de cada línea para cambiarla de categoría
+    function selectCategoriaLinea(i, idx) {
+      const actual = (categoriaDeLinea(i, ctxCategorias()) || {}).key || '';
+      return `<select class="sel-cat-linea" data-idx="${idx}" title="Categoría de esta línea">
+        <option value="">Sin categoría</option>
+        ${categoriasEnOrden().map(c => `<option value="${c.id}"${c.id === actual ? ' selected' : ''}>${htmlSeguro(iconoCategoriaServicio(c.nombre) + ' ' + c.nombre)}</option>`).join('')}
+      </select>`;
     }
 
     function renderTotales() {
@@ -647,7 +671,7 @@
         nombre: c.clientes.nombre,
         cotizacion: fmtNumero('COT', c.numero),
         vehiculo: c.vehiculos ? `su vehículo ${c.vehiculos.patente} (${[c.vehiculos.marca, c.vehiculos.modelo].filter(Boolean).join(' ')})` : 'su vehículo',
-        detalle: itemsEfectivos(c).map(i => `• ${i.descripcion}`).join('\n'),
+        detalle: detalleLineasPorCategoria(itemsEfectivos(c), ctxCategorias(), i => `• ${i.descripcion}`),
         total: fmtMoneda(t.total),
         iva: t.conIva ? 'IVA incluido' : 'sin IVA',
         validez: c.validez_dias,
@@ -663,7 +687,7 @@
         nombre: (c.clientes && c.clientes.nombre) || '',
         cotizacion: fmtNumero('COT', c.numero),
         vehiculo: c.vehiculos ? `${c.vehiculos.patente} (${[c.vehiculos.marca, c.vehiculos.modelo].filter(Boolean).join(' ')})` : 'su vehículo',
-        detalle: itemsEfectivos(c).map(i => `- ${i.descripcion}: ${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}`).join('\n'),
+        detalle: detalleLineasPorCategoria(itemsEfectivos(c), ctxCategorias(), i => `- ${i.descripcion}: ${fmtMoneda(Number(i.cantidad) * Number(i.precio_unitario))}`),
         total: fmtMoneda(t.total),
         iva: t.conIva ? 'IVA incluido' : 'sin IVA',
         validez: c.validez_dias,
@@ -732,11 +756,18 @@
             </tr>
           </thead>
           <tbody>
-            ${items.map(i => `
+            ${(() => {
+              const grupos = agruparLineasPorCategoria(items, ctxCategorias());
+              return grupos.map(g => (variasCategorias(grupos) ? `
+              <tr style="background:#f1f3f6; border-top:2px solid #999;">
+                <td colspan="4" style="padding:5px 4px; font-weight:bold;">${g.icono} ${htmlSeguro(g.nombre)}</td>
+                <td style="padding:5px 4px; text-align:right; font-weight:bold;">${fmtMoneda(g.subtotal)}</td>
+              </tr>` : '') + g.lineas.map(({ item: i }) => `
               <tr style="border-bottom:1px solid #ccc;">
                 <td style="padding:4px;">${badgeItemDe(i)}<div style="margin-top:2px;">${htmlSeguro(i.descripcion)}</div></td>
                 ${celdasLinea(i, 'padding:4px; ')}
-              </tr>`).join('')}
+              </tr>`).join('')).join('');
+            })()}
           </tbody>
         </table>
         <div style="margin-top:1.5rem; margin-left:auto; max-width:300px;">
@@ -790,7 +821,10 @@
       if (t.error || r.error) return;
       reemplazarEnSitio(trabajosCache, t.data);
       reemplazarEnSitio(repuestosCache, r.data);
+      const cats = await supabaseClient.from('categorias_trabajos').select('*');   // orden y nombres al día
+      if (!cats.error) reemplazarEnSitio(categoriasCache, cats.data);
       if (editorItems) editorItems.recargar();
+      if (document.getElementById('editor-card').style.display !== 'none' && itemsActuales.length) renderItems();
     }
 
     document.getElementById('nueva-btn').addEventListener('click', () => abrirEditor(null));
@@ -824,7 +858,7 @@
       selectorCliente = crearSelectorCliente({ contenedor: document.getElementById('selector-cliente'), clientes: clientesCache, vehiculos: vehiculosCache });
       editorItems = crearEditorItems({
         contenedor: document.getElementById('editor-items'),
-        trabajos: trabajosCache, repuestos: repuestosCache,
+        trabajos: trabajosCache, repuestos: repuestosCache, categorias: categoriasCache,
         valorHora: () => config.valor_hora,
         onAgregar: agregarLineas,
       });

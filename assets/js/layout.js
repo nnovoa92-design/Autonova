@@ -197,9 +197,63 @@ function celdasHorasCantidadEditor(item, idx) {
     <td><input type="number" class="cell-cant" data-idx="${idx}" value="${v.cantidad}" min="0" step="0.25" /></td>`;
 }
 
-// Campos de detalle (horas / por_hora) de una línea, para copiarlos al guardar o al pasar de un documento a otro.
+// Campos de detalle (horas / por_hora / categoría) de una línea, para copiarlos al guardar o al pasar de un documento a otro.
 function detalleItem(item) {
-  return { horas: item.horas ?? null, por_hora: item.por_hora ?? null };
+  return { horas: item.horas ?? null, por_hora: item.por_hora ?? null, categoria_id: item.categoria_id ?? null };
+}
+
+// ---------- Ítems agrupados por categoría (sql/v82) ----------
+// Ícono de una categoría de servicios según su nombre
+function iconoCategoriaServicio(nombre) {
+  const n = String(nombre || '').toLowerCase();
+  const reglas = [[/motor|culata|distribuci/, '🔧'], [/fren/, '🛑'], [/suspens|amortig/, '🪛'], [/direcci/, '🛞'],
+    [/el[eé]ctr|bater|luces/, '⚡'], [/a\/c|aire|clima/, '❄️'], [/manten|aceite|lubric|filtro/, '🛢️'],
+    [/embrag|transmis|caja|diferencial/, '⚙️'], [/escape/, '💨'], [/neum|rueda/, '🛞'], [/diagn|scanner/, '🔍'],
+    [/inspec|revisi/, '📋'], [/externo/, '🏭'], [/refriger|enfri/, '🌡️'], [/combust|inyec/, '⛽'], [/repuesto|insumo/, '📦']];
+  const r = reglas.find(([re]) => re.test(n));
+  return r ? r[1] : '🔩';
+}
+// Categoría de una línea: la guardada en la línea, la de su trabajo del catálogo, o la que trae el link público
+//   ({ key, nombre, orden } o null si no tiene)
+function categoriaDeLinea(i, { trabajos = [], categorias = [] } = {}) {
+  const id = i.categoria_id || (i.trabajo_id ? ((trabajos.find(t => t.id === i.trabajo_id) || {}).categoria_id || null) : null);
+  if (id) {
+    const c = categorias.find(x => x.id === id);
+    if (c) return { key: c.id, nombre: c.nombre, orden: Number(c.orden) || 0 };
+  }
+  if (i.categoria) return { key: 'n:' + i.categoria, nombre: i.categoria, orden: Number(i.categoria_orden) || 0 };
+  return null;
+}
+// Grupos en orden: [{ key, nombre, icono, orden, lineas: [{ item, idx }], subtotal }]. Las líneas sin categoría van
+// al final, en «Repuestos e insumos» u «Otros», según su tipo.
+function agruparLineasPorCategoria(items, ctx = {}) {
+  const grupos = new Map();
+  (items || []).forEach((item, idx) => {
+    let c = categoriaDeLinea(item, ctx);
+    if (!c) {
+      const sub = (item.tipo === 'otro' && item.tipo_otro) ? item.tipo_otro : item.tipo;
+      c = ['repuesto', 'insumo_vehiculo', 'insumo_taller', 'insumo'].includes(sub)
+        ? { key: '_rep', nombre: 'Repuestos e insumos', orden: 1e5 }
+        : { key: '_otros', nombre: 'Otros', orden: 1e6 };
+    }
+    if (!grupos.has(c.key)) grupos.set(c.key, { ...c, icono: iconoCategoriaServicio(c.nombre), lineas: [], subtotal: 0 });
+    const g = grupos.get(c.key);
+    g.lineas.push({ item, idx });
+    g.subtotal += (Number(item.cantidad) || 0) * (Number(item.precio_unitario) || 0);
+  });
+  return [...grupos.values()].sort((a, b) => a.orden - b.orden || a.nombre.localeCompare(b.nombre, 'es'));
+}
+// Las mismas líneas ordenadas por categoría (estable: dentro de cada categoría queda el orden en que se agregaron)
+function ordenarLineasPorCategoria(items, ctx = {}) {
+  return agruparLineasPorCategoria(items, ctx).flatMap(g => g.lineas.map(l => l.item));
+}
+// ¿Hay más de una categoría? (con una sola no vale la pena mostrar encabezados)
+const variasCategorias = (grupos) => grupos.length > 1;
+// Texto de las líneas agrupado (correo / WhatsApp): «🔧 MOTOR» y debajo sus líneas
+function detalleLineasPorCategoria(items, ctx, lineaFn) {
+  const grupos = agruparLineasPorCategoria(items, ctx);
+  if (!variasCategorias(grupos)) return grupos.flatMap(g => g.lineas.map(l => lineaFn(l.item))).join('\n');
+  return grupos.map(g => `${g.icono} ${g.nombre.toUpperCase()}\n${g.lineas.map(l => lineaFn(l.item)).join('\n')}`).join('\n\n');
 }
 
 // Datos de una línea de mano de obra del catálogo.
@@ -221,8 +275,12 @@ function datosManoObra(t, n, valorHora, { opcion = null, horasPorTrabajo = null 
 // horas y por_hora), las guarda igual sin ese detalle para no impedir el guardado.
 async function insertarItems(tabla, filas) {
   let r = await supabaseClient.from(tabla).insert(filas);
+  if (r.error && /categoria_id/i.test(`${r.error.message || ''}`)) {   // falta v82: sin la categoría de la línea
+    filas = filas.map(({ categoria_id, ...resto }) => resto);
+    r = await supabaseClient.from(tabla).insert(filas);
+  }
   if (r.error && /horas|por_hora|schema cache|PGRST204|42703/i.test(`${r.error.code || ''} ${r.error.message || ''}`)) {
-    const sinDetalle = filas.map(({ horas, por_hora, ...resto }) => resto);
+    const sinDetalle = filas.map(({ horas, por_hora, categoria_id, ...resto }) => resto);
     r = await supabaseClient.from(tabla).insert(sinDetalle);
   }
   return r;
@@ -475,7 +533,9 @@ function setupCombobox(inputId, selectId, listId, dataArray, labelFn, opciones =
   const select = document.getElementById(selectId);
   const list = document.getElementById(listId);
   if (!input || !select || !list) return;
-  const { limite = 30, extra = null } = opciones;
+  // grupo(item) → { key, nombre, orden }: la lista sale con encabezados por grupo (ej. categoría del catálogo);
+  // sin texto escrito muestra todo, para recorrerlo por categoría.
+  const { limite = 30, extra = null, grupo = null } = opciones;
   let resultados = [];
   let resaltado = -1;
 
@@ -496,15 +556,32 @@ function setupCombobox(inputId, selectId, listId, dataArray, labelFn, opciones =
   }
 
   function render(query) {
-    const encontrados = buscarCoincidencias(dataArray, query, labelFn, limite);
+    let encontrados = grupo && !String(query || '').trim()
+      ? dataArray.slice()
+      : buscarCoincidencias(dataArray, query, labelFn, limite);
+    if (grupo) {   // por grupo (en su orden); dentro de cada grupo se mantiene el orden de relevancia
+      const pos = new Map(encontrados.map((d, k) => [d, k]));
+      encontrados = encontrados.slice().sort((a, b) => {
+        const ga = grupo(a), gb = grupo(b);
+        return ga.orden - gb.orden || String(ga.nombre).localeCompare(String(gb.nombre), 'es') || pos.get(a) - pos.get(b);
+      });
+    }
     resultados = extra ? [...encontrados, extra] : encontrados;
     resaltado = -1;
     if (!resultados.length) {
       list.innerHTML = '<div class="combobox-vacio">Sin coincidencias</div>';
     } else {
+      let ultimo = null;
       list.innerHTML =
         (!encontrados.length ? '<div class="combobox-vacio">Sin coincidencias en la lista</div>' : '') +
-        resultados.map(d => `<div class="combobox-item${d === extra ? ' combobox-extra' : ''}">${htmlSeguro(d === extra ? extra.label : labelFn(d))}</div>`).join('');
+        resultados.map(d => {
+          let cab = '';
+          if (grupo && d !== extra) {
+            const g = grupo(d);
+            if (g.key !== ultimo) { cab = `<div class="combobox-grupo">${htmlSeguro(g.nombre)}</div>`; ultimo = g.key; }
+          }
+          return `${cab}<div class="combobox-item${d === extra ? ' combobox-extra' : ''}">${htmlSeguro(d === extra ? extra.label : labelFn(d))}</div>`;
+        }).join('');
       list.querySelectorAll('.combobox-item').forEach((el, i) =>
         el.addEventListener('mousedown', (e) => { e.preventDefault(); seleccionar(resultados[i]); }));
     }

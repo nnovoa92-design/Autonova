@@ -137,10 +137,18 @@
               </tr>
             </thead>
             <tbody>
-              ${(d.items || []).map((i, idx) => `<tr style="border-bottom:1px solid #eee; ${idx === d.items.length - 1 ? 'border-bottom:2px solid var(--color-primary);' : ''}">
+              ${(() => {   // agrupadas por categoría, en el orden del taller (sql/v82)
+                const grupos = agruparLineasPorCategoria(d.items || []);
+                const n = (d.items || []).length;
+                let k = 0;
+                return grupos.map(g => (variasCategorias(grupos) ? `<tr style="background:#f3f5f8;">
+                  <td colspan="4" style="padding:0.55rem 0.5rem; font-weight:700;">${g.icono} ${htmlSeguro(g.nombre)}</td>
+                  <td style="padding:0.55rem 0.5rem; text-align:right; font-weight:700;">${fmtMoneda(g.subtotal)}</td></tr>` : '')
+                  + g.lineas.map(({ item: i }) => `<tr style="border-bottom:1px solid #eee; ${++k === n ? 'border-bottom:2px solid var(--color-primary);' : ''}">
                 <td style="padding:0.6rem 0.5rem;">${badgeItemDe(i)}<div style="margin-top:0.25rem;">${htmlSeguro(i.descripcion)}</div></td>
                 ${celdasLinea(i, 'padding:0.6rem 0.5rem; ')}
-              </tr>`).join('')}
+              </tr>`).join('')).join('');
+              })()}
             </tbody>
           </table>
           </div>

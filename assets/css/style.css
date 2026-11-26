@@ -541,6 +541,11 @@ th {
 .combobox-item { padding: 0.5rem 0.7rem; font-size: 0.88rem; cursor: pointer; }
 .combobox-item:hover, .combobox-item.resaltado { background: var(--color-primary); color: #fff; }
 .combobox-vacio { padding: 0.5rem 0.7rem; font-size: 0.85rem; color: var(--color-text-muted); }
+.combobox-grupo { position: sticky; top: 0; padding: 0.35rem 0.7rem; font-size: 0.74rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--color-text-muted); background: #f3f5f8; border-top: 1px solid var(--color-border); }
+/* Líneas de cotización / OT agrupadas por categoría (sql/v82) */
+tr.fila-categoria td { background: #f3f5f8; font-weight: 700; font-size: 0.86rem; padding-top: 0.45rem; padding-bottom: 0.45rem; border-top: 2px solid var(--color-border); }
+tr.fila-categoria .cat-subtotal { float: right; font-weight: 600; color: var(--color-text-muted); }
+.sel-cat-linea { font-size: 0.74rem; padding: 0.1rem 0.2rem; margin-top: 0.25rem; max-width: 140px; }
 /* Campanita de novedades (barra superior) */
 .campanita {
   position: relative;

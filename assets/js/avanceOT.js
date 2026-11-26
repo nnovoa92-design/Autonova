@@ -25,6 +25,7 @@ const AvanceOT = (() => {
   const esRecargo = (i) => /^recargo por distancia/i.test(String(i.descripcion || ''));
 
   function iconoCategoria(nombre) {
+    if (typeof iconoCategoriaServicio === 'function') return iconoCategoriaServicio(nombre);   // el mismo de layout.js
     const n = String(nombre || '').toLowerCase();
     const reglas = [[/motor|culata|distribuci/, '🔧'], [/fren/, '🛑'], [/suspens|amortig/, '🪛'], [/direcci/, '🛞'],
       [/el[eé]ctr|bater|luces/, '⚡'], [/a\/c|aire|clima/, '❄️'], [/manten|aceite|lubric|filtro/, '🛢️'],
@@ -64,7 +65,8 @@ const AvanceOT = (() => {
       let cat;
       if (tipo === 'trabajo_externo') cat = catDe('_externo', 'Trabajos externos', 1e6);
       else {
-        const c = t && t.categoria_id ? (categorias || []).find(x => x.id === t.categoria_id) : null;
+        const catId = i.categoria_id || (t && t.categoria_id) || null;   // la de la línea (v82) manda sobre la del trabajo
+        const c = catId ? (categorias || []).find(x => x.id === catId) : null;
         cat = c ? catDe(c.id, c.nombre, Number(c.orden) || 0) : catDe('_otros', 'Otros trabajos', 1e5);
       }
       const defs = t && Array.isArray(t.tareas) ? t.tareas.filter(x => x && x.id && String(x.nombre || '').trim()) : [];
